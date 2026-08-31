@@ -1,0 +1,175 @@
+  🔬 Comprehensive Technical & Operational Deep-Dive
+
+ 
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                SYSTEM ARCHITECTURE OVERVIEW                             │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+   [ EXCEL WORKBOOK ]              [ NETWORK / SECURITY ]            [ BACKEND ENGINE ]             [ CIN7 ERP ]
+┌───────────────────────┐         ┌──────────────────────┐        ┌───────────────────┐         ┌────────────────┐
+│ • Active Sheet (B3)   │───────► │ • HTTP/HTTPS POST    │───────►│ • API Key Validation│────────►│ • Sales Data   │
+│ • UI App Shell Canvas │         │ • x-api-key Header   │        │ • Tenant Client ID│         │ • Stock On-Hand│
+│ • Sync Log Audit Sheet│◄─────── │ • JSON Payload       │◄───────│ • Data Mapping    │◄────────│ • Purchases    │
+└───────────────────────┘         └──────────────────────┘        └───────────────────┘         └────────────────┘
+ 
+
+ 
+
+ 1. Client Layer: Excel Office Script & UI Engine
+
+   A. Canvas Formatting & Shell Construction 
+When the script starts, it first prepares Excel to look like a desktop software application rather than a plain spreadsheet:
+-  Gridline Suppression (`setShowGridlines(false)`) : Disables standard Excel cell gridlines across all sheets.
+-  Segoe UI Typography : Enforces Microsoft’s Segoe UI font across the canvas.
+-  Top Shell Banners (Rows 1–3) :
+  -  Row 1 : Dark Navy (` 0F172A`) Title Bar with enterprise branding and system status indicator (`[ PROD ENGINE | CONNECTED ]`).
+  -  Row 2 : Desktop Navigation Tab Bar styled after Power BI / Dynamics 365, dynamically highlighting the active sheet tab with a light blue bottom accent border (` 38BDF8`).
+  -  Row 3 : Control Toolbar holding the Timeline Dropdown (cell  `B3` ) and the live Status Indicator Badge (cell  `D3` ).
+-  Freeze Panes : Freezes rows 1 through 3 (`freezeRows(3)`), keeping headers, navigation, and controls visible as users scroll down thousands of data rows.
+
+   B. Input Parsing & Date Calculation 
+- Reads the text selected in cell  `B3`  (e.g. `"Last 30 days"`).
+- The `calculateStartDate()` function converts business terms into an exact ISO UTC timestamp:
+  - `"Last 30 days"` → Subtracts 30 days from `new Date()` (`2026-07-11T14:54:16.000Z`).
+  - `"This month"` → Sets date to 1st of current month (`2026-08-01T00:00:00.000Z`).
+  - `"This quarter"` → Calculates start month of current quarter (Q1, Q2, Q3, Q4).
+  - `"All Time"` → Returns `null` (fetches all historical records).
+
+ 
+
+ 2. Security & Network Layer
+
+   A. Request Authorization & Headers 
+The script sends an HTTP `POST` request using JavaScript `fetch()`:
+'''
+ typescript
+const response = await fetch(`${API_BASE_URL}/sync/${CLIENT_ID}?updated_since=${isoDate}`, {
+  method: "POST",
+  headers: {
+    "x-api-key": "MzybfJtO2UjB9_6DGC8z2p3dAQVgE2tAIK1R7UqmMwM", // Secret Key
+    "Content-Type": "application/json"
+  }
+});
+ '''
+
+-  `x-api-key` Header : Acts as an application secret key. The backend rejects any request missing this header with HTTP `401 Unauthorized`.
+-  `CLIENT_ID` (Path Parameter) : Identifies the specific Cin7 tenant database (`1bde386a-1bcb-4e78-baa8-caa0142892ab`).
+-  `updated_since` (Query Parameter) : Restricts data fetching to only records modified after the start date, preventing unnecessary data transfer.
+
+   B. Local vs. Azure Routing 
+-  Option A (Local Deployment) : Calls `http://localhost:8000`. Requests travel within your local machine/network.
+-  Option B (Azure Deployment) : Calls `https://your-app.azurewebsites.net`. Requests use TLS/SSL (`https://`) encryption and require CORS configuration in Azure to allow requests from Microsoft Excel (`https://excel.officeapps.live.com`).
+
+ 
+
+ 3. Backend Engine & Cin7 ERP Request Management Layer
+
+   A. Backend API Processing 
+1.  Header Validation : Verifies `x-api-key` and checks tenant authorization.
+2.  Endpoint Dispatch : Dispatches query handlers for the 3 target Cin7 endpoints:
+   - `/api/v1/Sales` (Sales Orders & Invoices)
+   - `/api/v1/Stock` (Inventory On-Hand & Available Units)
+   - `/api/v1/PurchaseOrders` (Open & Received POs)
+
+   B. How Requests Sent to Cin7 ERP are Managed 
+
+ mermaid
+flowchart TD
+    A[Sync Engine Backend] -->|1. Authenticate with Cin7 Credentials| B[Cin7 API Gateway]
+    B -->|2. Check Rate Limits max 60 req/min| C{Rate Limit OK?}
+    C -->|Exceeded 429| D[Exponential Backoff Retry Wait 2-5s]
+    D --> B
+    C -->|OK| E[3. Apply Delta Date Filter updated_since]
+    E -->|4. Paginate Batch Ingestion 250 rows/page| F[Retrieve Raw Cin7 Datasets]
+    F -->|5. Data Flattening & Normalization| G[2D Array Format for Excel]
+ 
+
+1.  Authentication & Authorization with Cin7 :
+   - The backend server injects Cin7's required API headers (`api-auth-cn` and `api-auth-key`) for secure communication. Credentials are kept safely on the server side and never exposed to the Excel client.
+
+2.  Rate Limit Management & Throttling :
+   -  Cin7 Limit Enforcement : Cin7 limits API requests (e.g. 60 requests/minute). 
+   -  Throttling Queue : The Sync Engine regulates outgoing request speed using a queue buffer, preventing Cin7 from blocking the connection.
+
+3.  Pagination & Batch Ingestion :
+   - Large datasets (e.g. 10,000+ sales orders) are fetched in controlled page batches (e.g. 250 records per page using `$skip` and `$top` parameters).
+   - Prevents memory spikes and server timeouts.
+
+4.  Delta / Incremental Filtering (`updated_since`) :
+   - Converts Excel's timeline parameter into Cin7's API filter syntax (`where=ModifiedDate > '2026-07-11'`).
+   - Only modified or new records are downloaded, drastically reducing execution time from minutes to seconds.
+
+5.  Exponential Backoff & Retry Resiliency :
+   - If Cin7 returns a temporary busy status (`HTTP 429 Too Many Requests` or `HTTP 503 Service Unavailable`), the backend catches it automatically, waits for an exponential delay (e.g., 2s, 4s, 8s), and retries the request seamlessly before reporting back to Excel.
+
+6.  JSON Data Flattening & Normalization :
+   - Cin7 sends nested JSON objects (e.g. `Customer.Name`, `LineItems[0].Price`).
+   - The Sync Engine flattens these complex object trees into clean 2D arrays (`(string | number)[][]`) optimized for instant insertion into Excel ranges.
+
+ 
+
+ 4. Data Writing, Auto-Formatting & KPI Rendering Engine
+
+   A. Worksheet Ingestion 
+Once Excel receives the response, it writes data into 3 canonical sheets:
+- `Sales Transactions Raw Data`
+- `Inventory On Hand Raw Data`
+- `Purchase Transactions Raw data`
+
+Headers are written at  Line A8 , and data rows start at  Line A9 .
+
+   B. Commercial Grid Styling (`formatEnterpriseDataGrid`) 
+-  Zebra Striping : Alternates row background colors between White (` FFFFFF`) and Soft Slate (` F8FAFC`) to maximize visual contrast.
+-  Gridline Suppression & Cell Padding : Adds thin borders (` E2E8F0`) and autofits columns with a +18px width safety margin.
+
+   C. Intelligent Data Type Recognition (`autoFormatColumns`) 
+The script inspects column header names to apply formatting rules automatically:
+
+ 
+           COLUMN HEADER INSPECTION
+                       │
+       ┌───────────────┼───────────────┬───────────────┐
+       ▼               ▼               ▼               ▼
+ "Price / Amount"  "Qty / Count"   "Date / Time"    "Status"
+       │               │               │               │
+       ▼               ▼               ▼               ▼
+  $ ,0.00          ,0           Centered       Pill Badges
+ (Currency)        (Integer)        Text           (Green/Red/Amber)
+ 
+
+-  Pill Badges (`applyStatusPills`) :
+  - `Active` / `Synced` / `Complete` → Light Green Fill (` DCFCE7`), Dark Green Font (` 15803D`).
+  - `Pending` / `Running` / `Syncing` → Light Amber Fill (` FEF3C7`), Dark Amber Font (` B45309`).
+  - `Failed` / `Error` / `Cancel` → Light Red Fill (` FEE2E2`), Dark Red Font (` B91C1C`).
+
+   D. KPI Summary Cards (Rows 4–6) 
+Generates 3 styled metric boxes per sheet:
+-  Card 1 : Total active period rows (e.g. `SALES TRANSACTIONS: 1,450`).
+-  Card 2 : Selected timeline window & sync completion timestamp.
+-  Card 3 : System connection health indicator (`ONLINE 100%`).
+
+ 
+
+ 5. Audit Logging & Compliance Layer
+
+Every single execution is tracked on the  `Sync Log`  sheet:
+
+1.  Pre-Sync Initiation (`logSyncStart`) :
+   - Generates a unique execution token: `run-${Date.now()}-${Math.random()}` (e.g., `run-1723298400000-4821`).
+   - Inserts a row at position  A5:E5  marked  `Running`  (Yellow Badge).
+2.  Log Truncation (Housekeeping) :
+   - Automatically checks total log rows. If entries exceed  20 runs  (`LOG_MAX_ENTRIES`), older rows are deleted to prevent workbook clutter.
+3.  Post-Sync Settlement (`logSyncFinish`) :
+   - Finds the row matching `runId`.
+   - Updates status to  `Success`  (Green Badge) or  `Failed`  (Red Badge).
+   - Writes the total synced row count or server error message.
+
+ 
+
+ 6. Financial & Resource Cost Architecture
+
+| Architecture Layer | Cost Model | Details |
+| :  | :  | :  |
+|  Excel File Storage  |  $0.00  | Data is written into local/OneDrive `.xlsx` files. Covered under existing Microsoft 365 licenses. |
+|  Local Backend (`localhost`)  |  $0.00  | Runs on existing office computer hardware. |
+|  Azure Functions (Serverless)  |  $0.00  | First  1,000,000 requests/month  and  100 GB egress  are completely FREE under Azure's monthly grant. |
+|  Azure App Service (Basic)  |  ~$13 / month  | Optional fixed flat-rate hosting plan for enterprise dedicated availability. |

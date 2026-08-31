@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VNC Cin7 SaaS Reporting Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Navigation Bar -->
+    <header class="navbar hidden" id="navbar">
+      <div class="nav-brand">
+        <div class="brand-logo">⚡</div>
+        <div class="brand-text">
+          <span class="brand-title">VNC CIN7 SYNC</span>
+          <span class="brand-subtitle">SAAS REPORTING PORTAL</span>
+        </div>
+      </div>
+      
+      <nav class="nav-links">
+        <button class="nav-btn active" id="nav-dashboard-btn" onclick="navigateTo('dashboard')">
+          <span class="nav-icon">📊</span> Dashboard
+        </button>
+        <button class="nav-btn" id="nav-history-btn" onclick="navigateTo('history')">
+          <span class="nav-icon">🕒</span> Version History
+        </button>
+        <button class="nav-btn" id="nav-settings-btn" onclick="navigateTo('settings')">
+          <span class="nav-icon">⚙️</span> Settings
+        </button>
+      </nav>
+
+      <div class="nav-user">
+        <div class="user-info">
+          <span class="user-name" id="nav-user-name">User</span>
+          <span class="user-company" id="nav-user-company">VNC Global</span>
+        </div>
+        <button class="btn-logout" onclick="handleLogout()" title="Logout">Logout 🚪</button>
+      </div>
+    </header>
+
+    <!-- Global Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- MAIN CONTAINER -->
+    <main class="main-content">
+
+      <!-- 1. INITIAL AUTH LANDING SCREEN -->
+      <section id="auth-landing-view" class="view-container">
+        <div class="login-card">
+          <div class="login-header">
+            <div class="vnc-badge">VNC GLOBAL BUSINESS EDGE</div>
+            <h1>VNC Cin7 SaaS Reporting Portal</h1>
+            <p>Cloud spreadsheet financial analytics and automated Cin7 ERP data synchronization.</p>
+          </div>
+
+          <div class="auth-choice-section">
+            <div class="choice-group">
+              <span class="choice-label">Existing Client Organization</span>
+              <button class="btn-auth-action btn-signin" onclick="openSigninModal()">Sign In to Portal</button>
+            </div>
+
+            <div class="choice-group">
+              <span class="choice-label">New Client Registration</span>
+              <button class="btn-auth-action btn-create-account" onclick="openRegisterModal()">Create Account & Provision Workbook</button>
+            </div>
+          </div>
+
+          <div class="login-footer">
+            <p>🔒 Server-Side Isolated Storage & Enterprise Security</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. DASHBOARD VIEW -->
+      <section id="dashboard-view" class="view-container hidden">
+
+        <!-- Subscription Expired Banner -->
+        <div id="subscription-expired-banner" class="subscription-expired-banner hidden">
+          <div class="banner-icon">⚠️</div>
+          <div class="banner-content">
+            <strong>Reporting Subscription Inactive</strong>
+            <p id="subscription-expired-msg">Your reporting subscription has expired. Please contact VNC to renew access.</p>
+          </div>
+          <div class="banner-actions">
+            <button class="btn-banner-action" onclick="toggleTestSubscription()" title="Toggle subscription for testing">Toggle Test Status</button>
+          </div>
+        </div>
+
+        <!-- Connection Status Bar -->
+        <div class="status-banner">
+          <div class="status-badge-group">
+            <div class="status-pill" id="pill-cin7">
+              <span class="status-dot">●</span> Cin7 ERP: <strong id="status-cin7-txt">Connected</strong>
+            </div>
+            <div class="status-pill" id="pill-storage">
+              <span class="status-dot">●</span> Server Storage: <strong id="status-storage-txt">Isolated (storage/clients)</strong>
+            </div>
+            <div class="status-pill" id="pill-subscription">
+              <span class="status-dot">●</span> Subscription: <strong id="status-subscription-txt">Active</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Master Sync Progress Card -->
+        <div id="master-progress-card" class="progress-card hidden">
+          <div class="progress-header">
+            <div class="progress-title">
+              <span class="spinner">⏳</span> <span id="progress-status-title">Syncing Cin7 Data to Server Workbook...</span>
+            </div>
+            <div class="progress-percent" id="progress-percent-txt">0%</div>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div class="progress-footer" id="progress-footer-txt">Connecting to Cin7 ERP API...</div>
+        </div>
+
+        <!-- 3 Metric Cards for Sync Data -->
+        <div class="dashboard-grid">
+          <!-- Card 1: Sales Transactions -->
+          <div class="sync-card" id="card-sales">
+            <div class="card-accent sales-accent"></div>
+            <div class="card-header">
+              <div class="card-icon">📈</div>
+              <h3>Sales Transactions</h3>
+            </div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">Last Sync:</span>
+                <span class="metric-value" id="sales-last-sync">Never</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Records Synced:</span>
+                <span class="metric-value highlight" id="sales-records">0</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Sync Status:</span>
+                <span class="badge-status status-idle" id="sales-status-badge">IDLE</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn-sync" onclick="handleSync('sales')">Sync Sales</button>
+            </div>
+          </div>
+
+          <!-- Card 2: Inventory On Hand -->
+          <div class="sync-card" id="card-inventory">
+            <div class="card-accent inv-accent"></div>
+            <div class="card-header">
+              <div class="card-icon">📦</div>
+              <h3>Inventory On Hand</h3>
+            </div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">Last Sync:</span>
+                <span class="metric-value" id="inv-last-sync">Never</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Records Synced:</span>
+                <span class="metric-value highlight" id="inv-records">0</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Sync Status:</span>
+                <span class="badge-status status-idle" id="inv-status-badge">IDLE</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn-sync" onclick="handleSync('inventory')">Sync Inventory</button>
+            </div>
+          </div>
+
+          <!-- Card 3: Purchase Orders -->
+          <div class="sync-card" id="card-po">
+            <div class="card-accent po-accent"></div>
+            <div class="card-header">
+              <div class="card-icon">📑</div>
+              <h3>Purchase Orders</h3>
+            </div>
+            <div class="card-body">
+              <div class="metric-row">
+                <span class="metric-label">Last Sync:</span>
+                <span class="metric-value" id="po-last-sync">Never</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Records Synced:</span>
+                <span class="metric-value highlight" id="po-records">0</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Sync Status:</span>
+                <span class="badge-status status-idle" id="po-status-badge">IDLE</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn-sync" onclick="handleSync('purchase-orders')">Sync Purchase Orders</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- DEDICATED SAAS WORKBOOK SECTION -->
+        <div class="workbook-section" id="workbook-section">
+          <div class="workbook-card">
+            <div class="workbook-card-header">
+              <div class="workbook-title-group">
+                <span class="workbook-badge-icon">📗</span>
+                <div>
+                  <h3 class="workbook-card-title">FINANCIAL REPORTING WORKBOOK</h3>
+                  <p class="workbook-card-subtitle">Master Model: 17 Worksheets, 1,000+ Formulas, Pivot Tables & Executive Dashboards</p>
+                </div>
+              </div>
+              <span class="status-pill version-pill" id="wb-version-badge">Version v1.0</span>
+            </div>
+
+            <div class="workbook-card-body">
+              <div class="company-reporting-info">
+                <div class="reporting-meta-col">
+                  <span class="meta-label">Client Organization:</span>
+                  <strong class="meta-val" id="dash-company-name">VNC Global Business Edge</strong>
+                </div>
+                <div class="reporting-meta-col">
+                  <span class="meta-label">Master File:</span>
+                  <strong class="meta-val code-font" title="Controller_Reporting_Model_v5_Cin7_Actuals.xlsx">Controller_Reporting_Model_v5_Cin7_Actuals.xlsx</strong>
+                </div>
+                <div class="reporting-meta-col">
+                  <span class="meta-label">Current Version:</span>
+                  <strong class="meta-val highlight-ver" id="dash-current-version">v1.0</strong>
+                </div>
+                <div class="reporting-meta-col">
+                  <span class="meta-label">Subscription Status:</span>
+                  <span class="badge-status status-success" id="dash-sub-badge">ACTIVE</span>
+                </div>
+              </div>
+
+              <!-- Master Action Buttons -->
+              <div class="workbook-cta-wrapper">
+                <button type="button" id="btn-sync-all-action" class="btn-sync-all-action" onclick="handleSync('all')">
+                  <span class="btn-icon">⚡</span>
+                  <span>SYNC ALL DATA</span>
+                </button>
+
+                <button type="button" id="btn-open-workbook" class="btn-open-workbook" onclick="openWorkbook()">
+                  <span class="btn-icon">📂</span>
+                  <span>OPEN WORKBOOK</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="workbook-card-footer">
+              <span class="update-clock-icon">🕒</span>
+              <span>Last Synced: <strong id="wb-last-updated">Never</strong></span>
+              <span class="footer-dot">•</span>
+              <span>Sync Status: <strong id="wb-last-sync-status">IDLE</strong></span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- 3. FULL-SCREEN BROWSER SPREADSHEET EDITOR VIEW -->
+      <section id="editor-view" class="view-container hidden">
+        <div class="editor-app-shell">
+          <div class="editor-header-bar">
+            <div class="editor-header-left">
+              <button class="btn-editor-back" onclick="closeEditor()" title="Return to Portal Dashboard">
+                ← Dashboard
+              </button>
+              <div class="editor-doc-info">
+                <div class="editor-doc-title-row">
+                  <span class="doc-icon">📗</span>
+                  <span class="editor-doc-title" id="editor-doc-title">Controller_Reporting_Model_v5_Cin7_Actuals.xlsx</span>
+                  <span class="editor-version-tag" id="editor-version-tag">v1.0</span>
+                  <span class="editor-mode-tag" id="editor-mode-tag">EDIT MODE</span>
+                </div>
+                <div class="editor-doc-subtext">
+                  <span id="editor-company-tag">VNC Global Business Edge</span> • 17 Worksheets (Preserved Model)
+                </div>
+              </div>
+            </div>
+
+            <div class="editor-header-center">
+              <span class="editor-sync-badge" id="editor-save-status">● Live Server Sync Active</span>
+            </div>
+
+            <div class="editor-header-right">
+              <button class="btn-editor-sync" onclick="handleSyncFromEditor()" id="btn-editor-sync" title="Sync latest Cin7 data into workbook">
+                ⚡ SYNC ALL DATA
+              </button>
+              <button class="btn-editor-close" onclick="closeEditor()" title="Close spreadsheet editor">
+                ✕ Close
+              </button>
+            </div>
+          </div>
+
+          <!-- Document Canvas Container -->
+          <div id="editor-canvas-container" class="editor-canvas-container">
+            <div id="onlyoffice-placeholder" style="width: 100%; height: 100%;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. VERSION HISTORY VIEW -->
+      <section id="history-view" class="view-container hidden">
+        <div class="page-header">
+          <h2>🕒 Version History & Audit Log</h2>
+          <p>Chronological snapshots of your synchronized reporting workbook stored on the server.</p>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>Date & Time</th>
+                <th>Sync Status</th>
+                <th>Records Processed</th>
+                <th>Duration</th>
+                <th>Run ID</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr>
+                <td colspan="7" class="empty-state">No sync history recorded yet. Trigger your first sync from the Dashboard!</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="pagination-bar" id="history-pagination-bar">
+          <span class="pagination-info" id="history-page-info">Showing Page 1 of 1</span>
+          <div class="pagination-buttons">
+            <button class="btn-page" id="btn-page-prev" onclick="changeHistoryPage(-1)" disabled>← Previous</button>
+            <span class="page-badge" id="current-page-num">1</span>
+            <button class="btn-page" id="btn-page-next" onclick="changeHistoryPage(1)" disabled>Next →</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. SETTINGS VIEW -->
+      <section id="settings-view" class="view-container hidden">
+        <div class="page-header">
+          <h2>⚙️ Portal & Cin7 Settings</h2>
+          <p>Tenant organization configuration, subscription details, and Cin7 API credentials.</p>
+        </div>
+
+        <div class="settings-grid">
+          <!-- Subscription & Storage Info -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <h3>Tenant & Subscription</h3>
+              <span class="badge-status status-success" id="settings-sub-badge">ACTIVE</span>
+            </div>
+            <div class="settings-card-body">
+              <div class="settings-row">
+                <span class="settings-label">Company Name:</span>
+                <strong id="settings-company-name">VNC Global Business Edge</strong>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label">Tenant ID:</span>
+                <code id="settings-tenant-id">client-vnc-master</code>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label">Workbook Storage:</span>
+                <span class="settings-storage-pill">🔒 Isolated Server Storage (storage/clients/)</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label">Current Version:</span>
+                <strong id="settings-current-version">v1.0</strong>
+              </div>
+              <div class="settings-row" style="margin-top: 1rem;">
+                <button type="button" class="btn-toggle-sub" onclick="toggleTestSubscription()">
+                  🔄 Toggle Subscription Active / Expired
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cin7 Connection Info -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <h3>Cin7 Core ERP Connection</h3>
+              <span class="badge-status status-success" id="settings-cin7-badge">Connected</span>
+            </div>
+            <div class="settings-card-body">
+              <p class="settings-desc">Cin7 API credentials are encrypted with AES-256-GCM authenticated server encryption.</p>
+              <div class="settings-row">
+                <span class="settings-label">API Status:</span>
+                <span id="settings-cin7-status-text">Connected & Active</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label">Rate Limiter:</span>
+                <span>60 req/min Throttling Queue Active</span>
+              </div>
+              <div class="settings-actions">
+                <button class="btn-secondary" onclick="openCin7Modal()">Update Cin7 Credentials</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL 1: SIGN IN MODAL -->
+  <div id="signin-modal" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Sign In to VNC Cin7 Portal</h2>
+        <button class="btn-close-modal" onclick="closeSigninModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="signin-form" onsubmit="handleSigninSubmit(event)">
+          <div class="form-group text-left">
+            <label for="signin-email">Email Address</label>
+            <input type="email" id="signin-email" placeholder="name@company.com" required value="harshili.patni@vnc.global">
+          </div>
+
+          <div class="form-group text-left">
+            <label for="signin-password">Password</label>
+            <div class="password-input-wrapper">
+              <input type="password" id="signin-password" placeholder="Enter password" required value="123456">
+              <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('signin-password')">👁️</button>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-submit-login">Sign In</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: NEW CLIENT REGISTRATION MODAL -->
+  <div id="register-modal" class="modal-backdrop hidden">
+    <div class="modal-box modal-wide">
+      <div class="modal-header">
+        <h2>Create Client Account & Initialize Workbook</h2>
+        <button class="btn-close-modal" onclick="closeRegisterModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="register-form" onsubmit="handleRegisterSubmit(event)">
+          <div class="form-row">
+            <div class="form-group text-left">
+              <label for="reg-fullname">Full Name *</label>
+              <input type="text" id="reg-fullname" placeholder="John Smith" required value="Harshili Patni">
+            </div>
+
+            <div class="form-group text-left">
+              <label for="reg-company">Company Name *</label>
+              <input type="text" id="reg-company" placeholder="Acme Logistics Pvt Ltd" required value="VNC Global Business Edge">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group text-left">
+              <label for="reg-phone">Phone Number *</label>
+              <input type="tel" id="reg-phone" placeholder="+1 (555) 019-2834" required value="+1 (555) 019-2834">
+            </div>
+
+            <div class="form-group text-left">
+              <label for="reg-email">Email Address *</label>
+              <input type="email" id="reg-email" placeholder="john@company.com" required value="harshili.patni@vnc.global">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group text-left">
+              <label for="reg-password">Password *</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="reg-password" placeholder="Minimum 6 characters" required value="123456">
+                <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('reg-password')">👁️</button>
+              </div>
+            </div>
+
+            <div class="form-group text-left">
+              <label for="reg-confirm-password">Confirm Password *</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="reg-confirm-password" placeholder="Re-enter password" required value="123456">
+                <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('reg-confirm-password')">👁️</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="storage-notice-box">
+            <span>🔒</span>
+            <p>Upon registration, an isolated storage workspace (<code>storage/clients/&lt;clientId&gt;/</code>) will be created with the 17-sheet master model.</p>
+          </div>
+
+          <div class="modal-actions margin-top-md">
+            <button type="button" class="btn-secondary" onclick="closeRegisterModal()">Cancel</button>
+            <button type="submit" class="btn-primary">Create Account & Provision Workbook</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: CIN7 CREDENTIALS MODAL -->
+  <div id="cin7-modal" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>⚡ Connect Cin7 Account</h2>
+        <button class="btn-close-modal" onclick="closeCin7Modal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">Enter your Cin7 API credentials. Credentials are encrypted on the server with AES-256-GCM.</p>
+        
+        <form id="cin7-form" onsubmit="handleCin7Connect(event)">
+          <div class="form-group text-left">
+            <label for="cin7-username">Cin7 API Username / Account ID *</label>
+            <input type="text" id="cin7-username" placeholder="e.g. 1bde386a-1bcb-4e78-baa8-caa0142892ab" required >
+          </div>
+
+          <div class="form-group text-left">
+            <label for="cin7-key">Cin7 API Key / API Secret Key *</label>
+            <input type="password" id="cin7-key" placeholder="e.g. MzybfJtO2UjB9_6DGC8z2p3dAQVgE2tAIK..." required >
+          </div>
+
+          <div id="modal-feedback" class="modal-feedback hidden"></div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn-test-conn" onclick="handleCin7Test()">Test Connection</button>
+            <button type="submit" class="btn-primary">Save & Connect</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- SheetJS Library for robust fallback XLSX viewing/editing -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "name": "cin7-sync-portal",
+  "version": "1.0.0",
+  "description": "VNC Cin7 Sync Engine - Multi-Tenant Browser-Based SaaS Portal",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "init-db": "node src/db/initDb.js",
+    "test": "node test/test_portal.js"
+  },
+  "keywords": [
+    "cin7",
+    "excel",
+    "google-sheets",
+    "sync",
+    "vnc",
+    "saas"
+  ],
+  "author": "VNC Global Business Edge",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "googleapis": "^140.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^5.1.7",
+    "uuid": "^10.0.0"
+  }
+}

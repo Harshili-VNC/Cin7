@@ -1,0 +1,89 @@
+{
+  "id": "gsheet-d0d21e9b-1bde-404c-a86e-18c9328140bd",
+  "name": "VNC_Cin7_Sync_Sheet_client-t",
+  "sheets": {
+    "Sales Transactions Raw Data": {
+      "headers": [],
+      "rows": []
+    },
+    "Inventory On Hand Raw Data": {
+      "headers": [
+        "Product ID",
+        "SKU Code",
+        "Product Name",
+        "Category",
+        "Stock On Hand",
+        "Allocated Units",
+        "Available Units",
+        "Unit Cost"
+      ],
+      "rows": [
+        [
+          "PRD-1001",
+          "SKU-VNC-PRO-01",
+          "Enterprise Server Unit A",
+          "Hardware",
+          450,
+          50,
+          400,
+          1200
+        ],
+        [
+          "PRD-1002",
+          "SKU-VNC-PRO-02",
+          "Cloud Gateway Adapter",
+          "Networking",
+          1200,
+          150,
+          1050,
+          350
+        ],
+        [
+          "PRD-1003",
+          "SKU-VNC-PRO-03",
+          "Smart Terminal Display",
+          "Displays",
+          320,
+          20,
+          300,
+          680.5
+        ],
+        [
+          "PRD-1004",
+          "SKU-VNC-PRO-04",
+          "High-Speed Fiber Transceiver",
+          "Networking",
+          2500,
+          300,
+          2200,
+          125
+        ],
+        [
+          "PRD-1005",
+          "SKU-VNC-PRO-05",
+          "Uninterruptible Power Module",
+          "Power",
+          180,
+          10,
+          170,
+          890
+        ]
+      ],
+      "lastUpdated": "2026-08-24T07:08:12.511Z"
+    },
+    "Purchase Transactions Raw data": {
+      "headers": [],
+      "rows": []
+    },
+    "Sync Log": {
+      "headers": [
+        "Timestamp",
+        "Status",
+        "Sync Type",
+        "Detail",
+        "Run ID"
+      ],
+      "rows": []
+    }
+  }
+}

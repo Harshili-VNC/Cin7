@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VNC Cin7 Sync Engine</title>
+  <!-- Office JavaScript API -->
+  <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link href="taskpane.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+  <div class="addin-container">
+    <!-- Header -->
+    <header class="addin-header">
+      <div class="brand-row">
+        <div class="brand-badge">⚡ VNC GLOBAL</div>
+        <span class="status-indicator-pill" id="status-pill">● READY</span>
+      </div>
+      <h1 class="brand-title">Cin7 Sync Engine</h1>
+      <p class="brand-subtitle">Commercial ERP Spreadsheet Integration</p>
+    </header>
+
+    <!-- Sideload Notice -->
+    <section id="sideload-msg" class="sideload-msg">
+      <p>Initializing Office Excel context...</p>
+    </section>
+
+    <!-- Main Addin Body -->
+    <main id="app-body" class="addin-body" style="display: none;">
+      
+      <!-- Timeline Filter Card -->
+      <div class="control-card">
+        <label for="timeline-select" class="control-label">Timeline Range</label>
+        <div class="select-wrapper">
+          <select id="timeline-select" class="custom-select">
+            <option value="last-30-days" selected>Last 30 days</option>
+            <option value="this-month">This month</option>
+            <option value="this-quarter">This quarter</option>
+            <option value="all-time">All Time</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- PRIMARY MASTER ACTION: SYNC ALL BUTTON -->
+      <div class="action-card master-action-card">
+        <button id="btn-sync-all" class="btn-sync-all" title="Synchronize Sales, Inventory, and POs sequentially">
+          <span class="btn-icon">⚡</span>
+          <span class="btn-text">SYNC ALL DATA</span>
+        </button>
+        <p class="btn-caption">Sequentially ingests Sales, Stock, and POs into active model.</p>
+      </div>
+
+      <!-- Progress / Status Card -->
+      <div id="progress-container" class="progress-card hidden">
+        <div class="progress-header">
+          <span id="progress-label" class="progress-label">Syncing...</span>
+          <span id="progress-percent" class="progress-percent">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="progress-bar" class="progress-bar-fill"></div>
+        </div>
+        <div id="progress-details" class="progress-details">Connecting to backend...</div>
+      </div>
+
+      <!-- INDIVIDUAL DATASET ACTIONS -->
+      <div class="dataset-section">
+        <div class="section-title">Individual Endpoints</div>
+        
+        <div class="dataset-grid">
+          <button id="btn-sync-sales" class="btn-dataset btn-sales">
+            <span class="ds-icon">📈</span>
+            <span class="ds-label">Sync Sales</span>
+          </button>
+
+          <button id="btn-sync-inventory" class="btn-dataset btn-inv">
+            <span class="ds-icon">📦</span>
+            <span class="ds-label">Sync Inventory</span>
+          </button>
+
+          <button id="btn-sync-po" class="btn-dataset btn-po">
+            <span class="ds-icon">📑</span>
+            <span class="ds-label">Sync POs</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Recent Sync Audit Summary -->
+      <div class="audit-summary-card">
+        <div class="audit-row">
+          <span class="audit-label">Last Run:</span>
+          <strong id="audit-last-run" class="audit-val">Never</strong>
+        </div>
+        <div class="audit-row">
+          <span class="audit-label">Records Synced:</span>
+          <strong id="audit-records" class="audit-val">0</strong>
+        </div>
+        <div class="audit-row">
+          <span class="audit-label">Target Workbook:</span>
+          <span class="audit-val code-font">17 Sheets Model</span>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="addin-footer">
+      <span>🔒 VNC Enterprise Security</span>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,297 @@
+/* VNC Cin7 Add-in Modern Styling */
+:root {
+  --primary-navy: #0f172a;
+  --secondary-slate: #1e293b;
+  --accent-blue: #0284c7;
+  --accent-blue-hover: #0369a1;
+  --emerald-green: #10b981;
+  --emerald-hover: #059669;
+  --amber-warning: #f59e0b;
+  --rose-error: #ef4444;
+  --surface-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --border-light: #e2e8f0;
+  --border-dark: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --code-font: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--surface-bg);
+  color: var(--text-primary);
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  width: 100%;
+  height: 100%;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.addin-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+/* Header */
+.addin-header {
+  background: var(--primary-navy);
+  color: #fff;
+  border-radius: 10px;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+}
+
+.brand-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.brand-badge {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.status-indicator-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #86efac;
+}
+
+.brand-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.brand-subtitle {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* Sideload msg */
+.sideload-msg {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Addin Body */
+.addin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  flex: 1;
+}
+
+/* Control Card */
+.control-card {
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.control-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.custom-select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-dark);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: #fff;
+}
+
+/* Master Action: Sync All Button */
+.master-action-card {
+  background: #fff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  padding: 1rem;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.08);
+}
+
+.btn-sync-all {
+  width: 100%;
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  color: #fff;
+  border: none;
+  padding: 0.85rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn-sync-all:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(2, 132, 199, 0.4);
+}
+
+.btn-sync-all:active {
+  transform: translateY(0);
+}
+
+.btn-icon {
+  font-size: 1.1rem;
+}
+
+.btn-caption {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.4rem;
+}
+
+/* Progress Card */
+.progress-card {
+  background: #0f172a;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.progress-bar-track {
+  background: rgba(255, 255, 255, 0.2);
+  height: 6px;
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-bottom: 0.35rem;
+}
+
+.progress-bar-fill {
+  background: #38bdf8;
+  height: 100%;
+  width: 0%;
+  transition: width 0.25s ease;
+}
+
+.progress-details {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* Dataset Grid */
+.dataset-section {
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.dataset-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.btn-dataset {
+  background: #f8fafc;
+  border: 1px solid var(--border-dark);
+  color: var(--text-primary);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background 0.15s;
+}
+
+.btn-dataset:hover {
+  background: #e2e8f0;
+}
+
+/* Audit Card */
+.audit-summary-card {
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.audit-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
+.audit-label {
+  color: var(--text-muted);
+}
+
+.audit-val {
+  color: var(--text-primary);
+}
+
+.code-font {
+  font-family: var(--code-font);
+  font-size: 0.75rem;
+}
+
+/* Footer */
+.addin-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}

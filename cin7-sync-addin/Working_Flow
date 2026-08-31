@@ -1,0 +1,87 @@
+# 🔄 Cin7 Sync Engine – Executive Workflow & System Guide
+
+### Executive Overview
+The **Cin7 Sync Engine** is a 1-click automated reporting tool embedded directly inside Microsoft Excel. It connects Excel to your local backend Sync Engine API (`http://localhost:8000`), pulls live Sales, Inventory, and Purchase Order data from **Cin7 ERP**, auto-formats the tables with KPI summary banners, and maintains an automated audit log.
+
+---
+
+## 📈 Step-by-Step System Architecture
+
+```mermaid
+flowchart TD
+    A[👨‍💼 STAGE 1: User Selects Timeline in Excel] --> B[📝 STAGE 2: Excel Canvas Prep & Audit Log]
+    B --> C[🖥️ STAGE 3: Local Sync Server Request - localhost:8000]
+    C --> D[📦 STAGE 4: Fetching Data from Cin7 ERP]
+    D --> E[🎨 STAGE 5: Auto-Formatting & KPI Rendering]
+    E --> F[✅ STAGE 6: Status Confirmation & Audit Settlement]
+```
+
+---
+
+### 👨‍💼 STAGE 1: Timeline Selection (User Action)
+* **What happens**: The user opens Excel, clicks the dropdown menu in cell **`B3`**, and selects a timeline window (e.g. *"Last 30 days"*, *"This month"*, or *"All Time"*).
+* **Action**: User clicks the **"Run Sync"** button.
+
+---
+
+### 📝 STAGE 2: Interface Prep & Audit Initiation
+* **Canvas Styling**: Excel automatically suppresses standard gridlines and applies the branded Microsoft Fabric Slate Header (`⚡ CIN7 ENTERPRISE ANALYTICS SUITE`).
+* **Audit Trail Created**: Before contacting the server, Excel opens the **Sync Log** sheet and creates a new tracking entry with status **`Running`** (Amber Badge) and a unique **`Run ID`** (e.g., `run-1723298400000-4821`).
+
+---
+
+### 🖥️ STAGE 3: Sending Request to Local Sync Server
+1. **Request URL**: Connects to `http://localhost:8000/sync/...`.
+2. **Calculates Start Date**: Converts the user's selection (e.g. *"Last 30 days"*) into an exact start date timestamp.
+3. **Security Credentials**: Sends static `x-api-key` in the HTTP header along with the tenant `Client ID`.
+
+---
+
+### 📦 STAGE 4: Local Server Communicates with Cin7
+1. **Passcode Validation**: The Sync Engine Server checks the `x-api-key` header to authenticate the request.
+2. **Queries Cin7 ERP**: The server connects securely to Cin7 and retrieves:
+   - **Sales Transactions**
+   - **Inventory On Hand**
+   - **Purchase Orders**
+3. **Returns Datasets**: Cin7 returns the raw records to the server, which sanitizes and formats the payload into clean JSON for Excel.
+
+---
+
+### 🎨 STAGE 5: Smart Data Formatting & KPI Banners
+Once Excel receives the datasets:
+1. **Populates Worksheets**: Sorts data into 3 dedicated sheets:
+   - `Sales Transactions Raw Data`
+   - `Inventory On Hand Raw Data`
+   - `Purchase Transactions Raw data`
+2. **Applies Zebra Striping**: Formats data tables with alternating white and light-slate row colors for high contrast.
+3. **Applies Smart Formatting**:
+   - **Currency**: Sales amounts and costs format as **`$#,##0.00`**.
+   - **Quantities**: Stock counts format as integers **`#,##0`**.
+   - **Status Badges**: Formatted as **Green (Synced/Active)**, **Yellow (Pending)**, or **Red (Failed)** pill badges.
+4. **Calculates KPI Cards**: Builds 3 summary banners at the top of each worksheet displaying total row counts, active timeline, and system health status.
+
+---
+
+### ✅ STAGE 6: Final Status Settlement & Audit Completion
+1. **Settles Audit Log**: Updates the entry on the **`Sync Log`** sheet from **`Running`** to **`Success`** (Green Badge) with exact row counts and completion timestamps.
+2. **Displays User Confirmation**: Displays a green status banner at the top of the worksheet:
+   `Status: Synced (Last 30 days) at 02:30 PM | 1,450 total rows`
+
+---
+
+## 💰 Infrastructure & Financial Cost Breakdown
+
+| Cost Component | Local Sync Server Infrastructure |
+| :--- | :--- |
+| **Excel Data Storage** | **$0.00** (Covered in existing M365 OneDrive/SharePoint) |
+| **API Server Compute** | **$0.00** (Runs on existing internal office server/hardware) |
+| **Network Data Transfer** | **$0.00** (Internal local network connectivity) |
+| **Estimated Total Monthly Cost**| **$0.00 / month** (Zero extra cloud or server costs) |
+
+---
+
+## 📌 Executive Summary for Management
+
+1. **Input**: User selects a timeframe in Excel and clicks **Run**.
+2. **Processing**: Excel sends a secure request to the local Sync Server (`localhost:8000`), which pulls fresh Sales, Stock, and Purchase data directly from Cin7 ERP.
+3. **Output**: Excel automatically populates, styles, formats, and logs 3 reporting sheets with visual KPI cards and full audit tracking.
