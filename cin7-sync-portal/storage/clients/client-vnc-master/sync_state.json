@@ -1,0 +1,29 @@
+{
+  "clientId": "client-vnc-master",
+  "reports": {
+    "sales": {
+      "reportType": "sales",
+      "reportWindow": "90d",
+      "lastSuccessfulSync": "2026-09-04T04:04:58.690Z",
+      "lastSyncRunId": "run-all-a65b99fe",
+      "recordCount": 159,
+      "updatedAt": "2026-09-04T04:04:58.693Z"
+    },
+    "purchase": {
+      "reportType": "purchase",
+      "reportWindow": "90d",
+      "lastSuccessfulSync": "2026-09-04T04:04:58.690Z",
+      "lastSyncRunId": "run-all-a65b99fe",
+      "recordCount": 155,
+      "updatedAt": "2026-09-04T04:04:58.698Z"
+    },
+    "inventory": {
+      "reportType": "inventory",
+      "reportWindow": "current",
+      "lastSuccessfulSync": "2026-09-04T04:04:58.690Z",
+      "lastSyncRunId": "run-all-a65b99fe",
+      "recordCount": 288,
+      "updatedAt": "2026-09-04T04:04:58.703Z"
+    }
+  }
+}

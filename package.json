@@ -1,0 +1,26 @@
+{
+  "name": "cin7",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000C\u0000i\u0000n\u00007\u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harshili-VNC/Cin7.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Harshili-VNC/Cin7/issues"
+  },
+  "homepage": "https://github.com/Harshili-VNC/Cin7#readme",
+  "dependencies": {
+    "@google-cloud/local-auth": "^3.0.1",
+    "dotenv": "^17.4.2",
+    "googleapis": "^178.0.0"
+  }
+}

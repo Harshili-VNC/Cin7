@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
@@ -23,7 +23,8 @@ class MemoryDatabaseAdapter {
       destination_files: {},
       client_workbooks: {},
       sync_runs: {},
-      sync_logs: []
+      sync_logs: [],
+      report_snapshots: {}
     };
     if (fs.existsSync(this.storageFile)) {
       try {
@@ -34,6 +35,7 @@ class MemoryDatabaseAdapter {
         if (!this.data.client_workbooks) this.data.client_workbooks = {};
         if (!this.data.sync_runs) this.data.sync_runs = {};
         if (!this.data.sync_logs) this.data.sync_logs = [];
+        if (!this.data.report_snapshots) this.data.report_snapshots = {};
 
         // Backfill new fields for existing client records
         Object.values(this.data.clients || {}).forEach(c => {
@@ -67,6 +69,7 @@ class MemoryDatabaseAdapter {
       else if (cleanSql.includes('FROM CLIENT_WORKBOOKS')) collection = Object.values(this.data.client_workbooks);
       else if (cleanSql.includes('FROM SYNC_RUNS')) collection = Object.values(this.data.sync_runs);
       else if (cleanSql.includes('FROM SYNC_LOGS')) collection = this.data.sync_logs;
+      else if (cleanSql.includes('FROM REPORT_SNAPSHOTS')) collection = Object.values(this.data.report_snapshots || {});
       else return { rows: [{ test: 1 }] };
 
       const rows = collection.filter(item => {
@@ -246,10 +249,70 @@ class MemoryDatabaseAdapter {
       return { rows: [record] };
     }
 
+    if (cleanSql.includes('INSERT INTO DESTINATION_FILES')) {
+      const [id, client_id, provider, file_id, file_name, file_url] = params;
+      const record = {
+        id,
+        client_id,
+        provider: provider || 'google',
+        file_id,
+        file_name,
+        file_url,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      this.data.destination_files[id] = record;
+      this.save();
+      return { rows: [record] };
+    }
+
+    if (cleanSql.includes('DELETE FROM DESTINATION_FILES')) {
+      if (params.length === 2 && cleanSql.includes('CLIENT_ID = ? AND PROVIDER = ?')) {
+        const [clientId, provider] = params;
+        Object.keys(this.data.destination_files).forEach(k => {
+          if (this.data.destination_files[k].client_id === clientId && this.data.destination_files[k].provider === provider) {
+            delete this.data.destination_files[k];
+          }
+        });
+      } else if (params.length === 2 && cleanSql.includes('PROVIDER = ? OR FILE_URL LIKE ?')) {
+        const [provider, pattern] = params;
+        Object.keys(this.data.destination_files).forEach(k => {
+          if (this.data.destination_files[k].provider === provider || (this.data.destination_files[k].file_url && this.data.destination_files[k].file_url.includes('onedrive'))) {
+            delete this.data.destination_files[k];
+          }
+        });
+      } else {
+        this.data.destination_files = {};
+      }
+      this.save();
+      return { rows: [] };
+    }
+
     if (cleanSql.includes('INSERT INTO SYNC_LOGS')) {
       const [id, sync_run_id, client_id, log_level, message] = params;
       const record = { id, sync_run_id, client_id, log_level: log_level || 'INFO', message, timestamp: new Date().toISOString() };
       this.data.sync_logs.unshift(record);
+      this.save();
+      return { rows: [record] };
+    }
+
+    if (cleanSql.includes('INSERT INTO REPORT_SNAPSHOTS')) {
+      const [id, client_id, report_type, report_name, period_label, record_count, sync_run_id, file_path, totals_json, created_at] = params;
+      const record = {
+        id,
+        client_id,
+        report_type,
+        report_name,
+        period_label,
+        record_count: record_count || 0,
+        status: 'SUCCESS',
+        sync_run_id: sync_run_id || null,
+        file_path: file_path || null,
+        totals_json: totals_json || '{}',
+        created_at: created_at || new Date().toISOString()
+      };
+      if (!this.data.report_snapshots) this.data.report_snapshots = {};
+      this.data.report_snapshots[id] = record;
       this.save();
       return { rows: [record] };
     }

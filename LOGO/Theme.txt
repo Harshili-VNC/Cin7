@@ -1,0 +1,5 @@
+Main VNC Color - # 004682
+Blue: #2f8fed
+Dark Blur: #312f77
+Yellow: #f19031
+Purple: #7a4eab

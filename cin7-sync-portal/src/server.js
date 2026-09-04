@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -10,6 +10,7 @@ const authRoutes = require('./routes/authRoutes');
 const cin7Routes = require('./routes/cin7Routes');
 const syncRoutes = require('./routes/syncRoutes');
 const editorRoutes = require('./routes/editorRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -46,6 +47,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cin7', cin7Routes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/editor', editorRoutes);
+app.use('/api/reports', reportRoutes);
 
 // 404 handler for undefined API routes (prevents fallback to SPA index.html for API requests)
 app.all('/api/*', (req, res) => {
@@ -71,8 +73,21 @@ app.use((err, req, res, next) => {
 
 // Start Server
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🚀 VNC Cin7 SaaS Reporting Portal Server running on http://localhost:${PORT}`);
+  const os = require('os');
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🚀 VNC Cin7 SaaS Reporting Portal Server running:`);
+    console.log(`  > Local:   http://localhost:${PORT}`);
+    
+    // Find network IP
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const net of interfaces[name]) {
+        if (net.family === 'IPv4' && !net.internal) {
+          console.log(`  > Network: http://${net.address}:${PORT}`);
+        }
+      }
+    }
+    console.log('');
   });
 }
 

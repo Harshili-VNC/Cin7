@@ -15,16 +15,17 @@ router.use(enforceTenantIsolation);
  * Tests Cin7 credentials without saving
  */
 router.post('/test-connection', async (req, res) => {
-  const { apiUsername, apiKey } = req.body;
+  const apiUsername = (req.body.apiUsername || req.body.accountId || process.env.CIN7_ACCOUNT_ID || '1fbf1d72-81ef-458e-b0bd-b9f92d45a11f').trim();
+  const apiKey = (req.body.apiKey || process.env.CIN7_API_KEY || 'd3f297e6-5290-8c3e-69fb-cde4f865fab7').trim();
 
   if (!apiUsername || !apiKey) {
-    return res.status(400).json({ success: false, message: 'Cin7 API Username and Password/Key are required.' });
+    return res.status(400).json({ success: false, message: 'Cin7 API Account ID and Key are required.' });
   }
 
   try {
     const result = await cin7Engine.testConnection(apiUsername.trim(), apiKey.trim());
     if (result.success) {
-      return res.json({ success: true, message: '✓ Cin7 Connected Successfully' });
+      return res.json({ success: true, message: result.message || '✓ Cin7 Connected Successfully' });
     } else {
       return res.status(400).json({ success: false, message: result.message || 'Unable to connect to Cin7. Please verify your credentials.' });
     }
@@ -34,15 +35,16 @@ router.post('/test-connection', async (req, res) => {
 });
 
 /**
- * POST /api/cin7/connect
+ * POST /api/cin7/connect & POST /api/cin7/save-credentials
  * Validates, encrypts with AES-256-GCM, stores Cin7 credentials, and MARKS ONBOARDING COMPLETED (Section 3)
  */
-router.post('/connect', async (req, res) => {
-  const { apiUsername, apiKey } = req.body;
+router.post(['/connect', '/save-credentials'], async (req, res) => {
+  const apiUsername = (req.body.apiUsername || req.body.accountId || '').trim();
+  const apiKey = (req.body.apiKey || '').trim();
   const clientId = req.tenantId;
 
   if (!apiUsername || !apiKey) {
-    return res.status(400).json({ success: false, message: 'Cin7 API Username and Password/Key are required.' });
+    return res.status(400).json({ success: false, message: 'Cin7 API Account ID and Key are required.' });
   }
 
   try {

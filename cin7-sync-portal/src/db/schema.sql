@@ -1,4 +1,4 @@
-﻿-- VNC Cin7 Sync Engine Database Schema
+-- VNC Cin7 Sync Engine Database Schema
 -- Production Engine: PostgreSQL compatible
 
 CREATE TABLE IF NOT EXISTS clients (
@@ -82,6 +82,20 @@ CREATE TABLE IF NOT EXISTS sync_logs (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS report_snapshots (
+    id VARCHAR(64) PRIMARY KEY,
+    client_id VARCHAR(64) NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    report_type VARCHAR(50) NOT NULL,
+    report_name VARCHAR(255) NOT NULL,
+    period_label VARCHAR(100),
+    record_count INT DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'SUCCESS',
+    sync_run_id VARCHAR(64),
+    file_path TEXT,
+    totals_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_client_id ON users(client_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_cin7_client_id ON cin7_connections(client_id);
@@ -89,3 +103,5 @@ CREATE INDEX IF NOT EXISTS idx_client_workbooks_client_id ON client_workbooks(cl
 CREATE INDEX IF NOT EXISTS idx_sync_runs_client_id ON sync_runs(client_id);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_created_at ON sync_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_logs_run_id ON sync_logs(sync_run_id);
+CREATE INDEX IF NOT EXISTS idx_report_snapshots_client_id ON report_snapshots(client_id);
+CREATE INDEX IF NOT EXISTS idx_report_snapshots_created_at ON report_snapshots(created_at);

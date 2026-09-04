@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
@@ -237,6 +237,28 @@ router.post('/save/:token', express.raw({ type: '*/*', limit: '100mb' }), async 
   } catch (err) {
     console.error('[DIRECT SAVE ERROR]', err.message);
     res.status(500).json({ success: false, error: 'Failed to save workbook to server.' });
+  }
+});
+
+/**
+ * GET /api/editor/download
+ * Downloads the client's reporting Excel workbook as an attachment.
+ */
+router.get('/download', requireAuth, enforceTenantIsolation, async (req, res) => {
+  const clientId = req.tenantId;
+
+  try {
+    clientStorageService.ensureClientWorkbookExists(clientId);
+    const targetFilePath = clientStorageService.getClientCurrentWorkbookPath(clientId);
+
+    if (!fs.existsSync(targetFilePath)) {
+      return res.status(404).json({ error: 'Workbook file not found on server.' });
+    }
+
+    res.download(targetFilePath, 'Controller_Reporting_Master_Template.xlsx');
+  } catch (err) {
+    console.error('[DOWNLOAD ERROR]', err.message);
+    res.status(500).json({ error: 'Failed to download workbook file.' });
   }
 });
 

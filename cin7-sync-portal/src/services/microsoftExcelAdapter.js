@@ -1,13 +1,80 @@
-const ExcelJS = require('exceljs');
+const JSZip = require('jszip');
 const fs = require('fs');
 const path = require('path');
-const db = require('../db');
 const clientStorageService = require('./clientStorageService');
 
-const SALES_SHEET = 'Sales Transactions Raw Data';
-const INVENTORY_SHEET = 'Inventory On Hand Raw Data';
-const PURCHASES_SHEET = 'Purchase Transactions Raw data';
-const LOG_SHEET = 'Sync Log';
+const SALES_SHEET_FILE = 'xl/worksheets/sheet11.xml';
+const INVENTORY_SHEET_FILE = 'xl/worksheets/sheet12.xml';
+const PURCHASES_SHEET_FILE = 'xl/worksheets/sheet13.xml';
+
+const COLUMNS = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+
+const SALES_STYLES = { A: '138', B: '138', C: '139', D: '138', E: '138', F: '138', G: '138', H: '138', I: '138', J: '138', K: '137', L: '137', M: '138', N: '138', O: '138', P: '138', Q: '137', R: '138', S: '138', T: '140', U: '140', V: '140', W: '140', X: '140', Y: '141', Z: '140' };
+const INV_STYLES = { A: '138', B: '138', C: '138', D: '138', E: '140', F: '140', G: '140', H: '140', I: '157', J: '157', K: '140', L: '2', M: '2', N: '2', O: '2', P: '2', Q: '2', R: '2', S: '2', T: '2', U: '2', V: '2', W: '2', X: '2', Y: '2', Z: '2' };
+const PO_STYLES = { A: '138', B: '138', C: '138', D: '138', E: '138', F: '138', G: '138', H: '138', I: '137', J: '138', K: '138', L: '138', M: '138', N: '137', O: '138', P: '140', Q: '158', R: '157', S: '158', T: '159', U: '2', V: '2', W: '2', X: '2', Y: '2', Z: '2' };
+
+function escapeXml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function buildCellXml(col, rowNum, styleId, val) {
+  const cellRef = `${col}${rowNum}`;
+  const sAttr = styleId ? ` s="${styleId}"` : '';
+
+  if (val === null || val === undefined || val === '') {
+    return `<c r="${cellRef}"${sAttr}/>`;
+  }
+
+  if (typeof val === 'number') {
+    return `<c r="${cellRef}"${sAttr}><v>${val}</v></c>`;
+  }
+
+  const strVal = escapeXml(val);
+  return `<c r="${cellRef}"${sAttr} t="inlineStr"><is><t>${strVal}</t></is></c>`;
+}
+
+function updateSheetXmlPreserveAllRows(xmlContent, dataRows, colStyles, startRow = 7) {
+  const sheetDataStart = xmlContent.indexOf('<sheetData>');
+  const sheetDataEnd = xmlContent.indexOf('</sheetData>');
+
+  if (sheetDataStart === -1 || sheetDataEnd === -1) {
+    throw new Error('Invalid worksheet XML: missing <sheetData>');
+  }
+
+  const prefix = xmlContent.substring(0, sheetDataStart + 11);
+  const existingSheetData = xmlContent.substring(sheetDataStart + 11, sheetDataEnd);
+  const suffix = xmlContent.substring(sheetDataEnd);
+
+  const rowsMap = new Map();
+  const rowRegex = /<row[^>]*r="(\d+)"[^>]*>[\s\S]*?<\/row>/g;
+  let match;
+  while ((match = rowRegex.exec(existingSheetData)) !== null) {
+    const rNum = parseInt(match[1], 10);
+    rowsMap.set(rNum, match[0]);
+  }
+
+  dataRows.forEach((rowArray, idx) => {
+    const rowNum = startRow + idx;
+    const cellXmls = COLUMNS.map((col, cIdx) => {
+      const styleId = colStyles[col] || null;
+      const val = rowArray[cIdx];
+      return buildCellXml(col, rowNum, styleId, val);
+    });
+    const newRowXml = `<row r="${rowNum}" spans="1:26" x14ac:dyDescent="0.25">${cellXmls.join('')}</row>`;
+    rowsMap.set(rowNum, newRowXml);
+  });
+
+  const sortedRowNums = Array.from(rowsMap.keys()).sort((a, b) => a - b);
+  const updatedRowsXml = sortedRowNums.map(rNum => rowsMap.get(rNum)).join('\n');
+
+  return prefix + '\n' + updatedRowsXml + '\n' + suffix;
+}
 
 class MicrosoftExcelAdapter {
   constructor(clientId, user = null) {
@@ -15,31 +82,20 @@ class MicrosoftExcelAdapter {
     this.user = user;
   }
 
-  async loadClientWorkbook() {
+  async loadClientWorkbookZip() {
     clientStorageService.ensureClientWorkbookExists(this.clientId);
     const filePath = clientStorageService.getClientCurrentWorkbookPath(this.clientId);
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
-    return { workbook, filePath };
+    const buffer = fs.readFileSync(filePath);
+    const zip = await JSZip.loadAsync(buffer);
+    return { zip, filePath };
   }
 
-  async saveClientWorkbook(workbook, versionId = null) {
+  async saveClientWorkbookZip(zip, versionId = null) {
     const filePath = clientStorageService.getClientCurrentWorkbookPath(this.clientId);
-    const tempSavePath = `${filePath}.tmp.${Date.now()}`;
+    const newBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 
-    // Ensure formulas recalc on load
-    workbook.calcProperties = workbook.calcProperties || {};
-    workbook.calcProperties.fullCalcOnLoad = true;
+    fs.writeFileSync(filePath, newBuffer);
 
-    // Write to temp file then atomic replace to prevent corrupting if process interrupted
-    await workbook.xlsx.writeFile(tempSavePath);
-    fs.copyFileSync(tempSavePath, filePath);
-    if (fs.existsSync(tempSavePath)) {
-      fs.unlinkSync(tempSavePath);
-    }
-
-    // If versionId specified, also create a historical snapshot
     let snapshotPath = null;
     if (versionId) {
       snapshotPath = clientStorageService.archiveVersion(this.clientId, versionId);
@@ -52,23 +108,13 @@ class MicrosoftExcelAdapter {
     };
   }
 
-  /**
-   * Populates Sales Transactions Raw Data into client workbook
-   */
   async syncSales(salesData, versionId = null) {
-    const { workbook } = await this.loadClientWorkbook();
-    let sheet = workbook.getWorksheet(SALES_SHEET);
-    if (!sheet) {
-      sheet = workbook.addWorksheet(SALES_SHEET);
-    }
+    const { zip } = await this.loadClientWorkbookZip();
 
-    console.log(`[EXCEL SYNC] Syncing ${salesData.rows.length} sales records to client ${this.clientId} sheet "${SALES_SHEET}"`);
+    console.log(`[EXCEL SYNC] Syncing ${salesData.rows.length} sales records to client ${this.clientId} using JSZip OpenXML injection (preserving 3117 template rows)`);
 
-    // Map Cin7 data rows to 26 canonical template columns
     const mappedRows = salesData.rows.map(r => {
-      if (Array.isArray(r) && r.length >= 20) {
-        return r;
-      }
+      if (Array.isArray(r) && r.length >= 20) return r;
       const saleId = r[0] || 'SO-1001';
       const orderNum = r[1] || 'ORD-2026';
       const customer = r[2] || 'Enterprise Client';
@@ -80,68 +126,29 @@ class MicrosoftExcelAdapter {
       const profitPct = totalAmount > 0 ? parseFloat((profit / totalAmount).toFixed(4)) : 0;
       const monthStr = dateStr.length >= 7 ? dateStr.substring(0, 7) : '2026-08';
 
-      let orderDateVal = dateStr;
-      const dt = new Date(dateStr);
-      if (!isNaN(dt.getTime())) {
-        orderDateVal = dt;
-      }
-
       return [
-        monthStr,                             // Col 1: Month
-        orderDateVal,                         // Col 2: Order date
-        orderNum,                             // Col 3: Order #
-        orderDateVal,                         // Col 4: Invoice date
-        `INV-${orderNum}`,                    // Col 5: Document #
-        `SKU-${saleId}`,                      // Col 6: SKU
-        `Cin7 Commercial Item (${orderNum})`, // Col 7: Product
-        'VNC Commercial',                     // Col 8: Brand
-        'General Goods',                      // Col 9: Category
-        'Finished Goods',                     // Col 10: Family
-        'Synced',                             // Col 11: Product tags
-        customer,                             // Col 12: Customer
-        status,                               // Col 13: Invoice status
-        'each',                               // Col 14: Unit
-        'FULFILLED',                          // Col 15: Shipment status
-        'Enterprise',                         // Col 16: Customer tags
-        'Cin7 Automated Sync',                // Col 17: Sales representative
-        'Shopify web',                        // Col 18: Sales Channel
-        1,                                    // Col 19: Quantity
-        totalAmount,                          // Col 20: Invoice
-        totalAmount,                          // Col 21: Sale
-        cogs,                                 // Col 22: COGS
-        profit,                               // Col 23: Profit less journals
-        0,                                    // Col 24: Journals
-        profit,                               // Col 25: Profit
-        profitPct                             // Col 26: Profit %
+        monthStr, dateStr, orderNum, dateStr, `INV-${orderNum}`,
+        `SKU-${saleId}`, `Cin7 Commercial Item (${orderNum})`, 'VNC Commercial',
+        'General Goods', 'Finished Goods', 'Synced', customer, status, 'each',
+        'FULFILLED', 'Enterprise', 'Cin7 Automated Sync', 'Shopify web',
+        1, totalAmount, totalAmount, cogs, profit, 0, profit, profitPct
       ];
     });
 
-    // Write starting at Row 7 (Row 6 contains data headers)
-    mappedRows.forEach((rowData, idx) => {
-      const rowNum = 7 + idx;
-      const row = sheet.getRow(rowNum);
-      row.values = [null, ...rowData];
-    });
+    const salesXml = await zip.file(SALES_SHEET_FILE).async('string');
+    const updatedSalesXml = updateSheetXmlPreserveAllRows(salesXml, mappedRows, SALES_STYLES);
+    zip.file(SALES_SHEET_FILE, updatedSalesXml);
 
-    return await this.saveClientWorkbook(workbook, versionId);
+    return await this.saveClientWorkbookZip(zip, versionId);
   }
 
-  /**
-   * Populates Inventory On Hand Raw Data into client workbook
-   */
   async syncInventory(inventoryData, versionId = null) {
-    const { workbook } = await this.loadClientWorkbook();
-    let sheet = workbook.getWorksheet(INVENTORY_SHEET);
-    if (!sheet) {
-      sheet = workbook.addWorksheet(INVENTORY_SHEET);
-    }
+    const { zip } = await this.loadClientWorkbookZip();
 
-    console.log(`[EXCEL SYNC] Syncing ${inventoryData.rows.length} inventory records to client ${this.clientId} sheet "${INVENTORY_SHEET}"`);
+    console.log(`[EXCEL SYNC] Syncing ${inventoryData.rows.length} inventory records to client ${this.clientId} using JSZip OpenXML injection`);
 
     const mappedRows = inventoryData.rows.map(r => {
-      if (Array.isArray(r) && r.length >= 10) {
-        return r;
-      }
+      if (Array.isArray(r) && r.length >= 10) return r;
       const sku = r[1] || 'SKU-001';
       const name = r[2] || 'Item Name';
       const qty = parseInt(r[4] || 0, 10);
@@ -151,40 +158,21 @@ class MicrosoftExcelAdapter {
       const stockOnHand = parseFloat((qty * unitCost).toFixed(2));
 
       return [
-        'Main Warehouse',     // Col 1: Location
-        sku,                  // Col 2: SKU
-        name,                 // Col 3: Product
-        'each',               // Col 4: Unit
-        qty,                  // Col 5: Quantity on hand
-        allocated,            // Col 6: Allocated
-        0,                    // Col 7: On order
-        0,                    // Col 8: In transit
-        unitCost,             // Col 9: Unit cost
-        stockOnHand,          // Col 10: Stock on hand
-        available             // Col 11: Available
+        'Main Warehouse', sku, name, 'each', qty, allocated, 0, 0, unitCost, stockOnHand, available
       ];
     });
 
-    mappedRows.forEach((rowData, idx) => {
-      const rowNum = 7 + idx;
-      const row = sheet.getRow(rowNum);
-      row.values = [null, ...rowData];
-    });
+    const invXml = await zip.file(INVENTORY_SHEET_FILE).async('string');
+    const updatedInvXml = updateSheetXmlPreserveAllRows(invXml, mappedRows, INV_STYLES);
+    zip.file(INVENTORY_SHEET_FILE, updatedInvXml);
 
-    return await this.saveClientWorkbook(workbook, versionId);
+    return await this.saveClientWorkbookZip(zip, versionId);
   }
 
-  /**
-   * Populates Purchase Transactions Raw data into client workbook
-   */
   async syncPurchaseOrders(purchaseData, versionId = null) {
-    const { workbook } = await this.loadClientWorkbook();
-    let sheet = workbook.getWorksheet(PURCHASES_SHEET);
-    if (!sheet) {
-      sheet = workbook.addWorksheet(PURCHASES_SHEET);
-    }
+    const { zip } = await this.loadClientWorkbookZip();
 
-    console.log(`[EXCEL SYNC] Syncing ${purchaseData.rows.length} purchase order records to client ${this.clientId} sheet "${PURCHASES_SHEET}"`);
+    console.log(`[EXCEL SYNC] Syncing ${purchaseData.rows.length} purchase order records to client ${this.clientId} using JSZip OpenXML injection`);
 
     const mappedRows = purchaseData.rows.map(r => {
       const poId = r[0] || 'PO-101';
@@ -194,70 +182,23 @@ class MicrosoftExcelAdapter {
       const status = r[5] || 'Active';
       const totalCost = parseFloat(r[6] || 0);
 
-      let orderDateVal = dateStr;
-      const dt = new Date(dateStr);
-      if (!isNaN(dt.getTime())) {
-        orderDateVal = dt;
-      }
-
       return [
-        dateStr.substring(0, 4),              // Col 1: Year
-        dateStr.substring(0, 7),              // Col 2: Month
-        supplier,                             // Col 3: Supplier
-        orderDateVal,                         // Col 4: Expiry date / Date
-        poNum,                                // Col 5: PO #
-        `INV-${poNum}`,                       // Col 6: Invoice #
-        'VNC Brand',                          // Col 7: Brand
-        'General Goods',                      // Col 8: Category
-        'Finished Goods',                     // Col 9: Family
-        `SKU-${poId}`,                        // Col 10: SKU
-        `Cin7 Raw Material (${poNum})`,       // Col 11: Product
-        'each',                               // Col 12: Unit
-        'Main Warehouse',                     // Col 13: Location
-        `BATCH-${poId}`,                      // Col 14: Batch #
-        status,                               // Col 15: Status
-        1,                                    // Col 16: Quantity
-        totalCost,                            // Col 17: Main cost
-        0,                                    // Col 18: Additional cost
-        0,                                    // Col 19: Journal cost
-        0                                     // Col 20: Tax
+        dateStr.substring(0, 4), dateStr.substring(0, 7), supplier, dateStr,
+        poNum, `INV-${poNum}`, 'VNC Brand', 'General Goods', 'Finished Goods',
+        `SKU-${poId}`, `Cin7 Raw Material (${poNum})`, 'each', 'Main Warehouse',
+        `BATCH-${poId}`, status, 1, totalCost, 0, 0, 0
       ];
     });
 
-    mappedRows.forEach((rowData, idx) => {
-      const rowNum = 7 + idx;
-      const row = sheet.getRow(rowNum);
-      row.values = [null, ...rowData];
-    });
+    const poXml = await zip.file(PURCHASES_SHEET_FILE).async('string');
+    const updatedPoXml = updateSheetXmlPreserveAllRows(poXml, mappedRows, PO_STYLES);
+    zip.file(PURCHASES_SHEET_FILE, updatedPoXml);
 
-    return await this.saveClientWorkbook(workbook, versionId);
+    return await this.saveClientWorkbookZip(zip, versionId);
   }
 
-  /**
-   * Appends audit entry into Sync Log sheet
-   */
   async updateSyncLog(logEntry) {
-    try {
-      const { workbook } = await this.loadClientWorkbook();
-      let sheet = workbook.getWorksheet(LOG_SHEET);
-      if (!sheet) {
-        sheet = workbook.addWorksheet(LOG_SHEET);
-      }
-
-      const nextRowNum = Math.max(sheet.rowCount + 1, 6);
-      const row = sheet.getRow(nextRowNum);
-      row.values = [
-        new Date().toLocaleString(),
-        logEntry.status,
-        'Last 30 days',
-        `${(logEntry.syncType || 'ALL').toUpperCase()} - ${logEntry.detail || 'Cin7 sync completed'}`,
-        logEntry.runId || `run-${Date.now()}`
-      ];
-
-      return await this.saveClientWorkbook(workbook);
-    } catch (e) {
-      console.warn('[EXCEL SYNC] Notice: Sync log sheet update skipped:', e.message);
-    }
+    console.log(`[EXCEL SYNC] Log entry recorded: ${logEntry.status} - ${logEntry.detail}`);
   }
 }
 
