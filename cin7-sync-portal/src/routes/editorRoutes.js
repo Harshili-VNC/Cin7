@@ -241,7 +241,7 @@ router.post('/save/:token', express.raw({ type: '*/*', limit: '100mb' }), async 
 });
 
 /**
- * GET /api/editor/download
+ * GET /api/editor/download & GET /api/destination/download
  * Downloads the client's reporting Excel workbook as an attachment.
  */
 router.get('/download', requireAuth, enforceTenantIsolation, async (req, res) => {
@@ -255,10 +255,52 @@ router.get('/download', requireAuth, enforceTenantIsolation, async (req, res) =>
       return res.status(404).json({ error: 'Workbook file not found on server.' });
     }
 
-    res.download(targetFilePath, 'Controller_Reporting_Master_Template.xlsx');
+    // Build a meaningful dynamic filename: {CompanyName}_Controller_Reporting_{YYYY-MM-DD}.xlsx
+    let downloadFileName = 'Controller_Reporting_Master_Template.xlsx';
+    try {
+      const clientResult = await db.query('SELECT company_name FROM clients WHERE id = $1', [clientId]);
+      if (clientResult && clientResult.rows && clientResult.rows.length > 0) {
+        const rawCompany = clientResult.rows[0].company_name || '';
+        // Sanitize: replace spaces with underscores, strip unsafe characters
+        const safeCompany = rawCompany
+          .trim()
+          .replace(/\s+/g, '_')
+          .replace(/[^a-zA-Z0-9_-]/g, '');
+        const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        if (safeCompany) {
+          downloadFileName = `${safeCompany}_Controller_Reporting_${dateStr}.xlsx`;
+        }
+      }
+    } catch (nameErr) {
+      console.warn('[DOWNLOAD] Could not resolve company name for filename, using default:', nameErr.message);
+    }
+
+    res.download(targetFilePath, downloadFileName);
   } catch (err) {
     console.error('[DOWNLOAD ERROR]', err.message);
     res.status(500).json({ error: 'Failed to download workbook file.' });
+  }
+});
+
+/**
+ * GET /api/destination/workbook metadata
+ */
+router.get(['/workbook', '/info'], requireAuth, enforceTenantIsolation, async (req, res) => {
+  const clientId = req.tenantId;
+  try {
+    clientStorageService.ensureClientWorkbookExists(clientId);
+    const destFile = await db.getOne("SELECT * FROM destination_files WHERE client_id = ? ORDER BY created_at DESC", [clientId]);
+    res.json({
+      success: true,
+      file: {
+        id: destFile?.file_id || 'master-financial-model',
+        name: 'Controller Reporting Master Template',
+        webUrl: destFile?.file_url || 'https://docs.google.com/spreadsheets/d/1Qnx6RdCgI7krHtZru10J6r11ZpIkubCSR1jzUbs5G9Q/edit',
+        provider: 'google'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

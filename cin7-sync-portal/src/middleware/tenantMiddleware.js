@@ -31,6 +31,7 @@ function enforceTenantIsolation(req, res, next) {
   try {
     const validatedClientId = clientStorageService.validateClientId(rawClientId);
     req.tenantId = validatedClientId;
+    req.organizationId = validatedClientId;
     next();
   } catch (err) {
     return res.status(400).json({

@@ -11,9 +11,15 @@ const cin7Routes = require('./routes/cin7Routes');
 const syncRoutes = require('./routes/syncRoutes');
 const editorRoutes = require('./routes/editorRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const organizationRoutes = require('./routes/organizationRoutes');
+const teamRoutes = require('./routes/teamRoutes');
+const integrationRoutes = require('./routes/integrationRoutes');
+const settingRoutes = require('./routes/settingRoutes');
+const billingRoutes = require('./routes/billingRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 2005;
 
 // Security & Request Parsing Middleware
 app.use(cors({ origin: true, credentials: true }));
@@ -44,10 +50,18 @@ app.get('/api/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/organization', organizationRoutes);
+app.use('/api/team', teamRoutes);
+app.use('/api/integrations', integrationRoutes);
 app.use('/api/cin7', cin7Routes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/editor', editorRoutes);
+app.use('/api/destination', editorRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/settings', settingRoutes);
+app.use('/api', settingRoutes);
 
 // 404 handler for undefined API routes (prevents fallback to SPA index.html for API requests)
 app.all('/api/*', (req, res) => {

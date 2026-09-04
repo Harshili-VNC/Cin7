@@ -197,19 +197,19 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     }
   }
 
-  async verifyDataWritten(spreadsheetId) {
+  async verifyDataWritten(spreadsheetId, expectedCounts = {}) {
     const { sheets } = await this.getGoogleClients();
     const salesRead = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${SALES_SHEET}'!A7:F8`
+      range: `'${SALES_SHEET}'!A7:G9`
     });
     const invRead = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${INVENTORY_SHEET}'!A7:E8`
+      range: `'${INVENTORY_SHEET}'!A7:E9`
     });
     const poRead = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${PURCHASES_SHEET}'!A7:E8`
+      range: `'${PURCHASES_SHEET}'!A7:F9`
     });
 
     const salesRows = salesRead.data.values || [];
@@ -217,12 +217,18 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     const poRows = poRead.data.values || [];
 
     console.log(`[VERIFY READ-BACK] Spreadsheet ${spreadsheetId}:`);
-    console.log(`- Sales data: ${salesRows.length > 0 ? 'PASS' : 'FAIL'} (${salesRows.length} sample rows read)`);
-    console.log(`- Inventory data: ${invRows.length > 0 ? 'PASS' : 'FAIL'} (${invRows.length} sample rows read)`);
-    console.log(`- PO data: ${poRows.length > 0 ? 'PASS' : 'FAIL'} (${poRows.length} sample rows read)`);
+    console.log(`- Sales data: ${salesRows.length > 0 ? 'PASS' : (expectedCounts.sales === 0 ? 'PASS (0 expected)' : 'FAIL')} (${salesRows.length} sample rows read)`);
+    console.log(`- Inventory data: ${invRows.length > 0 ? 'PASS' : (expectedCounts.inventory === 0 ? 'PASS (0 expected)' : 'FAIL')} (${invRows.length} sample rows read)`);
+    console.log(`- PO data: ${poRows.length > 0 ? 'PASS' : (expectedCounts.purchase === 0 ? 'PASS (0 expected)' : 'FAIL')} (${poRows.length} sample rows read)`);
 
-    if (salesRows.length === 0 || invRows.length === 0 || poRows.length === 0) {
-      throw new Error(`Data verification failed on read-back for newly created spreadsheet ${spreadsheetId}`);
+    if (expectedCounts.sales > 0 && salesRows.length === 0) {
+      throw new Error(`Data verification failed: Sales raw data was not found on read-back for spreadsheet ${spreadsheetId}`);
+    }
+    if (expectedCounts.inventory > 0 && invRows.length === 0) {
+      throw new Error(`Data verification failed: Inventory raw data was not found on read-back for spreadsheet ${spreadsheetId}`);
+    }
+    if (expectedCounts.purchase > 0 && poRows.length === 0) {
+      throw new Error(`Data verification failed: Purchase Orders raw data was not found on read-back for spreadsheet ${spreadsheetId}`);
     }
 
     return { salesRows, invRows, poRows };

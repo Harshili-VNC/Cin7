@@ -5,11 +5,14 @@ CREATE TABLE IF NOT EXISTS clients (
     id VARCHAR(64) PRIMARY KEY,
     company_name VARCHAR(255) NOT NULL,
     phone_number VARCHAR(50),
+    timezone VARCHAR(50) DEFAULT 'Asia/Kolkata',
     status VARCHAR(50) DEFAULT 'ACTIVE',
     subscription_status VARCHAR(50) DEFAULT 'ACTIVE', -- 'ACTIVE' or 'EXPIRED'
     current_version VARCHAR(50) DEFAULT 'v1.0',
     last_sync_at TIMESTAMP,
     sync_status VARCHAR(50) DEFAULT 'IDLE',
+    sync_schedule_json TEXT DEFAULT '{"daily_sync":true,"schedule_time":"02:00","timezone":"Asia/Kolkata","incremental_sync":true}',
+    notifications_config_json TEXT DEFAULT '{"email_daily_summary":true,"email_sync_completed":true,"email_sync_failed":true,"email_critical_errors":true,"email_weekly_reports":false,"slack_status":"Not Connected","teams_status":"Not Connected"}',
     onboarding_status VARCHAR(50) DEFAULT 'pending',
     onboarding_completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -23,12 +26,61 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) UNIQUE NOT NULL,
     phone_number VARCHAR(50),
     password_hash TEXT,
-    role VARCHAR(50) DEFAULT 'CLIENT',
+    role VARCHAR(50) DEFAULT 'ADMIN', -- 'ADMIN', 'MANAGER', 'VIEWER'
+    platform_role VARCHAR(50) DEFAULT 'USER', -- 'USER', 'SUPER_ADMIN'
+    status VARCHAR(50) DEFAULT 'ACTIVE', -- 'ACTIVE', 'DISABLED'
     auth_provider VARCHAR(50) NOT NULL DEFAULT 'local',
     onboarding_status VARCHAR(50) DEFAULT 'pending',
     onboarding_completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS plans (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    code VARCHAR(50) UNIQUE NOT NULL, -- 'STARTER', 'PROFESSIONAL', 'ENTERPRISE'
+    description TEXT,
+    price DECIMAL(10, 2) DEFAULT 0.00,
+    currency VARCHAR(10) DEFAULT 'USD',
+    billing_interval VARCHAR(20) DEFAULT 'monthly', -- 'monthly', 'annual'
+    is_active BOOLEAN DEFAULT TRUE,
+    features_json TEXT NOT NULL DEFAULT '{}',
+    limits_json TEXT NOT NULL DEFAULT '{}',
+    external_price_id VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id VARCHAR(64) PRIMARY KEY,
+    organization_id VARCHAR(64) NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    plan_id VARCHAR(64) NOT NULL REFERENCES plans(id),
+    billing_provider VARCHAR(50) DEFAULT 'neutral',
+    external_customer_id VARCHAR(255),
+    external_subscription_id VARCHAR(255),
+    external_price_id VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE', -- 'TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELED', 'EXPIRED'
+    current_period_start TIMESTAMP,
+    current_period_end TIMESTAMP,
+    trial_start TIMESTAMP,
+    trial_end TIMESTAMP,
+    cancel_at_period_end BOOLEAN DEFAULT FALSE,
+    canceled_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS billing_events (
+    id VARCHAR(64) PRIMARY KEY,
+    billing_provider VARCHAR(50) DEFAULT 'neutral',
+    external_event_id VARCHAR(255) UNIQUE,
+    event_type VARCHAR(100) NOT NULL,
+    organization_id VARCHAR(64) REFERENCES clients(id) ON DELETE CASCADE,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(50) DEFAULT 'PROCESSED',
+    payload_hash VARCHAR(64),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS client_workbooks (
@@ -96,8 +148,24 @@ CREATE TABLE IF NOT EXISTS report_snapshots (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id VARCHAR(64) PRIMARY KEY,
+    organization_id VARCHAR(64) NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    user_id VARCHAR(64),
+    action VARCHAR(100) NOT NULL,
+    resource VARCHAR(100) NOT NULL,
+    result VARCHAR(50) NOT NULL DEFAULT 'SUCCESS', -- 'SUCCESS', 'FAILURE'
+    details_json TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_client_id ON users(client_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_platform_role ON users(platform_role);
+CREATE INDEX IF NOT EXISTS idx_plans_code ON plans(code);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_org_id ON subscriptions(organization_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_billing_events_event_id ON billing_events(external_event_id);
 CREATE INDEX IF NOT EXISTS idx_cin7_client_id ON cin7_connections(client_id);
 CREATE INDEX IF NOT EXISTS idx_client_workbooks_client_id ON client_workbooks(client_id);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_client_id ON sync_runs(client_id);
@@ -105,3 +173,5 @@ CREATE INDEX IF NOT EXISTS idx_sync_runs_created_at ON sync_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_logs_run_id ON sync_logs(sync_run_id);
 CREATE INDEX IF NOT EXISTS idx_report_snapshots_client_id ON report_snapshots(client_id);
 CREATE INDEX IF NOT EXISTS idx_report_snapshots_created_at ON report_snapshots(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_id ON audit_logs(organization_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);

@@ -5,10 +5,9 @@ try { axios = require('axios'); } catch (e) {}
 try { require('dotenv').config(); } catch (e) {}
 
 const CIN7_BASE_URL = process.env.CIN7_BASE_URL || 'https://inventory.dearsystems.com/externalapi/v2';
-const CIN7_DEFAULT_ACCOUNT_ID = '1fbf1d72-81ef-458e-b0bd-b9f92d45a11f';
-const CIN7_DEFAULT_API_KEY = 'd3f297e6-5290-8c3e-69fb-cde4f865fab7';
-
 const clientStorageService = require('./clientStorageService');
+const db = require('../db');
+const cryptoService = require('./cryptoService');
 
 // In-memory cache map for instantaneous lookups: Map<`${clientId}__${saleId}`, detail>
 const memoryOrderCache = new Map();
@@ -72,16 +71,66 @@ function storeOrderDetail(clientId, saleId, detail, updatedDateUtc) {
   }
 }
 
+function invalidateOrderDetailCache(clientId) {
+  const safeClientId = getSafeClientId(clientId);
+  for (const key of memoryOrderCache.keys()) {
+    if (key.startsWith(`${safeClientId}__`)) {
+      memoryOrderCache.delete(key);
+    }
+  }
+  const clientDir = clientStorageService.getClientOrderCacheDir(safeClientId);
+  if (fs.existsSync(clientDir)) {
+    try {
+      const files = fs.readdirSync(clientDir);
+      for (const file of files) {
+        fs.unlinkSync(path.join(clientDir, file));
+      }
+    } catch (e) {}
+  }
+}
+
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+/**
+ * Resolves Cin7 credentials for the authenticated tenant from cin7_connections table.
+ * Strictly avoids using environment variables as production credentials.
+ */
 async function getClientCin7Credentials(clientId) {
-  return {
-    username: process.env.CIN7_ACCOUNT_ID || CIN7_DEFAULT_ACCOUNT_ID,
-    apiKey: process.env.CIN7_API_KEY || CIN7_DEFAULT_API_KEY
-  };
+  if (!clientId) {
+    throw new Error('Tenant identification required to retrieve Cin7 credentials.');
+  }
+
+  const safeClientId = getSafeClientId(clientId);
+
+  // 1. Fetch encrypted credentials from database
+  const conn = await db.getOne('SELECT * FROM cin7_connections WHERE client_id = ?', [safeClientId]);
+  if (conn && conn.api_username_encrypted && conn.api_key_encrypted) {
+    const username = cryptoService.decrypt(conn.api_username_encrypted);
+    const apiKey = cryptoService.decrypt(conn.api_key_encrypted);
+    if (username && apiKey) {
+      return {
+        username: username.trim(),
+        apiKey: apiKey.trim(),
+        source: 'database',
+        clientId: safeClientId
+      };
+    }
+  }
+
+  // 2. Allow fallback to process.env ONLY if explicit dev flag is enabled
+  if (process.env.CIN7_ALLOW_DEV_CREDENTIALS === 'true' && process.env.CIN7_ACCOUNT_ID && process.env.CIN7_API_KEY) {
+    return {
+      username: process.env.CIN7_ACCOUNT_ID.trim(),
+      apiKey: process.env.CIN7_API_KEY.trim(),
+      source: 'env',
+      clientId: safeClientId
+    };
+  }
+
+  throw new Error(`Cin7 credentials not configured for organization '${safeClientId}'. Please configure your Cin7 Account ID and API Application Key in Settings.`);
 }
 
 function cin7Headers(creds) {
@@ -92,17 +141,82 @@ function cin7Headers(creds) {
   };
 }
 
-async function testConnection(clientId) {
-  const creds = await getClientCin7Credentials(clientId);
+/**
+ * Classifies Cin7 API errors into structured, user-safe messages without leaking secrets.
+ */
+function classifyCin7Error(err, datasetName = 'Cin7') {
+  if (!err) return new Error(`${datasetName} error occurred.`);
+  if (err.isClassifiedCin7Error) return err;
+
+  const status = err.response?.status;
+  const rawMsg = err.response?.data?.message || err.response?.data?.Message || err.message || '';
+
+  let safeMessage = '';
+  let code = 'CIN7_API_ERROR';
+
+  if (status === 401 || status === 403 || /incorrect credentials|unauthorized|forbidden|invalid key/i.test(rawMsg)) {
+    code = 'CIN7_AUTH_FAILED';
+    safeMessage = `Cin7 synchronization failed: Authentication failed for ${datasetName}. Please verify the client's Cin7 credentials in Settings.`;
+  } else if (status === 429 || /rate limit/i.test(rawMsg)) {
+    code = 'CIN7_RATE_LIMIT';
+    safeMessage = `Cin7 synchronization failed: Rate limit reached while fetching ${datasetName}. Please wait a few moments and try again.`;
+  } else if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || /timeout/i.test(rawMsg)) {
+    code = 'CIN7_TIMEOUT';
+    safeMessage = `Cin7 synchronization failed: Connection timed out while communicating with Cin7 API for ${datasetName}.`;
+  } else if (status >= 500 && status <= 599) {
+    code = 'CIN7_SERVER_ERROR';
+    safeMessage = `Cin7 synchronization failed: Cin7 server error (${status}) encountered while fetching ${datasetName}.`;
+  } else if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') {
+    code = 'CIN7_NETWORK_ERROR';
+    safeMessage = `Cin7 synchronization failed: Network connection failure while connecting to Cin7 API for ${datasetName}.`;
+  } else {
+    safeMessage = `Cin7 synchronization failed: Unable to fetch ${datasetName} from Cin7 API. Reason: ${rawMsg.replace(/api[-_]?key[=:][^\s&]+/gi, 'api_key=***')}`;
+  }
+
+  const classified = new Error(safeMessage);
+  classified.code = code;
+  classified.status = status || 500;
+  classified.isClassifiedCin7Error = true;
+  return classified;
+}
+
+/**
+ * Tests connection to Cin7 API using either a clientId (looking up stored credentials)
+ * or explicit (accountId, apiKey) pair.
+ */
+async function testConnection(accountIdOrClientId, maybeApiKey) {
+  let username, apiKey;
+  if (maybeApiKey) {
+    username = String(accountIdOrClientId || '').trim();
+    apiKey = String(maybeApiKey || '').trim();
+  } else {
+    try {
+      const creds = await getClientCin7Credentials(accountIdOrClientId);
+      username = creds.username;
+      apiKey = creds.apiKey;
+    } catch (e) {
+      return { success: false, connected: false, error: e.message, message: e.message };
+    }
+  }
+
+  if (!username || !apiKey) {
+    return { success: false, connected: false, error: 'Cin7 Account ID and Application Key are required.', message: 'Cin7 Account ID and Application Key are required.' };
+  }
+
   try {
     const res = await axios.get(`${CIN7_BASE_URL}/saleList`, {
-      headers: cin7Headers(creds),
+      headers: {
+        'api-auth-accountid': username,
+        'api-auth-applicationkey': apiKey,
+        'Content-Type': 'application/json'
+      },
       params: { Page: 1, Limit: 1 },
-      timeout: 10000
+      timeout: 15000
     });
-    return { success: true, connected: true, total: res.data?.Total || 0 };
+    return { success: true, connected: true, total: res.data?.Total || 0, message: '✓ Cin7 Connected Successfully' };
   } catch (err) {
-    return { success: false, connected: false, error: err.message };
+    const classified = classifyCin7Error(err, 'Connection Test');
+    return { success: false, connected: false, error: classified.message, message: classified.message };
   }
 }
 
@@ -169,7 +283,6 @@ async function rateLimitedGet(url, config) {
 
 /**
  * High-speed Controlled Concurrency Worker Queue for Order Detail Enrichment.
- * Utilizes caching, worker concurrency (default 6), adaptive throttling, and 429 exponential backoff.
  */
 async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress = null) {
   const detailedSales = [];
@@ -288,7 +401,7 @@ const SALES_HEADERS = [
 ];
 
 /**
- * Fetches Sales orders with support for incremental UpdatedSince query.
+ * Fetches real Sales orders from Cin7 Core API without silent fallback to demo data.
  */
 async function fetchSales(clientId, { updatedSince = null, onProgress = null } = {}) {
   const startMs = Date.now();
@@ -311,7 +424,7 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null } =
       const res = await axios.get(`${CIN7_BASE_URL}/saleList`, {
         headers: cin7Headers(creds),
         params,
-        timeout: 20000
+        timeout: 25000
       });
 
       totalInApi = res.data?.Total || 0;
@@ -333,8 +446,7 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null } =
         console.log(`[CIN7 LIVE] No new or updated sales since ${updatedSince}.`);
         return { headers: SALES_HEADERS, rows: [], isIncrementalEmpty: true };
       }
-      console.warn('[CIN7 LIVE] No sales returned from API, using canonical fallback.');
-      return getCanonicalSalesData();
+      return { headers: SALES_HEADERS, rows: [], isIncrementalEmpty: false };
     }
 
     const enrichStartMs = Date.now();
@@ -356,14 +468,16 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null } =
 
     return { headers: SALES_HEADERS, rows, isIncrementalEmpty: false };
   } catch (err) {
-    console.warn(`[CIN7 LIVE] Sales fetch error (${err.message}). Using canonical dataset.`);
-    return getCanonicalSalesData();
+    if (process.env.CIN7_MOCK_FALLBACK === 'true') {
+      console.warn(`[CIN7 DEV MOCK] Sales fetch error (${err.message}). Using mock dataset.`);
+      return getCanonicalSalesData();
+    }
+    throw classifyCin7Error(err, 'Sales');
   }
 }
 
 /**
- * Dedicated Inventory Availability Synchronization Strategy.
- * Fetches atomic product availability and maps to clean inventory rows.
+ * Fetches real Product Availability / Inventory from Cin7 Core API without silent fallback.
  */
 async function fetchInventory(clientId) {
   const startMs = Date.now();
@@ -378,7 +492,7 @@ async function fetchInventory(clientId) {
       const res = await axios.get(`${CIN7_BASE_URL}/ref/productavailability`, {
         headers: cin7Headers(creds),
         params: { Page: page, Limit: 100 },
-        timeout: 20000
+        timeout: 25000
       });
 
       totalInApi = res.data?.Total || 0;
@@ -395,39 +509,47 @@ async function fetchInventory(clientId) {
     const duration = ((Date.now() - startMs) / 1000).toFixed(2);
     console.log(`Inventory: final total: ${allInv.length} (${duration}s)`);
 
-    if (!allInv.length) {
-      console.warn('[CIN7 LIVE] No inventory returned, using canonical fallback.');
-      return getCanonicalInventoryData();
-    }
-
     const headers = [
       'Location', 'SKU', 'Product', 'Unit', 'Quantity on hand',
       'Allocated', 'On order', 'In transit', 'Unit cost', 'Stock on hand', 'Available'
     ];
+
+    if (!allInv.length) {
+      return { headers, rows: [] };
+    }
 
     const rows = allInv.map(i => [
       i.Location || 'Main Warehouse',
       i.SKU || 'SKU-GEN',
       i.Name || 'Cin7 Item',
       'Case',
-      i.OnHand || 0,
-      i.Allocated || 0,
-      i.OnOrder || 0,
-      i.InTransit || 0,
+      toNumber(i.OnHand),
+      toNumber(i.Allocated),
+      toNumber(i.OnOrder),
+      toNumber(i.InTransit),
       18.50,
-      i.StockOnHand || i.OnHand || 0,
-      i.Available || 0
+      toNumber(i.StockOnHand || i.OnHand),
+      toNumber(i.Available)
     ]);
 
     return { headers, rows };
   } catch (err) {
-    console.warn(`[CIN7 LIVE] Inventory fetch error (${err.message}). Using canonical fallback.`);
-    return getCanonicalInventoryData();
+    if (process.env.CIN7_MOCK_FALLBACK === 'true') {
+      console.warn(`[CIN7 DEV MOCK] Inventory fetch error (${err.message}). Using mock fallback.`);
+      return getCanonicalInventoryData();
+    }
+    throw classifyCin7Error(err, 'Inventory');
   }
 }
 
+const PURCHASE_HEADERS = [
+  'Year', 'Month', 'Supplier', 'Expiry date', 'PO #', 'Invoice #',
+  'Brand', 'Category', 'Family', 'SKU', 'Product', 'Unit', 'Location',
+  'Batch #', 'Status', 'Quantity', 'Main cost', 'Additional cost', 'Journal cost', 'Tax'
+];
+
 /**
- * Fetches Purchase Orders with support for incremental UpdatedSince query.
+ * Fetches real Purchase Orders from Cin7 Core API without silent fallback.
  */
 async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
   const startMs = Date.now();
@@ -449,7 +571,7 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
       const res = await axios.get(`${CIN7_BASE_URL}/purchaseList`, {
         headers: cin7Headers(creds),
         params,
-        timeout: 20000
+        timeout: 25000
       });
 
       totalInApi = res.data?.Total || 0;
@@ -466,16 +588,15 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
     const duration = ((Date.now() - startMs) / 1000).toFixed(2);
     console.log(`Purchase Orders: final total: ${allPOs.length} (${duration}s)`);
 
+    const headers = PURCHASE_HEADERS;
+
     if (!allPOs.length) {
       if (updatedSince) {
-        console.log(`[CIN7 LIVE] No new or updated POs since ${updatedSince}.`);
-        return { headers: PURCHASE_HEADERS, rows: [], isIncrementalEmpty: true };
+        return { headers, rows: [], isIncrementalEmpty: true };
       }
-      console.warn('[CIN7 LIVE] No POs returned, using canonical fallback.');
-      return getCanonicalPurchaseOrdersData();
+      return { headers, rows: [], isIncrementalEmpty: false };
     }
 
-    const headers = PURCHASE_HEADERS;
     const rows = allPOs.map((p, idx) => {
       const d = p.OrderDate ? new Date(p.OrderDate) : new Date();
       const year = d.getFullYear() || 2026;
@@ -486,7 +607,7 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
         year,
         month,
         p.Supplier || 'Cin7 Supplier Partner',
-        p.InvoiceDueDate ? p.InvoiceDueDate.split('T')[0] : '2026-12-31',
+        p.InvoiceDueDate ? p.InvoiceDueDate.split('T')[0] : (p.OrderDate ? p.OrderDate.split('T')[0] : '2026-12-31'),
         p.OrderNumber || `PO-${2000 + idx}`,
         p.InvoiceNumber || `INV-${p.OrderNumber || idx}`,
         'Cin7',
@@ -508,21 +629,132 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
 
     return { headers, rows, isIncrementalEmpty: false };
   } catch (err) {
-    console.warn(`[CIN7 LIVE] PO fetch error (${err.message}). Using canonical fallback.`);
-    return getCanonicalPurchaseOrdersData();
+    if (process.env.CIN7_MOCK_FALLBACK === 'true') {
+      console.warn(`[CIN7 DEV MOCK] PO fetch error (${err.message}). Using mock fallback.`);
+      return getCanonicalPurchaseOrdersData();
+    }
+    throw classifyCin7Error(err, 'Purchase Orders');
   }
 }
 
-const PURCHASE_HEADERS = [
-  'Year', 'Month', 'Supplier', 'Expiry date', 'PO #', 'Invoice #',
-  'Brand', 'Category', 'Family', 'SKU', 'Product', 'Unit', 'Location',
-  'Batch #', 'Status', 'Quantity', 'Main cost', 'Additional cost', 'Journal cost', 'Tax'
-];
+// ── DATA VALIDATION FUNCTIONS ───────────────────────────────────────────────
 
-/**
- * Business Key Upsert and Merge for Sales: Order # + SKU
- * Section 2A: Never treats absence from delta as deletion; respects explicit cancellation/void signals.
- */
+function validateSalesData(dataset, options = {}) {
+  const { allowEmpty = false } = options;
+  if (!dataset) {
+    throw new Error('Sales validation failed: Dataset is missing.');
+  }
+  if (Array.isArray(dataset)) {
+    dataset = { rows: dataset, headers: [] };
+  } else if (typeof dataset !== 'object' || !Array.isArray(dataset.rows)) {
+    throw new Error('Sales validation failed: Dataset rows is not an array.');
+  }
+  if (!allowEmpty && dataset.rows.length === 0) {
+    return { valid: true, rowCount: 0, warnings: ['Sales dataset contains 0 records'] };
+  }
+
+  dataset.rows.forEach((row, idx) => {
+    if (!Array.isArray(row)) {
+      throw new Error(`Sales validation failed: Row #${idx + 1} is not an array.`);
+    }
+    if (row.length < 20) {
+      throw new Error(`Sales validation failed: Row #${idx + 1} has insufficient columns (${row.length} < 20).`);
+    }
+    const sku = String(row[5] || row[6] || '').trim();
+    if (!sku) {
+      throw new Error(`Sales validation failed: Row #${idx + 1} missing SKU/Product identifier.`);
+    }
+    const qty = Number(row[19]);
+    if (isNaN(qty)) {
+      throw new Error(`Sales validation failed: Row #${idx + 1} (${sku}) has non-numeric Quantity: '${row[19]}'.`);
+    }
+    const rev = Number(row[20]);
+    if (isNaN(rev)) {
+      throw new Error(`Sales validation failed: Row #${idx + 1} (${sku}) has non-numeric Revenue: '${row[20]}'.`);
+    }
+  });
+
+  return { valid: true, rowCount: dataset.rows.length };
+}
+
+function validateInventoryData(dataset, options = {}) {
+  const { allowEmpty = false } = options;
+  if (!dataset) {
+    throw new Error('Inventory validation failed: Dataset is missing.');
+  }
+  if (Array.isArray(dataset)) {
+    dataset = { rows: dataset, headers: [] };
+  } else if (typeof dataset !== 'object' || !Array.isArray(dataset.rows)) {
+    throw new Error('Inventory validation failed: Dataset rows is not an array.');
+  }
+  if (!allowEmpty && dataset.rows.length === 0) {
+    return { valid: true, rowCount: 0, warnings: ['Inventory dataset contains 0 records'] };
+  }
+
+  dataset.rows.forEach((row, idx) => {
+    if (!Array.isArray(row)) {
+      throw new Error(`Inventory validation failed: Row #${idx + 1} is not an array.`);
+    }
+    if (row.length < 10) {
+      throw new Error(`Inventory validation failed: Row #${idx + 1} has insufficient columns (${row.length} < 10).`);
+    }
+    const sku = String(row[1] || '').trim();
+    if (!sku) {
+      throw new Error(`Inventory validation failed: Row #${idx + 1} missing SKU identifier.`);
+    }
+    const onHand = Number(row[4]);
+    if (isNaN(onHand)) {
+      throw new Error(`Inventory validation failed: Row #${idx + 1} (${sku}) has non-numeric QuantityOnHand: '${row[4]}'.`);
+    }
+    const available = Number(row[10]);
+    if (isNaN(available)) {
+      throw new Error(`Inventory validation failed: Row #${idx + 1} (${sku}) has non-numeric Available: '${row[10]}'.`);
+    }
+  });
+
+  return { valid: true, rowCount: dataset.rows.length };
+}
+
+function validatePurchaseData(dataset, options = {}) {
+  const { allowEmpty = false } = options;
+  if (!dataset) {
+    throw new Error('Purchase validation failed: Dataset is missing.');
+  }
+  if (Array.isArray(dataset)) {
+    dataset = { rows: dataset, headers: [] };
+  } else if (typeof dataset !== 'object' || !Array.isArray(dataset.rows)) {
+    throw new Error('Purchase validation failed: Dataset rows is not an array.');
+  }
+  if (!allowEmpty && dataset.rows.length === 0) {
+    return { valid: true, rowCount: 0, warnings: ['Purchase dataset contains 0 records'] };
+  }
+
+  dataset.rows.forEach((row, idx) => {
+    if (!Array.isArray(row)) {
+      throw new Error(`Purchase validation failed: Row #${idx + 1} is not an array.`);
+    }
+    if (row.length < 15) {
+      throw new Error(`Purchase validation failed: Row #${idx + 1} has insufficient columns (${row.length} < 15).`);
+    }
+    const poNum = String(row[4] || row[5] || '').trim();
+    if (!poNum) {
+      throw new Error(`Purchase validation failed: Row #${idx + 1} missing PO/Invoice number.`);
+    }
+    const qty = Number(row[15]);
+    if (isNaN(qty)) {
+      throw new Error(`Purchase validation failed: Row #${idx + 1} (${poNum}) has non-numeric Quantity: '${row[15]}'.`);
+    }
+    const cost = Number(row[16]);
+    if (isNaN(cost)) {
+      throw new Error(`Purchase validation failed: Row #${idx + 1} (${poNum}) has non-numeric Cost: '${row[16]}'.`);
+    }
+  });
+
+  return { valid: true, rowCount: dataset.rows.length };
+}
+
+// ── DATA MERGE & UPSERT LOGIC ───────────────────────────────────────────────
+
 function mergeSalesData(existingRows = [], deltaRows = []) {
   const map = new Map();
 
@@ -537,22 +769,12 @@ function mergeSalesData(existingRows = [], deltaRows = []) {
     const orderNo = String(row[2] || row[4] || `ORD-${idx}`).trim();
     const sku = String(row[5] || row[6] || `SKU-${idx}`).trim();
     const key = `${orderNo}__${sku}`;
-
-    const status = String(row[12] || '').toUpperCase();
-    if (status === 'VOID' || status === 'CANCELLED' || status === 'DELETED') {
-      // If explicit void/cancellation signal, update status in place or handle per business rule
-      map.set(key, row);
-    } else {
-      map.set(key, row);
-    }
+    map.set(key, row);
   });
 
   return Array.from(map.values());
 }
 
-/**
- * Business Key Upsert and Merge for Purchase: PO # + SKU + Location
- */
 function mergePurchaseData(existingRows = [], deltaRows = []) {
   const map = new Map();
 
@@ -575,9 +797,6 @@ function mergePurchaseData(existingRows = [], deltaRows = []) {
   return Array.from(map.values());
 }
 
-/**
- * Business Key Deduplication for Inventory: Location + SKU
- */
 function mergeInventoryData(existingRows = [], currentRows = []) {
   const map = new Map();
 
@@ -592,32 +811,40 @@ function mergeInventoryData(existingRows = [], currentRows = []) {
 }
 
 /**
- * Rolling Window Pruning: Filters records by date window (e.g. 30d, 90d, 365d, ytd)
+ * Calculates cutoff date dynamically from current date for any standard window code.
+ */
+function getWindowCutoffDate(windowCode) {
+  if (!windowCode || windowCode === 'all' || windowCode === 'All Time' || windowCode === 'All time') {
+    return null;
+  }
+  const now = new Date();
+  const code = String(windowCode).toLowerCase().trim();
+
+  if (code.includes('7')) {
+    return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('30')) {
+    return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('90')) {
+    return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('180')) {
+    return new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('365')) {
+    return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('ytd')) {
+    return new Date(now.getFullYear(), 0, 1);
+  }
+  return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Rolling Window Pruning: Filters records dynamically by date window.
  */
 function filterSalesByWindow(rows = [], windowCode = '30d') {
-  if (!windowCode || windowCode === 'all' || windowCode === 'All Time') {
-    return rows;
-  }
-
-  const now = new Date();
-  let cutoffDate = null;
-
-  if (windowCode === '7d' || windowCode === 'Last 7 days' || windowCode === 'Last 7 Days') {
-    cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === '30d' || windowCode === 'Last 30 days' || windowCode === 'Last 30 Days') {
-    cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === '90d' || windowCode === 'Last 90 days' || windowCode === 'Last 90 Days') {
-    cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === '365d' || windowCode === 'Last 365 days' || windowCode === 'Last 365 Days') {
-    cutoffDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === 'ytd' || windowCode === 'Year to date') {
-    cutoffDate = new Date(now.getFullYear(), 0, 1);
-  }
-
+  const cutoffDate = getWindowCutoffDate(windowCode);
   if (!cutoffDate) return rows;
 
   return rows.filter(row => {
-    const dateStr = row[3]; // Order Date
+    const dateStr = row[3] || row[1];
     if (!dateStr) return true;
     const d = new Date(dateStr);
     return !isNaN(d.getTime()) ? d >= cutoffDate : true;
@@ -625,34 +852,18 @@ function filterSalesByWindow(rows = [], windowCode = '30d') {
 }
 
 function filterPurchaseByWindow(rows = [], windowCode = '30d') {
-  if (!windowCode || windowCode === 'all' || windowCode === 'All Time') {
-    return rows;
-  }
-
-  const now = new Date();
-  let cutoffDate = null;
-
-  if (windowCode === '7d' || windowCode === 'Last 7 days' || windowCode === 'Last 7 Days') {
-    cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === '30d' || windowCode === 'Last 30 days' || windowCode === 'Last 30 Days') {
-    cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === '90d' || windowCode === 'Last 90 days' || windowCode === 'Last 90 Days') {
-    cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === '365d' || windowCode === 'Last 365 days' || windowCode === 'Last 365 Days') {
-    cutoffDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-  } else if (windowCode === 'ytd' || windowCode === 'Year to date') {
-    cutoffDate = new Date(now.getFullYear(), 0, 1);
-  }
-
+  const cutoffDate = getWindowCutoffDate(windowCode);
   if (!cutoffDate) return rows;
 
   return rows.filter(row => {
-    const dateStr = row[3] || row[0]; // Expiry Date or Year
+    const dateStr = row[3];
     if (!dateStr) return true;
     const d = new Date(dateStr);
     return !isNaN(d.getTime()) ? d >= cutoffDate : true;
   });
 }
+
+// ── DEVELOPMENT / TESTING CANONICAL FALLBACKS ONLY ──────────────────────────
 
 function getCanonicalSalesData() {
   const headers = SALES_HEADERS;
@@ -683,16 +894,22 @@ function getCanonicalPurchaseOrdersData() {
 
 module.exports = {
   getClientCin7Credentials,
+  classifyCin7Error,
   testConnection,
   mapSaleLineToRow,
   fetchSales,
   fetchInventory,
   fetchPurchaseOrders,
+  validateSalesData,
+  validateInventoryData,
+  validatePurchaseData,
   getStoredOrderDetail,
   storeOrderDetail,
+  invalidateOrderDetailCache,
   mergeSalesData,
   mergePurchaseData,
   mergeInventoryData,
+  getWindowCutoffDate,
   filterSalesByWindow,
   filterPurchaseByWindow,
   getCanonicalSalesData,

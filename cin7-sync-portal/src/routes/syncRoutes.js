@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
-const { requireAuth, requireActiveSubscription } = require('../middleware/authMiddleware');
+const { requireAuth, requireActiveSubscription, requireCanSync } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
 const cin7Engine = require('../services/cin7Engine');
 const MicrosoftExcelAdapter = require('../services/microsoftExcelAdapter');
@@ -39,9 +39,24 @@ router.get(['/progress/:runId', '/progress'], (req, res) => {
 });
 
 /**
+ * Helper to update live progress for UI polling
+ */
+function setLiveProgress(runId, stage, current, total, percent, message) {
+  activeSyncProgress.set(runId, {
+    runId,
+    stage,
+    current,
+    total,
+    percent,
+    message,
+    timestamp: new Date().toISOString()
+  });
+}
+
+/**
  * POST /api/sync/sales
  */
-router.post('/sales', requireAuth, enforceTenantIsolation, requireActiveSubscription, async (req, res) => {
+router.post('/sales', requireAuth, enforceTenantIsolation, requireCanSync, requireActiveSubscription, async (req, res) => {
   const clientId = req.tenantId;
   const startTime = Date.now();
   const runId = `run-sales-${uuidv4().substring(0, 8)}`;
@@ -63,11 +78,19 @@ router.post('/sales', requireAuth, enforceTenantIsolation, requireActiveSubscrip
       [runId, clientId, req.user.id, runId]
     );
 
+    // 1. Fetch live sales
     const salesData = await cin7Engine.fetchSales(clientId);
-    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel: 'Last 30 days', dataset: salesData, syncRunId: runId });
+
+    // 2. Validate
+    cin7Engine.validateSalesData(salesData);
+
+    // 3. Write to destination
     const adapter = new MicrosoftExcelAdapter(clientId, req.user);
     await adapter.syncSales(salesData);
     await adapter.updateSyncLog({ syncType: 'sales', status: 'Success', detail: `${salesData.rows.length} sales rows synced`, runId });
+
+    // 4. Save snapshot on verified success
+    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel: 'Last 30 days', dataset: salesData, syncRunId: runId });
 
     const durationMs = Date.now() - startTime;
     await db.query(
@@ -85,20 +108,22 @@ router.post('/sales', requireAuth, enforceTenantIsolation, requireActiveSubscrip
       status: 'COMPLETED'
     });
   } catch (err) {
-    console.error('Error in Sales sync:', err.message);
+    console.error(`[SYNC ERROR] Sales sync failed for ${clientId}:`, err.message);
     const durationMs = Date.now() - startTime;
+    const safeError = err.message || 'Sales synchronization failed.';
+
     await db.query(
       `UPDATE sync_runs 
        SET status = 'FAILED', error_message = ?, duration_ms = ?, completed_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [err.message, durationMs, runId]
+      [safeError, durationMs, runId]
     );
 
     res.status(500).json({
       success: false,
       syncType: 'sales',
       status: 'FAILED',
-      errorMessage: err.message
+      errorMessage: safeError
     });
   } finally {
     lockService.releaseLock(clientId, runId);
@@ -108,7 +133,7 @@ router.post('/sales', requireAuth, enforceTenantIsolation, requireActiveSubscrip
 /**
  * POST /api/sync/inventory
  */
-router.post('/inventory', requireAuth, enforceTenantIsolation, requireActiveSubscription, async (req, res) => {
+router.post('/inventory', requireAuth, enforceTenantIsolation, requireCanSync, requireActiveSubscription, async (req, res) => {
   const clientId = req.tenantId;
   const startTime = Date.now();
   const runId = `run-inv-${uuidv4().substring(0, 8)}`;
@@ -130,11 +155,19 @@ router.post('/inventory', requireAuth, enforceTenantIsolation, requireActiveSubs
       [runId, clientId, req.user.id, runId]
     );
 
+    // 1. Fetch live inventory
     const invData = await cin7Engine.fetchInventory(clientId);
-    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current', dataset: invData, syncRunId: runId });
+
+    // 2. Validate
+    cin7Engine.validateInventoryData(invData);
+
+    // 3. Write to destination
     const adapter = new MicrosoftExcelAdapter(clientId, req.user);
     await adapter.syncInventory(invData);
     await adapter.updateSyncLog({ syncType: 'inventory', status: 'Success', detail: `${invData.rows.length} inventory rows synced`, runId });
+
+    // 4. Save snapshot on verified success
+    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current', dataset: invData, syncRunId: runId });
 
     const durationMs = Date.now() - startTime;
     await db.query(
@@ -152,20 +185,22 @@ router.post('/inventory', requireAuth, enforceTenantIsolation, requireActiveSubs
       status: 'COMPLETED'
     });
   } catch (err) {
-    console.error('Error in Inventory sync:', err.message);
+    console.error(`[SYNC ERROR] Inventory sync failed for ${clientId}:`, err.message);
     const durationMs = Date.now() - startTime;
+    const safeError = err.message || 'Inventory synchronization failed.';
+
     await db.query(
       `UPDATE sync_runs 
        SET status = 'FAILED', error_message = ?, duration_ms = ?, completed_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [err.message, durationMs, runId]
+      [safeError, durationMs, runId]
     );
 
     res.status(500).json({
       success: false,
       syncType: 'inventory',
       status: 'FAILED',
-      errorMessage: err.message
+      errorMessage: safeError
     });
   } finally {
     lockService.releaseLock(clientId, runId);
@@ -175,7 +210,7 @@ router.post('/inventory', requireAuth, enforceTenantIsolation, requireActiveSubs
 /**
  * POST /api/sync/purchase-orders
  */
-router.post('/purchase-orders', requireAuth, enforceTenantIsolation, requireActiveSubscription, async (req, res) => {
+router.post('/purchase-orders', requireAuth, enforceTenantIsolation, requireCanSync, requireActiveSubscription, async (req, res) => {
   const clientId = req.tenantId;
   const startTime = Date.now();
   const runId = `run-po-${uuidv4().substring(0, 8)}`;
@@ -197,11 +232,19 @@ router.post('/purchase-orders', requireAuth, enforceTenantIsolation, requireActi
       [runId, clientId, req.user.id, runId]
     );
 
+    // 1. Fetch live POs
     const poData = await cin7Engine.fetchPurchaseOrders(clientId);
-    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel: 'Last 30 days', dataset: poData, syncRunId: runId });
+
+    // 2. Validate
+    cin7Engine.validatePurchaseData(poData);
+
+    // 3. Write to destination
     const adapter = new MicrosoftExcelAdapter(clientId, req.user);
     await adapter.syncPurchaseOrders(poData);
     await adapter.updateSyncLog({ syncType: 'purchase_orders', status: 'Success', detail: `${poData.rows.length} PO rows synced`, runId });
+
+    // 4. Save snapshot on verified success
+    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel: 'Last 30 days', dataset: poData, syncRunId: runId });
 
     const durationMs = Date.now() - startTime;
     await db.query(
@@ -219,20 +262,22 @@ router.post('/purchase-orders', requireAuth, enforceTenantIsolation, requireActi
       status: 'COMPLETED'
     });
   } catch (err) {
-    console.error('Error in Purchase Orders sync:', err.message);
+    console.error(`[SYNC ERROR] PO sync failed for ${clientId}:`, err.message);
     const durationMs = Date.now() - startTime;
+    const safeError = err.message || 'Purchase Orders synchronization failed.';
+
     await db.query(
       `UPDATE sync_runs 
        SET status = 'FAILED', error_message = ?, duration_ms = ?, completed_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [err.message, durationMs, runId]
+      [safeError, durationMs, runId]
     );
 
     res.status(500).json({
       success: false,
       syncType: 'purchase_orders',
       status: 'FAILED',
-      errorMessage: err.message
+      errorMessage: safeError
     });
   } finally {
     lockService.releaseLock(clientId, runId);
@@ -241,9 +286,9 @@ router.post('/purchase-orders', requireAuth, enforceTenantIsolation, requireActi
 
 /**
  * POST /api/sync/all & POST /api/sync/trigger
- * Full sequential sync: Sales + Inventory + POs -> updates client's real server .xlsx -> creates next version snapshot
+ * Full sync: Sales + Inventory + POs -> Staging/Commit Strategy -> Destination Write -> Snapshot Promotion
  */
-router.post(['/all', '/trigger'], async (req, res) => {
+router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCanSync, async (req, res) => {
   const authenticatedUser = req.user || req.session?.user || null;
   const rawClientId = req.tenantId || authenticatedUser?.client_id || (process.env.NODE_ENV !== 'production' ? (req.headers['x-client-id'] || 'client-vnc-master') : null);
 
@@ -276,21 +321,16 @@ router.post(['/all', '/trigger'], async (req, res) => {
     });
   }
 
-  // Helper to update live progress for UI polling
   function updateProgress(stage, current, total, percent, message) {
-    activeSyncProgress.set(runId, {
-      runId,
-      stage,
-      current,
-      total,
-      percent,
-      message,
-      timestamp: new Date().toISOString()
-    });
+    setLiveProgress(runId, stage, current, total, percent, message);
   }
 
+  console.log(`\n======================================================================`);
+  console.log(`[SYNC START] Run: ${runId} | Tenant: ${clientId} | Window: ${dateRange} | ForceFull: ${isForceFull} | Destination: ${destination}`);
+  console.log(`======================================================================`);
+
   try {
-    updateProgress('CONNECTING', 0, 4, 10, 'Connecting to Cin7 Core API...');
+    updateProgress('CONNECTING', 0, 5, 10, 'Connecting to Cin7 Core API...');
 
     await db.query(
       `INSERT INTO sync_runs (id, client_id, user_id, run_id, sync_type, status)
@@ -298,7 +338,12 @@ router.post(['/all', '/trigger'], async (req, res) => {
       [runId, clientId, authenticatedUser?.id || 'system', runId, destination === 'google_sheets' ? 'google_sheets' : 'all']
     );
 
-    // 1. Evaluate Incremental Sync Safety
+    // 1. Resolve & verify credentials exist for tenant
+    console.log(`[CIN7 CREDENTIALS] Loading tenant Cin7 credentials for '${clientId}'...`);
+    const creds = await cin7Engine.getClientCin7Credentials(clientId);
+    console.log(`[CIN7 CREDENTIALS] Credentials loaded successfully from ${creds.source} (Account ID: ${creds.username.substring(0, 8)}...)`);
+
+    // 2. Evaluate Incremental Sync Safety
     const salesSafety = snapshotService.isIncrementalSafe(clientId, 'sales', dateRange);
     const poSafety = snapshotService.isIncrementalSafe(clientId, 'purchase', dateRange);
 
@@ -308,14 +353,13 @@ router.post(['/all', '/trigger'], async (req, res) => {
     const salesUpdatedSince = useIncrementalSales ? salesSafety.updatedSince : null;
     const poUpdatedSince = useIncrementalPO ? poSafety.updatedSince : null;
 
-    console.log(`\n[CIN7 SYNC START] Client: ${clientId}, Window: ${dateRange}, ForceFull: ${isForceFull}`);
-    console.log(`  Sales Sync Strategy: ${useIncrementalSales ? `INCREMENTAL (${salesSafety.reason})` : `FULL FETCH (${salesSafety.reason})`}`);
-    console.log(`  Purchase Sync Strategy: ${useIncrementalPO ? `INCREMENTAL (${poSafety.reason})` : `FULL FETCH (${poSafety.reason})`}`);
-    console.log(`  Inventory Sync Strategy: CURRENT AVAILABILITY SNAPSHOT\n`);
+    console.log(`  Sales Strategy: ${useIncrementalSales ? `INCREMENTAL (${salesSafety.reason})` : `FULL FETCH (${salesSafety.reason})`}`);
+    console.log(`  Purchase Strategy: ${useIncrementalPO ? `INCREMENTAL (${poSafety.reason})` : `FULL FETCH (${poSafety.reason})`}`);
+    console.log(`  Inventory Strategy: CURRENT AVAILABILITY SNAPSHOT\n`);
 
-    updateProgress('FETCHING', 1, 4, 25, useIncrementalSales ? 'Checking for new/modified records since last sync...' : 'Extracting Sales, Inventory & Purchases...');
+    updateProgress('FETCHING', 1, 5, 25, useIncrementalSales ? 'Checking for new/modified records since last sync...' : 'Extracting Sales, Inventory & Purchases...');
 
-    // 2. Fetch live Cin7 datasets with concurrency & caching
+    // 3. Fetch real Cin7 datasets with concurrency & caching
     const [fetchedSales, invData, fetchedPO] = await Promise.all([
       cin7Engine.fetchSales(clientId, {
         updatedSince: salesUpdatedSince,
@@ -327,9 +371,9 @@ router.post(['/all', '/trigger'], async (req, res) => {
       cin7Engine.fetchPurchaseOrders(clientId, { updatedSince: poUpdatedSince })
     ]);
 
-    updateProgress('VALIDATING', 2, 4, 65, 'Upserting delta records & validating schemas...');
+    updateProgress('VALIDATING', 2, 5, 60, 'Validating schemas and filtering rolling window...');
 
-    // 3. Upsert / Merge & Rolling Window Filter for Sales
+    // 4. Upsert / Merge & Rolling Window Filter for Sales
     let finalSalesRows = [];
     if (useIncrementalSales) {
       const existingSales = snapshotService.getCurrentReportRows(clientId, 'sales');
@@ -341,7 +385,7 @@ router.post(['/all', '/trigger'], async (req, res) => {
     }
     const salesData = { headers: fetchedSales.headers, rows: finalSalesRows };
 
-    // 4. Upsert / Merge & Rolling Window Filter for Purchase
+    // 5. Upsert / Merge & Rolling Window Filter for Purchase
     let finalPORows = [];
     if (useIncrementalPO) {
       const existingPO = snapshotService.getCurrentReportRows(clientId, 'purchase');
@@ -353,40 +397,38 @@ router.post(['/all', '/trigger'], async (req, res) => {
     }
     const poData = { headers: fetchedPO.headers, rows: finalPORows };
 
-    // 5. Format Period Label
-    const periodLabel = (dateRange === '365d' || dateRange === 'Last 365 days' || dateRange === 'Last 365 Days') ? 'Last 365 Days'
-      : (dateRange === '90d' || dateRange === 'Last 90 days' || dateRange === 'Last 90 Days' ? 'Last 90 Days'
-      : (dateRange === '7d' || dateRange === 'Last 7 days' || dateRange === 'Last 7 Days' ? 'Last 7 Days'
-      : (dateRange === 'ytd' || dateRange === 'Year to date' ? 'Year to date' : 'Last 30 Days')));
-
-    // 6. Atomic save of current active reports & immutable snapshots
-    await Promise.all([
-      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel, dataset: salesData, syncRunId: runId }),
-      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current Stock', dataset: invData, syncRunId: runId }),
-      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel, dataset: poData, syncRunId: runId })
-    ]);
+    // 6. Strict Data Validation across all three datasets BEFORE destination write
+    console.log('[DATA VALIDATION] Running pre-write schema and type validation...');
+    const salesVal = cin7Engine.validateSalesData(salesData, { allowEmpty: true });
+    const invVal = cin7Engine.validateInventoryData(invData, { allowEmpty: true });
+    const poVal = cin7Engine.validatePurchaseData(poData, { allowEmpty: true });
+    console.log(`  - Sales: PASS (${salesVal.rowCount} rows)`);
+    console.log(`  - Inventory: PASS (${invVal.rowCount} rows)`);
+    console.log(`  - Purchase: PASS (${poVal.rowCount} rows)\n`);
 
     const totalRecords = salesData.rows.length + invData.rows.length + poData.rows.length;
     let sheetUrl = null;
     let fileId = null;
     let nextVersion = 'v1.0';
 
-    updateProgress('POPULATING', 3, 4, 80, destination === 'google_sheets' ? 'Cloning & populating 17 Master Google Sheets tabs...' : 'Populating 17 Master Model Excel sheets...');
+    updateProgress('POPULATING', 3, 5, 75, destination === 'google_sheets' ? 'Cloning & populating Master Google Sheets raw data...' : 'Populating Master Model Excel sheets...');
 
+    // 7. Write to Destination (Google Sheets or Excel)
     if (destination === 'google_sheets') {
       const GoogleSheetsAdapter = require('../services/googleSheetsAdapter');
       const adapter = new GoogleSheetsAdapter(clientId, authenticatedUser);
 
-      // Clone master template into brand new spreadsheet
+      // Clone master template into brand-new spreadsheet
       const dest = await adapter.createGoogleSheetFromTemplate(clientEmail);
       const newSpreadsheetId = dest.file_id;
 
-      // Populate fresh data
+      // Populate raw data sheets starting at row A7
       await adapter.syncSales(salesData, clientEmail, dest);
       await adapter.syncInventory(invData, clientEmail, dest);
       await adapter.syncPurchaseOrders(poData, clientEmail, dest);
 
       // Update dynamic report formulas
+      updateProgress('CALCULATING', 4, 5, 85, 'Updating dynamic dashboard and KPI formulas...');
       await adapter.updateClonedReportFormulas(newSpreadsheetId, salesData, invData);
 
       await adapter.updateSyncLog({
@@ -396,7 +438,13 @@ router.post(['/all', '/trigger'], async (req, res) => {
         runId
       }, clientEmail, dest);
 
-      await adapter.verifyDataWritten(newSpreadsheetId);
+      // 8. Read-back Verification
+      updateProgress('VERIFYING', 4, 5, 92, 'Verifying written Google Sheets data on read-back...');
+      await adapter.verifyDataWritten(newSpreadsheetId, {
+        sales: salesData.rows.length,
+        inventory: invData.rows.length,
+        purchase: poData.rows.length
+      });
 
       sheetUrl = dest.file_url;
       fileId = dest.file_id;
@@ -417,11 +465,24 @@ router.post(['/all', '/trigger'], async (req, res) => {
       });
     }
 
+    // 9. STAGING/COMMIT: PROMOTE SNAPSHOTS ONLY ON COMPLETE VERIFIED SUCCESS
+    console.log('[SNAPSHOT COMMIT] Committing active current reports and immutable snapshots...');
+    const periodLabel = (dateRange === '365d' || dateRange === 'Last 365 days' || dateRange === 'Last 365 Days') ? 'Last 365 Days'
+      : (dateRange === '180d' || dateRange === 'Last 180 days' || dateRange === 'Last 180 Days' ? 'Last 180 Days'
+      : (dateRange === '90d' || dateRange === 'Last 90 days' || dateRange === 'Last 90 Days' ? 'Last 90 Days'
+      : (dateRange === '7d' || dateRange === 'Last 7 days' || dateRange === 'Last 7 Days' ? 'Last 7 Days'
+      : (dateRange === 'ytd' || dateRange === 'Year to date' ? 'Year to date' : 'Last 30 Days'))));
+
+    await Promise.all([
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel, dataset: salesData, syncRunId: runId }),
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current Stock', dataset: invData, syncRunId: runId }),
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel, dataset: poData, syncRunId: runId })
+    ]);
+
     const durationMs = Date.now() - startTime;
-    // CRITICAL: Completion boundary timestamp recorded ONLY on full verified success
     const completionBoundaryIso = new Date().toISOString();
 
-    // 7. Update database records
+    // 10. Update database records
     await db.query(
       `UPDATE sync_runs 
        SET status = 'COMPLETED', records_processed = ?, duration_ms = ?, excel_version_id = ?, completed_at = CURRENT_TIMESTAMP
@@ -443,9 +504,16 @@ router.post(['/all', '/trigger'], async (req, res) => {
          WHERE client_id = ?`,
         [nextVersion, completionBoundaryIso, clientId]
       );
+    } else {
+      await db.query(
+        `UPDATE clients 
+         SET last_sync_at = ?, sync_status = 'SYNCED'
+         WHERE id = ?`,
+        [completionBoundaryIso, clientId]
+      );
     }
 
-    // 8. Update Persistent Sync State with Completion Boundary Timestamp
+    // 11. Update Persistent Sync State with Completion Boundary Timestamp
     snapshotService.updateSyncState(clientId, 'sales', {
       reportWindow: dateRange,
       lastSuccessfulSync: completionBoundaryIso,
@@ -465,10 +533,10 @@ router.post(['/all', '/trigger'], async (req, res) => {
       recordCount: invData.rows.length
     });
 
-    updateProgress('FINALIZING', 4, 4, 100, 'Sync complete! All reports verified.');
+    updateProgress('FINALIZING', 5, 5, 100, 'Sync complete! All reports verified.');
 
     console.log(`[SYNC COMPLETE] ${destination} synced for client ${clientId} (${totalRecords} records in ${durationMs}ms)`);
-    console.log(`[COMPLETION BOUNDARY] Recorded lastSuccessfulSync = ${completionBoundaryIso}\n`);
+    console.log(`[COMPLETION BOUNDARY] Recorded lastSuccessfulSync = ${completionBoundaryIso}\n======================================================================\n`);
 
     res.json({
       success: true,
@@ -495,21 +563,25 @@ router.post(['/all', '/trigger'], async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error in Cin7 sync:', err.message);
     const durationMs = Date.now() - startTime;
-    updateProgress('FAILED', 0, 4, 0, `Sync failed: ${err.message}`);
+    const safeError = err.message || 'Cin7 synchronization failed.';
+    console.error(`\n[SYNC FAILED] Run: ${runId} for client ${clientId}: ${safeError}`);
+
+    updateProgress('FAILED', 0, 5, 0, safeError);
 
     await db.query(
       `UPDATE sync_runs 
        SET status = 'FAILED', error_message = ?, duration_ms = ?, completed_at = CURRENT_TIMESTAMP
        WHERE id = ? AND client_id = ?`,
-      [err.message, durationMs, runId, clientId]
+      [safeError, durationMs, runId, clientId]
     );
 
     res.status(500).json({
       success: false,
       status: 'FAILED',
-      errorMessage: err.message,
+      errorMessage: safeError,
+      message: safeError,
+      error: safeError,
       durationMs
     });
   } finally {

@@ -1,0 +1,29 @@
+{
+  "clientId": "client-google-34b7cadb",
+  "reports": {
+    "sales": {
+      "reportType": "sales",
+      "reportWindow": "all",
+      "lastSuccessfulSync": "2026-09-04T09:52:46.100Z",
+      "lastSyncRunId": "run-all-0a59c80f",
+      "recordCount": 376,
+      "updatedAt": "2026-09-04T09:52:46.103Z"
+    },
+    "purchase": {
+      "reportType": "purchase",
+      "reportWindow": "all",
+      "lastSuccessfulSync": "2026-09-04T09:52:46.100Z",
+      "lastSyncRunId": "run-all-0a59c80f",
+      "recordCount": 191,
+      "updatedAt": "2026-09-04T09:52:46.106Z"
+    },
+    "inventory": {
+      "reportType": "inventory",
+      "reportWindow": "current",
+      "lastSuccessfulSync": "2026-09-04T09:52:46.100Z",
+      "lastSyncRunId": "run-all-0a59c80f",
+      "recordCount": 288,
+      "updatedAt": "2026-09-04T09:52:46.108Z"
+    }
+  }
+}

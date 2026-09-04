@@ -24,7 +24,11 @@ class MemoryDatabaseAdapter {
       client_workbooks: {},
       sync_runs: {},
       sync_logs: [],
-      report_snapshots: {}
+      report_snapshots: {},
+      audit_logs: [],
+      plans: {},
+      subscriptions: {},
+      billing_events: []
     };
     if (fs.existsSync(this.storageFile)) {
       try {
@@ -36,6 +40,10 @@ class MemoryDatabaseAdapter {
         if (!this.data.sync_runs) this.data.sync_runs = {};
         if (!this.data.sync_logs) this.data.sync_logs = [];
         if (!this.data.report_snapshots) this.data.report_snapshots = {};
+        if (!this.data.audit_logs) this.data.audit_logs = [];
+        if (!this.data.plans) this.data.plans = {};
+        if (!this.data.subscriptions) this.data.subscriptions = {};
+        if (!this.data.billing_events) this.data.billing_events = [];
 
         // Backfill new fields for existing client records
         Object.values(this.data.clients || {}).forEach(c => {
@@ -43,8 +51,154 @@ class MemoryDatabaseAdapter {
           if (!c.current_version) c.current_version = 'v1.0';
           if (!c.sync_status) c.sync_status = 'IDLE';
           if (!c.last_sync_at) c.last_sync_at = null;
+          if (!c.timezone) c.timezone = 'Asia/Kolkata';
+          if (!c.sync_schedule_json) c.sync_schedule_json = JSON.stringify({ daily_sync: true, schedule_time: '02:00', timezone: c.timezone || 'Asia/Kolkata', incremental_sync: true });
+          if (!c.notifications_config_json) c.notifications_config_json = JSON.stringify({ email_daily_summary: true, email_sync_completed: true, email_sync_failed: true, email_critical_errors: true, email_weekly_reports: false, slack_status: 'Not Connected', teams_status: 'Not Connected' });
+        });
+
+        // Ensure users have role, platform_role, and status
+        Object.values(this.data.users || {}).forEach(u => {
+          if (!u.role || u.role === 'CLIENT') u.role = 'ADMIN';
+          if (!u.platform_role) u.platform_role = 'USER';
+          if (!u.status) u.status = 'ACTIVE';
         });
       } catch (err) {}
+    }
+
+    // Seed default catalog plans if not present
+    this.seedDefaultPlans();
+  }
+
+  seedDefaultPlans() {
+    if (!this.data.plans) this.data.plans = {};
+    if (Object.keys(this.data.plans).length === 0) {
+      const plansList = [
+        {
+          id: 'plan-starter',
+          name: 'Starter',
+          code: 'STARTER',
+          description: 'Essential Cin7 reporting & reconciliation for solo controllers',
+          price: 49.00,
+          currency: 'USD',
+          billing_interval: 'monthly',
+          is_active: true,
+          features_json: JSON.stringify({
+            cin7_sync: true,
+            google_sheets: true,
+            sales_reports: true,
+            inventory_reports: true
+          }),
+          limits_json: JSON.stringify({
+            max_users: 1,
+            max_syncs_per_month: 30,
+            max_cin7_connections: 1,
+            max_google_sheets: 1,
+            max_storage: 5,
+            max_report_history_days: 30
+          }),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: 'plan-professional',
+          name: 'Professional',
+          code: 'PROFESSIONAL',
+          description: 'Full-suite controller automation, multi-user collaboration & scheduled sync',
+          price: 149.00,
+          currency: 'USD',
+          billing_interval: 'monthly',
+          is_active: true,
+          features_json: JSON.stringify({
+            cin7_sync: true,
+            google_sheets: true,
+            sales_reports: true,
+            purchase_reports: true,
+            inventory_reports: true,
+            advanced_reports: true,
+            report_history: true,
+            reconciliation: true,
+            scheduled_sync: true,
+            multiple_users: true,
+            advanced_settings: true
+          }),
+          limits_json: JSON.stringify({
+            max_users: 10,
+            max_syncs_per_month: 500,
+            max_cin7_connections: 5,
+            max_google_sheets: 5,
+            max_storage: 25,
+            max_report_history_days: 365
+          }),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: 'plan-enterprise',
+          name: 'Enterprise',
+          code: 'ENTERPRISE',
+          description: 'High-throughput consolidation, unlimited connections & priority support',
+          price: 399.00,
+          currency: 'USD',
+          billing_interval: 'monthly',
+          is_active: true,
+          features_json: JSON.stringify({
+            cin7_sync: true,
+            google_sheets: true,
+            sales_reports: true,
+            purchase_reports: true,
+            inventory_reports: true,
+            advanced_reports: true,
+            report_history: true,
+            reconciliation: true,
+            scheduled_sync: true,
+            multiple_users: true,
+            advanced_settings: true,
+            api_access: true,
+            priority_support: true
+          }),
+          limits_json: JSON.stringify({
+            max_users: 50,
+            max_syncs_per_month: 5000,
+            max_cin7_connections: 999,
+            max_google_sheets: 999,
+            max_storage: 100,
+            max_report_history_days: 3650
+          }),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ];
+
+      plansList.forEach(p => {
+        this.data.plans[p.id] = p;
+      });
+      this.save();
+    }
+
+    // Pre-seed default subscription for client-vnc-master if needed
+    if (!this.data.subscriptions) this.data.subscriptions = {};
+    if (!this.data.subscriptions['client-vnc-master']) {
+      const now = new Date();
+      const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      this.data.subscriptions['client-vnc-master'] = {
+        id: 'sub-vnc-master',
+        organization_id: 'client-vnc-master',
+        plan_id: 'plan-professional',
+        billing_provider: 'neutral',
+        external_customer_id: null,
+        external_subscription_id: null,
+        external_price_id: null,
+        status: 'ACTIVE',
+        current_period_start: now.toISOString(),
+        current_period_end: periodEnd.toISOString(),
+        trial_start: null,
+        trial_end: null,
+        cancel_at_period_end: false,
+        canceled_at: null,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString()
+      };
+      this.save();
     }
   }
 
@@ -70,9 +224,13 @@ class MemoryDatabaseAdapter {
       else if (cleanSql.includes('FROM SYNC_RUNS')) collection = Object.values(this.data.sync_runs);
       else if (cleanSql.includes('FROM SYNC_LOGS')) collection = this.data.sync_logs;
       else if (cleanSql.includes('FROM REPORT_SNAPSHOTS')) collection = Object.values(this.data.report_snapshots || {});
+      else if (cleanSql.includes('FROM AUDIT_LOGS')) collection = this.data.audit_logs || [];
+      else if (cleanSql.includes('FROM PLANS')) collection = Object.values(this.data.plans || {});
+      else if (cleanSql.includes('FROM SUBSCRIPTIONS')) collection = Object.values(this.data.subscriptions || {});
+      else if (cleanSql.includes('FROM BILLING_EVENTS')) collection = this.data.billing_events || [];
       else return { rows: [{ test: 1 }] };
 
-      const rows = collection.filter(item => {
+      let rows = collection.filter(item => {
         if (cleanSql.includes('WHERE ID = ? AND CLIENT_ID = ?') || cleanSql.includes('WHERE (ID = ? OR RUN_ID = ?) AND CLIENT_ID = ?')) {
           const runIdMatch = (item.id === params[0] || item.run_id === params[0] || (params.length === 3 && (item.id === params[1] || item.run_id === params[1])));
           const tenantMatch = item.client_id === (params.length === 3 ? params[2] : params[1]);
@@ -81,6 +239,36 @@ class MemoryDatabaseAdapter {
 
         if (cleanSql.includes('WHERE CLIENT_ID = ? AND ID = ?')) {
           return item.client_id === params[0] && (item.id === params[1] || item.run_id === params[1]);
+        }
+
+        if (cleanSql.includes('WHERE ORGANIZATION_ID = ? AND STATUS = ?')) {
+          if (params.length >= 2) {
+            return item.organization_id === params[0] && item.status === params[1];
+          }
+        }
+
+        if (cleanSql.includes('WHERE ORGANIZATION_ID = ?')) {
+          if (params[0] && item.organization_id !== params[0]) return false;
+        }
+
+        if (cleanSql.includes('WHERE CODE = ?')) {
+          if (params[0] && item.code !== params[0]) return false;
+        }
+
+        if (cleanSql.includes('WHERE EXTERNAL_EVENT_ID = ?')) {
+          if (params[0] && item.external_event_id !== params[0]) return false;
+        }
+
+        if (cleanSql.includes('WHERE IS_ACTIVE = ?') || cleanSql.includes('WHERE IS_ACTIVE = TRUE')) {
+          if (item.is_active === false) return false;
+        }
+
+        if (cleanSql.includes("WHERE STATUS = 'ACTIVE'")) {
+          if (item.status !== 'ACTIVE') return false;
+        }
+
+        if (cleanSql.includes('WHERE STATUS = ?') && !cleanSql.includes('ORGANIZATION_ID = ?') && !cleanSql.includes('CLIENT_ID = ?')) {
+          if (params[0] && item.status !== params[0]) return false;
         }
 
         if (cleanSql.includes('WHERE CLIENT_ID = ? AND STATUS =')) {
@@ -95,11 +283,15 @@ class MemoryDatabaseAdapter {
         }
 
         if (cleanSql.includes('WHERE EMAIL = ?')) {
-          if (params[0] && item.email !== params[0]) return false;
+          if (params[0] && String(item.email || '').toLowerCase() !== String(params[0]).toLowerCase()) return false;
+        }
+
+        if (cleanSql.includes('WHERE PLATFORM_ROLE = ?')) {
+          if (params[0] && item.platform_role !== params[0]) return false;
         }
 
         if (cleanSql.includes('WHERE ID = ?') && !cleanSql.includes('CLIENT_ID = ?')) {
-          if (params[0] && item.id !== params[0] && item.run_id !== params[0]) return false;
+          if (params[0] && item.id !== params[0] && item.run_id !== params[0] && item.code !== params[0]) return false;
         }
 
         if (cleanSql.includes('WHERE USER_ID = ? AND PROVIDER = ?')) {
@@ -115,8 +307,14 @@ class MemoryDatabaseAdapter {
         return true;
       });
 
-      if (cleanSql.includes('ORDER BY') && (cleanSql.includes('DESC') || cleanSql.includes('STARTED_AT') || cleanSql.includes('CREATED_AT'))) {
-        rows.sort((a, b) => new Date(b.started_at || b.created_at || 0) - new Date(a.started_at || a.created_at || 0));
+      if (cleanSql.includes('ORDER BY') && (cleanSql.includes('DESC') || cleanSql.includes('STARTED_AT') || cleanSql.includes('CREATED_AT') || cleanSql.includes('TIMESTAMP'))) {
+        rows.sort((a, b) => new Date(b.started_at || b.created_at || b.timestamp || 0) - new Date(a.started_at || a.created_at || a.timestamp || 0));
+      }
+
+      if (cleanSql.includes('LIMIT ? OFFSET ?') && params.length >= 2) {
+        const limit = params[params.length - 2];
+        const offset = params[params.length - 1];
+        return { rows: rows.slice(offset, offset + limit) };
       }
 
       return { rows };
@@ -163,7 +361,24 @@ class MemoryDatabaseAdapter {
     }
 
     if (cleanSql.includes('INSERT INTO USERS')) {
-      const [id, client_id, full_name, email, phone_number, password_hash, role, auth_provider, onboarding_status] = params;
+      let id, client_id, full_name, email, phone_number, password_hash, role, platform_role, status, auth_provider, onboarding_status;
+      if (params.length === 11) {
+        [id, client_id, full_name, email, phone_number, password_hash, role, platform_role, status, auth_provider, onboarding_status] = params;
+      } else if (params.length === 10) {
+        [id, client_id, full_name, email, phone_number, password_hash, role, status, auth_provider, onboarding_status] = params;
+      } else if (params.length === 9) {
+        [id, client_id, full_name, email, phone_number, password_hash, role, auth_provider, onboarding_status] = params;
+      } else if (params.length === 8) {
+        [id, client_id, full_name, email, phone_number, password_hash, role, status] = params;
+      } else if (params.length === 7) {
+        [id, client_id, full_name, email, phone_number, password_hash, role] = params;
+      } else if (params.length === 6) {
+        [id, client_id, full_name, email, password_hash, role] = params;
+        phone_number = '+1 (555) 019-2834';
+      } else {
+        [id, client_id, full_name, email, password_hash] = params;
+      }
+
       const record = {
         id,
         client_id,
@@ -171,13 +386,89 @@ class MemoryDatabaseAdapter {
         email,
         phone_number: phone_number || null,
         password_hash,
-        role: role || 'CLIENT',
+        role: role || 'ADMIN',
+        platform_role: platform_role || (role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'USER'),
+        status: status || 'ACTIVE',
         auth_provider: auth_provider || 'local',
         onboarding_status: onboarding_status || 'completed',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
       this.data.users[id] = record;
+      this.save();
+      return { rows: [record] };
+    }
+
+    if (cleanSql.includes('INSERT INTO PLANS')) {
+      const [id, name, code, description, price, currency, billing_interval, is_active, features_json, limits_json, external_price_id] = params;
+      const record = {
+        id,
+        name,
+        code,
+        description: description || '',
+        price: price || 0,
+        currency: currency || 'USD',
+        billing_interval: billing_interval || 'monthly',
+        is_active: is_active !== false,
+        features_json: typeof features_json === 'object' ? JSON.stringify(features_json) : (features_json || '{}'),
+        limits_json: typeof limits_json === 'object' ? JSON.stringify(limits_json) : (limits_json || '{}'),
+        external_price_id: external_price_id || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      if (!this.data.plans) this.data.plans = {};
+      this.data.plans[id] = record;
+      this.save();
+      return { rows: [record] };
+    }
+
+    if (cleanSql.includes('INSERT INTO SUBSCRIPTIONS')) {
+      let id, organization_id, plan_id, billing_provider, external_customer_id, external_subscription_id, external_price_id, status, current_period_start, current_period_end, trial_start, trial_end, cancel_at_period_end, canceled_at;
+      if (params.length >= 8) {
+        [id, organization_id, plan_id, billing_provider, external_customer_id, external_subscription_id, external_price_id, status, current_period_start, current_period_end, trial_start, trial_end, cancel_at_period_end, canceled_at] = params;
+      } else {
+        [id, organization_id, plan_id, status] = params;
+      }
+
+      const record = {
+        id,
+        organization_id,
+        plan_id,
+        billing_provider: billing_provider || 'neutral',
+        external_customer_id: external_customer_id || null,
+        external_subscription_id: external_subscription_id || null,
+        external_price_id: external_price_id || null,
+        status: status || 'ACTIVE',
+        current_period_start: current_period_start || new Date().toISOString(),
+        current_period_end: current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        trial_start: trial_start || null,
+        trial_end: trial_end || null,
+        cancel_at_period_end: Boolean(cancel_at_period_end),
+        canceled_at: canceled_at || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      if (!this.data.subscriptions) this.data.subscriptions = {};
+      this.data.subscriptions[organization_id] = record;
+      this.save();
+      return { rows: [record] };
+    }
+
+    if (cleanSql.includes('INSERT INTO BILLING_EVENTS')) {
+      const [id, billing_provider, external_event_id, event_type, organization_id, status, payload_hash] = params;
+      const record = {
+        id,
+        billing_provider: billing_provider || 'neutral',
+        external_event_id: external_event_id || id,
+        event_type,
+        organization_id: organization_id || null,
+        processed_at: new Date().toISOString(),
+        status: status || 'PROCESSED',
+        payload_hash: payload_hash || null,
+        created_at: new Date().toISOString()
+      };
+      if (!this.data.billing_events) this.data.billing_events = [];
+      this.data.billing_events.unshift(record);
       this.save();
       return { rows: [record] };
     }
@@ -317,11 +608,62 @@ class MemoryDatabaseAdapter {
       return { rows: [record] };
     }
 
+    if (cleanSql.includes('INSERT INTO AUDIT_LOGS')) {
+      const [id, organization_id, user_id, action, resource, result, details_json] = params;
+      const record = {
+        id,
+        organization_id,
+        user_id: user_id || null,
+        action,
+        resource,
+        result: result || 'SUCCESS',
+        details_json: details_json || '{}',
+        created_at: new Date().toISOString()
+      };
+      if (!this.data.audit_logs) this.data.audit_logs = [];
+      this.data.audit_logs.unshift(record);
+      this.save();
+      return { rows: [record] };
+    }
+
+    // DELETE
+    if (cleanSql.includes('DELETE FROM USERS')) {
+      if (cleanSql.includes('WHERE ID = ? AND CLIENT_ID = ?') || cleanSql.includes('WHERE ID = ? AND ORGANIZATION_ID = ?')) {
+        const [userId, clientId] = params;
+        if (this.data.users[userId] && this.data.users[userId].client_id === clientId) {
+          delete this.data.users[userId];
+        }
+      } else if (cleanSql.includes('WHERE ID = ?')) {
+        delete this.data.users[params[0]];
+      }
+      this.save();
+      return { rows: [] };
+    }
+
     // UPDATE
     if (cleanSql.includes('UPDATE CLIENTS')) {
       const clientId = params[params.length - 1];
       const client = this.data.clients[clientId];
       if (client) {
+        if (cleanSql.includes('COMPANY_NAME = ?') && cleanSql.includes('TIMEZONE = ?')) {
+          client.company_name = params[0];
+          client.timezone = params[1];
+        } else if (cleanSql.includes('COMPANY_NAME = ?')) {
+          client.company_name = params[0];
+        }
+
+        if (cleanSql.includes('TIMEZONE = ?') && !cleanSql.includes('COMPANY_NAME = ?')) {
+          client.timezone = params[0];
+        }
+
+        if (cleanSql.includes('SYNC_SCHEDULE_JSON = ?')) {
+          client.sync_schedule_json = typeof params[0] === 'object' ? JSON.stringify(params[0]) : params[0];
+        }
+
+        if (cleanSql.includes('NOTIFICATIONS_CONFIG_JSON = ?')) {
+          client.notifications_config_json = typeof params[0] === 'object' ? JSON.stringify(params[0]) : params[0];
+        }
+
         if (cleanSql.includes('SUBSCRIPTION_STATUS = ?')) {
           client.subscription_status = params[0];
         } else if (cleanSql.includes("SUBSCRIPTION_STATUS = 'EXPIRED'")) {
@@ -360,13 +702,71 @@ class MemoryDatabaseAdapter {
     }
 
     if (cleanSql.includes('UPDATE USERS')) {
-      const clientId = params[params.length - 1];
-      Object.values(this.data.users).forEach(u => {
-        if (u.client_id === clientId || u.id === clientId) {
-          u.onboarding_status = 'completed';
-          u.onboarding_completed_at = new Date().toISOString();
+      if (cleanSql.includes('ROLE = ?') && cleanSql.includes('STATUS = ?')) {
+        const [role, status, userId, clientId] = params;
+        const u = this.data.users[userId];
+        if (u && (!clientId || u.client_id === clientId)) {
+          u.role = role;
+          u.status = status;
+          u.updated_at = new Date().toISOString();
         }
-      });
+      } else if (cleanSql.includes('CLIENT_ID = ?') && cleanSql.includes('FULL_NAME = ?')) {
+        const [clientId, fullName, phoneNumber, onboardingStatus, target] = params;
+        const u = this.data.users[target] || Object.values(this.data.users).find(x => String(x.email).toLowerCase() === String(target).toLowerCase() || x.id === target);
+        if (u) {
+          u.client_id = clientId;
+          if (fullName) u.full_name = fullName;
+          if (phoneNumber) u.phone_number = phoneNumber;
+          if (onboardingStatus) u.onboarding_status = onboardingStatus;
+          u.updated_at = new Date().toISOString();
+        }
+      } else if (cleanSql.includes('CLIENT_ID = ?') && cleanSql.includes('ONBOARDING_STATUS = ?')) {
+        const [clientId, onboardingStatus, target] = params;
+        const u = this.data.users[target] || Object.values(this.data.users).find(x => String(x.email).toLowerCase() === String(target).toLowerCase() || x.id === target);
+        if (u) {
+          u.client_id = clientId;
+          u.onboarding_status = onboardingStatus;
+          u.updated_at = new Date().toISOString();
+        }
+      } else if (cleanSql.includes('CLIENT_ID = ?') && (cleanSql.includes("ONBOARDING_STATUS = 'COMPLETED'") || cleanSql.includes("ONBOARDING_STATUS = 'PENDING_CLIENT_SELECTION'"))) {
+        const [clientId, target] = params;
+        const u = this.data.users[target] || Object.values(this.data.users).find(x => String(x.email).toLowerCase() === String(target).toLowerCase() || x.id === target);
+        if (u) {
+          u.client_id = clientId;
+          u.onboarding_status = cleanSql.includes("ONBOARDING_STATUS = 'COMPLETED'") ? 'completed' : 'pending_client_selection';
+          u.updated_at = new Date().toISOString();
+        }
+      } else if (cleanSql.includes('CLIENT_ID = ?')) {
+        const [clientId, target] = params;
+        const u = this.data.users[target] || Object.values(this.data.users).find(x => String(x.email).toLowerCase() === String(target).toLowerCase() || x.id === target);
+        if (u) {
+          u.client_id = clientId;
+          u.updated_at = new Date().toISOString();
+        }
+      } else if (cleanSql.includes('PASSWORD_HASH = ?')) {
+        const [password_hash, userId] = params;
+        const u = this.data.users[userId];
+        if (u) {
+          u.password_hash = password_hash;
+          u.updated_at = new Date().toISOString();
+        }
+      } else if (cleanSql.includes('FULL_NAME = ?')) {
+        const [full_name, phone_number, userId] = params;
+        const u = this.data.users[userId];
+        if (u) {
+          u.full_name = full_name;
+          if (phone_number) u.phone_number = phone_number;
+          u.updated_at = new Date().toISOString();
+        }
+      } else {
+        const clientId = params[params.length - 1];
+        Object.values(this.data.users).forEach(u => {
+          if (u.client_id === clientId || u.id === clientId) {
+            u.onboarding_status = 'completed';
+            u.onboarding_completed_at = new Date().toISOString();
+          }
+        });
+      }
       this.save();
       return { rows: [] };
     }
@@ -415,12 +815,60 @@ class MemoryDatabaseAdapter {
       return { rows: [] };
     }
 
+    if (cleanSql.includes('UPDATE SUBSCRIPTIONS')) {
+      const orgId = params[params.length - 1];
+      const sub = this.data.subscriptions[orgId] || Object.values(this.data.subscriptions || {}).find(s => s.organization_id === orgId || s.id === orgId);
+      if (sub) {
+        if (cleanSql.includes("STATUS = 'EXPIRED'")) {
+          sub.status = 'EXPIRED';
+        } else if (cleanSql.includes("STATUS = 'ACTIVE'")) {
+          sub.status = 'ACTIVE';
+        } else if (cleanSql.includes("STATUS = 'TRIALING'")) {
+          sub.status = 'TRIALING';
+        } else if (cleanSql.includes("STATUS = 'PAST_DUE'")) {
+          sub.status = 'PAST_DUE';
+        } else if (cleanSql.includes("STATUS = 'CANCELED'")) {
+          sub.status = 'CANCELED';
+        }
+
+        if (cleanSql.includes('STATUS = ?') && cleanSql.includes('PLAN_ID = ?')) {
+          const [status, plan_id] = params;
+          sub.status = status;
+          sub.plan_id = plan_id;
+        } else if (cleanSql.includes('STATUS = ?')) {
+          sub.status = params[0];
+        } else if (cleanSql.includes('PLAN_ID = ?')) {
+          sub.plan_id = params[0];
+        }
+
+        if (cleanSql.includes('CANCEL_AT_PERIOD_END = ?')) {
+          sub.cancel_at_period_end = Boolean(params[0]);
+          if (sub.cancel_at_period_end) {
+            sub.canceled_at = new Date().toISOString();
+          }
+        }
+
+        if (cleanSql.includes('CURRENT_PERIOD_END = ?')) {
+          sub.current_period_end = params[0];
+        }
+
+        sub.updated_at = new Date().toISOString();
+        this.save();
+      }
+      return { rows: [] };
+    }
+
     return { rows: [] };
   }
 
   async getOne(sql, params = []) {
     const res = await this.query(sql, params);
     return res.rows && res.rows.length > 0 ? res.rows[0] : null;
+  }
+
+  async getAll(sql, params = []) {
+    const res = await this.query(sql, params);
+    return res.rows || [];
   }
 }
 
@@ -455,6 +903,11 @@ class PostgresDatabaseAdapter {
   async getOne(sql, params = []) {
     const res = await this.query(sql, params);
     return res.rows && res.rows.length > 0 ? res.rows[0] : null;
+  }
+
+  async getAll(sql, params = []) {
+    const res = await this.query(sql, params);
+    return res.rows || [];
   }
 }
 

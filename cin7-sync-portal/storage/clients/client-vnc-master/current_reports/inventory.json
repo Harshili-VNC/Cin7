@@ -1,5 +1,5 @@
 {
-  "id": "snap-inventory-1788494683118-125d12",
+  "id": "snap-inventory-1788524462577-b108ef",
   "clientId": "client-vnc-master",
   "reportType": "inventory",
   "reportName": "Product Availability",
@@ -1465,7 +1465,7 @@
     [
       "Finished Goods - AAPL",
       "L1000850103",
-      "L100085/Aerostep Slip on /COLOR/Blue - Green/UK SIZE/3",
+      "L100085/Aerostep Slip on /COLOR/Blue - Green/UK SIZE/3.0",
       "Case",
       0,
       1,
@@ -2180,7 +2180,7 @@
     [
       "Main Warehouse",
       "L1000850103",
-      "L100085/Aerostep Slip on /COLOR/Blue - Green/UK SIZE/3",
+      "L100085/Aerostep Slip on /COLOR/Blue - Green/UK SIZE/3.0",
       "Case",
       0,
       0,
@@ -3772,9 +3772,9 @@
     "unitCost": 5328,
     "recordCount": 288
   },
-  "syncRunId": "run-all-a65b99fe",
+  "syncRunId": "run-all-5db0417c",
   "status": "SUCCESS",
-  "createdAt": "2026-09-04T04:04:43.118Z",
-  "latestSnapshotId": "snap-inventory-1788494683118-125d12",
-  "updatedAt": "2026-09-04T04:04:43.118Z"
+  "createdAt": "2026-09-04T12:21:02.577Z",
+  "latestSnapshotId": "snap-inventory-1788524462577-b108ef",
+  "updatedAt": "2026-09-04T12:21:02.577Z"
 }

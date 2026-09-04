@@ -166,6 +166,7 @@ class SnapshotService {
     if (code.includes('7')) return 7;
     if (code.includes('30')) return 30;
     if (code.includes('90')) return 90;
+    if (code.includes('180')) return 180;
     if (code.includes('365')) return 365;
     if (code.includes('ytd')) return 365;
     if (code.includes('all')) return 99999;

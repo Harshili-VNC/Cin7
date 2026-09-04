@@ -3,27 +3,27 @@
   "reports": {
     "sales": {
       "reportType": "sales",
-      "reportWindow": "90d",
-      "lastSuccessfulSync": "2026-09-04T04:04:58.690Z",
-      "lastSyncRunId": "run-all-a65b99fe",
-      "recordCount": 159,
-      "updatedAt": "2026-09-04T04:04:58.693Z"
+      "reportWindow": "Last 30 days",
+      "lastSuccessfulSync": "2026-09-04T12:21:02.585Z",
+      "lastSyncRunId": "run-all-5db0417c",
+      "recordCount": 153,
+      "updatedAt": "2026-09-04T12:21:02.589Z"
     },
     "purchase": {
       "reportType": "purchase",
-      "reportWindow": "90d",
-      "lastSuccessfulSync": "2026-09-04T04:04:58.690Z",
-      "lastSyncRunId": "run-all-a65b99fe",
-      "recordCount": 155,
-      "updatedAt": "2026-09-04T04:04:58.698Z"
+      "reportWindow": "Last 30 days",
+      "lastSuccessfulSync": "2026-09-04T12:21:02.585Z",
+      "lastSyncRunId": "run-all-5db0417c",
+      "recordCount": 138,
+      "updatedAt": "2026-09-04T12:21:02.594Z"
     },
     "inventory": {
       "reportType": "inventory",
       "reportWindow": "current",
-      "lastSuccessfulSync": "2026-09-04T04:04:58.690Z",
-      "lastSyncRunId": "run-all-a65b99fe",
+      "lastSuccessfulSync": "2026-09-04T12:21:02.585Z",
+      "lastSyncRunId": "run-all-5db0417c",
       "recordCount": 288,
-      "updatedAt": "2026-09-04T04:04:58.703Z"
+      "updatedAt": "2026-09-04T12:21:02.599Z"
     }
   }
 }
