@@ -1,5 +1,5 @@
 {
-  "id": "snap-inventory-1788749833950-577e5b",
+  "id": "snap-inventory-1788749672168-a8a0b2",
   "clientId": "client-vnc-master",
   "reportType": "inventory",
   "reportName": "Product Availability",
@@ -3772,9 +3772,7 @@
     "unitCost": 5328,
     "recordCount": 288
   },
-  "syncRunId": "run-all-36705234",
+  "syncRunId": "run-all-f7209330",
   "status": "SUCCESS",
-  "createdAt": "2026-09-07T02:57:13.950Z",
-  "latestSnapshotId": "snap-inventory-1788749833950-577e5b",
-  "updatedAt": "2026-09-07T02:57:13.950Z"
+  "createdAt": "2026-09-07T02:54:32.168Z"
 }

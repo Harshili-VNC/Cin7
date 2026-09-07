@@ -1,5 +1,5 @@
 {
-  "id": "snap-purchase-1788749833956-f87c24",
+  "id": "snap-purchase-1788749672172-941046",
   "clientId": "client-vnc-master",
   "reportType": "purchase",
   "reportName": "Purchase Cost Analysis",
@@ -3072,9 +3072,7 @@
     "tax": 16491,
     "recordCount": 138
   },
-  "syncRunId": "run-all-36705234",
+  "syncRunId": "run-all-f7209330",
   "status": "SUCCESS",
-  "createdAt": "2026-09-07T02:57:13.956Z",
-  "latestSnapshotId": "snap-purchase-1788749833956-f87c24",
-  "updatedAt": "2026-09-07T02:57:13.956Z"
+  "createdAt": "2026-09-07T02:54:32.172Z"
 }

@@ -382,7 +382,7 @@ async function quickSuperAdminSignIn() {
   if (emailInput) emailInput.value = 'superadmin@vnc.global';
   if (passInput) passInput.value = '12345';
 
-  showToast('Signing in as VNC Super Admin...', 'success');
+  showToast('Signing in as Admin...', 'info');
 
   try {
     const res = await fetch('/api/auth/login', {
@@ -393,17 +393,17 @@ async function quickSuperAdminSignIn() {
     const data = await res.json();
 
     if (data.success) {
-      showToast('Welcome, Super Admin!', 'success');
+      showToast('Welcome, Admin!', 'success');
       state.user = data.user;
       state.client = data.client;
       state.cin7 = { connected: true, status: 'CONNECTED' };
       updateUIHeader();
       navigateTo('admin');
     } else {
-      showToast(data.message || 'Super Admin sign in failed.', 'error');
+      showToast(data.message || 'Admin sign in failed.', 'error');
     }
   } catch (err) {
-    console.error('Super Admin sign in error:', err);
+    console.error('Admin sign in error:', err);
     showToast('Failed to sign in. Please try again.', 'error');
   }
 }
@@ -414,7 +414,7 @@ async function quickDemoSignIn() {
   if (emailInput) emailInput.value = 'harshili.patni@vnc.global';
   if (passInput) passInput.value = '12345';
 
-  showToast('Signing in as Harshili Patni...', 'success');
+  showToast('Signing in as Admin...', 'info');
 
   try {
     const res = await fetch('/api/auth/login', {
@@ -425,7 +425,7 @@ async function quickDemoSignIn() {
     const data = await res.json();
 
     if (data.success) {
-      showToast('Welcome back, Harshili!', 'success');
+      showToast(`Welcome back, ${data.user?.name || 'Admin'}!`, 'success');
       state.user = data.user;
       state.client = data.client;
       state.cin7 = { connected: true, status: 'CONNECTED' };
@@ -1426,11 +1426,23 @@ function switchSettingsTab(tabName) {
   tabContents.forEach(el => el.classList.add('hidden'));
 
   // Dedicated Views
-  if (['overview', 'profile', 'billing', 'team', 'security', 'advanced'].includes(tabName)) {
+  if (['overview', 'profile', 'billing', 'team', 'security', 'advanced', 'notifications'].includes(tabName)) {
     const targetEl = document.getElementById(`settings-tab-${tabName}`);
     if (targetEl) targetEl.classList.remove('hidden');
     if (tabName === 'team') loadTeamMembers();
     if (tabName === 'billing') loadBillingData();
+    if (tabName === 'notifications') {
+      fetch('/api/notifications').then(r => r.json()).then(d => {
+        if (d && d.notifications) {
+          const n = d.notifications;
+          if (document.getElementById('notif-daily-summary')) document.getElementById('notif-daily-summary').checked = Boolean(n.dailySummary);
+          if (document.getElementById('notif-sync-completed')) document.getElementById('notif-sync-completed').checked = Boolean(n.syncCompleted);
+          if (document.getElementById('notif-sync-failed')) document.getElementById('notif-sync-failed').checked = Boolean(n.syncFailed);
+          if (document.getElementById('notif-critical-errors')) document.getElementById('notif-critical-errors').checked = Boolean(n.criticalErrors);
+          if (document.getElementById('notif-weekly-reports')) document.getElementById('notif-weekly-reports').checked = Boolean(n.weeklyReports);
+        }
+      }).catch(console.error);
+    }
   } else {
     // Subsection navigation (Organization, CIN7, Sheets, Automation, Notifications)
     const overviewEl = document.getElementById('settings-tab-overview');
@@ -2704,7 +2716,8 @@ async function loadBillingData() {
     if (ovUsers) ovUsers.innerText = `${usage.users?.current || usage.users || 1} / ${limits.max_users || '10'}`;
 
     const ovSyncs = document.getElementById('overview-billing-syncs');
-    if (ovSyncs) ovSyncs.innerText = `${usage.syncs_this_month} / ${limits.max_syncs_per_month || '∞'}`;
+    const currentSyncCount = usage.syncsThisMonth ?? usage.syncs_this_month ?? 0;
+    if (ovSyncs) ovSyncs.innerText = `${currentSyncCount} / ${limits.max_syncs_per_month || '500'}`;
 
     // 3. Update Progress Bars & Metrics in Dedicated Tab
     const seatsFraction = document.getElementById('billing-seats-fraction');
@@ -2999,27 +3012,40 @@ async function loadAdminOrganizations(page = 1) {
     if (tbody) {
       const orgs = data.organizations || [];
       if (orgs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No organizations matched the search filters.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No organizations found. Click "+ Add Organization" to add one.</td></tr>`;
       } else {
         tbody.innerHTML = orgs.map(o => {
-          const statusClass = o.status === 'ACTIVE' ? 'badge-success' : (o.status === 'TRIAL' ? 'badge-info' : 'badge-warning');
-          const cin7StatusBadge = o.cin7Status === 'CONNECTED' ? '<span class="badge badge-success">Connected ✓</span>' : '<span class="badge badge-secondary">Not Configured</span>';
-          const sheetsStatusBadge = o.googleSheetsStatus === 'CONNECTED' ? '<span class="badge badge-success">Connected ✓</span>' : '<span class="badge badge-secondary">Not Configured</span>';
+          const statusClass = (o.status || 'ACTIVE') === 'ACTIVE' ? 'badge-success' : ((o.status || '') === 'TRIAL' ? 'badge-info' : 'badge-warning');
+          const isCin7Connected = (o.cin7 && o.cin7.status === 'CONNECTED') || o.cin7Status === 'CONNECTED';
+          const cin7StatusBadge = isCin7Connected ? '<span class="badge badge-success">Connected ✓</span>' : '<span class="badge badge-secondary">Not Configured</span>';
+          const isSheetsConnected = (o.googleSheets && o.googleSheets.status === 'CONNECTED') || o.googleSheetsStatus === 'CONNECTED';
+          const sheetsStatusBadge = isSheetsConnected ? '<span class="badge badge-success">Connected ✓</span>' : '<span class="badge badge-secondary">Not Configured</span>';
+          const planDisplay = (o.subscription && o.subscription.planName) || o.planName || 'Professional';
+          const usersCount = o.usersCount !== undefined ? o.usersCount : (o.userCount || 0);
+          const lastSyncText = o.lastSync && o.lastSync.startedAt ? new Date(o.lastSync.startedAt).toLocaleDateString() : (o.lastSync || 'Never');
+          const displayName = o.companyName || o.name || o.id;
 
           return `
             <tr>
-              <td style="font-weight: 700;">${o.name || o.id}</td>
+              <td style="font-weight: 700;">${displayName}</td>
               <td style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted-foreground);">${o.id}</td>
-              <td><span class="badge ${statusClass}">${o.status}</span></td>
-              <td><strong>${o.planName || 'Professional'}</strong></td>
-              <td style="font-weight: 600;">${o.userCount || 0}</td>
+              <td><span class="badge ${statusClass}">${o.status || 'ACTIVE'}</span></td>
+              <td><strong>${planDisplay}</strong></td>
+              <td style="font-weight: 600;">${usersCount}</td>
               <td>${cin7StatusBadge}</td>
               <td>${sheetsStatusBadge}</td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${o.lastSync || 'Never'}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${lastSyncText}</td>
               <td style="text-align: right;">
-                <button class="btn btn-primary btn-xs" onclick="viewAdminOrg360('${o.id}')" title="Inspect 360° Tenant View">
-                  Inspect 360°
-                </button>
+                <div style="display: flex; gap: 0.35rem; justify-content: flex-end; align-items: center;">
+                  <button class="btn btn-primary btn-xs" onclick="viewAdminOrg360('${o.id}')" title="Inspect 360° Tenant View">
+                    Inspect 360°
+                  </button>
+                  ${o.id !== 'client-vnc-master' ? `
+                    <button class="btn btn-outline btn-xs" style="color: var(--destructive, #ef4444); border-color: rgba(239,68,68,0.3); padding: 0.2rem 0.4rem;" onclick="deleteAdminOrg('${o.id}', '${displayName.replace(/'/g, "\\'")}')" title="Delete Organization">
+                      🗑️
+                    </button>
+                  ` : ''}
+                </div>
               </td>
             </tr>
           `;
@@ -3050,6 +3076,87 @@ function prevAdminOrgsPage() {
 
 function nextAdminOrgsPage() {
   if (adminState.orgs.page * adminState.orgs.limit < adminState.orgs.total) loadAdminOrganizations(adminState.orgs.page + 1);
+}
+
+function openAdminAddOrgModal() {
+  const modal = document.getElementById('modal-admin-add-org');
+  if (modal) {
+    modal.classList.remove('hidden');
+    const form = document.getElementById('admin-create-org-form');
+    if (form) form.reset();
+    document.getElementById('new-org-company-name')?.focus();
+  }
+}
+
+function closeAdminAddOrgModal() {
+  const modal = document.getElementById('modal-admin-add-org');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function handleAdminCreateOrgSubmit(e) {
+  e.preventDefault();
+  const companyName = document.getElementById('new-org-company-name')?.value.trim();
+  const contactName = document.getElementById('new-org-contact-name')?.value.trim();
+  const email = document.getElementById('new-org-email')?.value.trim();
+  const phoneNumber = document.getElementById('new-org-phone')?.value.trim();
+  const plan = document.getElementById('new-org-plan')?.value || 'PROFESSIONAL';
+  const submitBtn = document.getElementById('btn-create-org-submit');
+
+  if (!companyName) {
+    showToast('Company name is required.', 'error');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Creating...';
+  }
+
+  try {
+    const res = await fetch('/api/admin/organizations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyName, contactName, email, phoneNumber, plan })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(data.message || 'Organization added successfully!', 'success');
+      closeAdminAddOrgModal();
+      await loadAdminOrganizations(1);
+    } else {
+      showToast(data.message || 'Failed to add organization.', 'error');
+    }
+  } catch (err) {
+    console.error('Error creating organization:', err);
+    showToast('Failed to add organization. Please try again.', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Create Organization';
+    }
+  }
+}
+
+async function deleteAdminOrg(orgId, orgName) {
+  if (!confirm(`Are you sure you want to delete organization "${orgName}"? This action cannot be undone.`)) {
+    return;
+  }
+
+  showToast(`Deleting ${orgName}...`, 'info');
+  try {
+    const res = await fetch(`/api/admin/organizations/${orgId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Organization deleted successfully.', 'success');
+      await loadAdminOrganizations(adminState.orgs.page || 1);
+    } else {
+      showToast(data.message || 'Failed to delete organization.', 'error');
+    }
+  } catch (err) {
+    console.error('Error deleting organization:', err);
+    showToast('Failed to delete organization.', 'error');
+  }
 }
 
 // ── 3. Organization 360° Inspection Modal ───────────────────────────────────

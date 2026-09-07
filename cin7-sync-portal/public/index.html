@@ -186,58 +186,19 @@
               Sign in
             </button>
 
-            <!-- ── QUICK ROLE SIGN-IN WITH VISIBLE CREDENTIALS ── -->
+            <!-- ── QUICK ADMIN SIGN-IN OPTION ── -->
             <div class="quick-roles-panel">
               <div class="quick-roles-divider">
                 <span class="auth-divider-line"></span>
-                <span class="auth-divider-text" style="font-weight: 700; color: #475569; font-size: 0.725rem;">OR QUICK SIGN IN AS</span>
+                <span class="auth-divider-text">or quick sign in</span>
                 <span class="auth-divider-line"></span>
               </div>
 
-              <div class="quick-roles-grid">
-                <!-- Option 1: Organization Admin -->
-                <div class="quick-role-card role-admin-card" id="quick-admin-login-card" onclick="quickDemoSignIn()" title="Click to sign in immediately as Organization Admin">
-                  <div class="quick-role-top">
-                    <span class="quick-role-badge badge-admin">👑 Admin</span>
-                    <span class="quick-role-action">1-Click &rarr;</span>
-                  </div>
-                  <div class="quick-role-name">Harshili Patni</div>
-                  <div class="quick-role-creds">
-                    <div class="cred-row">
-                      <span class="cred-label">ID:</span>
-                      <code class="cred-val">harshili.patni@vnc.global</code>
-                    </div>
-                    <div class="cred-row">
-                      <span class="cred-label">Pass:</span>
-                      <code class="cred-val">12345</code>
-                    </div>
-                  </div>
-                  <button type="button" class="btn btn-primary btn-xs quick-role-btn" id="btn-quick-admin-signin" onclick="event.stopPropagation(); quickDemoSignIn()">
-                    Sign in as Admin
-                  </button>
-                </div>
-
-                <!-- Option 2: Super Admin -->
-                <div class="quick-role-card role-superadmin-card" id="quick-superadmin-login-card" onclick="quickSuperAdminSignIn()" title="Click to sign in immediately as VNC Super Admin">
-                  <div class="quick-role-top">
-                    <span class="quick-role-badge badge-superadmin">🛡️ Super Admin</span>
-                    <span class="quick-role-action">1-Click &rarr;</span>
-                  </div>
-                  <div class="quick-role-name">VNC Platform Admin</div>
-                  <div class="quick-role-creds">
-                    <div class="cred-row">
-                      <span class="cred-label">ID:</span>
-                      <code class="cred-val">superadmin@vnc.global</code>
-                    </div>
-                    <div class="cred-row">
-                      <span class="cred-label">Pass:</span>
-                      <code class="cred-val">12345</code>
-                    </div>
-                  </div>
-                  <button type="button" class="btn btn-xs quick-role-btn superadmin-action-btn" id="btn-quick-superadmin-signin" onclick="event.stopPropagation(); quickSuperAdminSignIn()">
-                    Sign in as Super Admin
-                  </button>
-                </div>
+              <div class="quick-admin-actions">
+                <button type="button" class="btn quick-role-btn-clean superadmin-btn-clean" id="btn-quick-superadmin-signin" onclick="quickSuperAdminSignIn()" title="Sign in as Admin">
+                  <span class="btn-icon">🛡️</span>
+                  <span>Sign in as Admin</span>
+                </button>
               </div>
             </div>
           </form>
@@ -1712,6 +1673,78 @@
               </div>
             </div>
 
+            <!-- DEDICATED TAB: NOTIFICATIONS SETTINGS -->
+            <div id="settings-tab-notifications" class="settings-tab-content hidden">
+              <div class="settings-card">
+                <div class="settings-card-header">
+                  <div class="settings-card-title-group">
+                    <div class="settings-card-icon" style="background: rgba(245, 158, 11, 0.1); color: #d97706;">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    </div>
+                    <div>
+                      <h3 style="font-size: 1rem; font-weight: 700;">Notification Preferences</h3>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Email & system alerts for Cin7 synchronizations and report digests</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-card-body">
+                  <div class="toggle-row">
+                    <div>
+                      <p style="font-size: 0.875rem; font-weight: 700;">Daily Sync Summary</p>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Receive a daily email digest summarizing all completed sync runs and sheet updates.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="notif-daily-summary" onchange="markSettingsDirty()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="toggle-row">
+                    <div>
+                      <p style="font-size: 0.875rem; font-weight: 700;">Sync Completed Alerts</p>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Notify when real-time or manual Cin7 synchronization completes successfully.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="notif-sync-completed" onchange="markSettingsDirty()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="toggle-row">
+                    <div>
+                      <p style="font-size: 0.875rem; font-weight: 700;">Sync Failed Alerts</p>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Immediate notification if an API rate limit, credential error, or network drop occurs.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="notif-sync-failed" onchange="markSettingsDirty()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="toggle-row">
+                    <div>
+                      <p style="font-size: 0.875rem; font-weight: 700;">Critical Security & Error Notifications</p>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">High-priority alerts for authentication anomalies and encryption validation issues.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="notif-critical-errors" onchange="markSettingsDirty()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="toggle-row">
+                    <div>
+                      <p style="font-size: 0.875rem; font-weight: 700;">Weekly Financial Model Report</p>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Automated weekly reconciliation analysis sent every Monday morning.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="notif-weekly-reports" onchange="markSettingsDirty()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <div class="settings-card-footer" style="display: flex; justify-content: flex-end;">
+                  <button type="button" class="btn btn-primary btn-sm" onclick="saveNotificationSettings()">Save Preferences</button>
+                </div>
+              </div>
+            </div>
+
           </main>
         </div>
       </main>
@@ -1877,11 +1910,14 @@
             <!-- 2. ORGANIZATIONS SUBVIEW -->
             <div id="admin-view-organizations" class="admin-subview hidden">
               <div class="settings-card">
-                <div class="settings-card-header">
+                <div class="settings-card-header" style="display: flex; justify-content: space-between; align-items: center;">
                   <div class="settings-card-title-group">
                     <h3 style="font-size: 1rem; font-weight: 800;">Organizations Management</h3>
                     <p style="font-size: 0.75rem; color: var(--muted-foreground);">All customer accounts and tenant isolation status</p>
                   </div>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="openAdminAddOrgModal()">
+                    <span>➕ Add Organization</span>
+                  </button>
                 </div>
                 
                 <!-- Filters Bar -->
@@ -2371,6 +2407,50 @@
             </div>
 
           </main>
+        </div>
+      </div>
+
+      <!-- Add Organization Modal -->
+      <div id="modal-admin-add-org" class="modal-backdrop hidden" onclick="if(event.target===this) closeAdminAddOrgModal()">
+        <div class="modal-card" style="max-width: 500px;">
+          <div class="modal-header">
+            <h3 class="modal-title">➕ Add New Client Organization</h3>
+            <button type="button" class="modal-close" onclick="closeAdminAddOrgModal()">&times;</button>
+          </div>
+          <form id="admin-create-org-form" onsubmit="handleAdminCreateOrgSubmit(event)">
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+              <div class="form-group">
+                <label class="form-label" for="new-org-company-name">Company / Organization Name *</label>
+                <input type="text" class="form-input" id="new-org-company-name" placeholder="e.g. Acme Retail Dynamics" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="new-org-contact-name">Primary Admin Full Name</label>
+                <input type="text" class="form-input" id="new-org-contact-name" placeholder="e.g. John Doe">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="new-org-email">Admin Work Email</label>
+                <input type="email" class="form-input" id="new-org-email" placeholder="e.g. admin@acmeretail.com">
+              </div>
+              <div class="auth-row-2col">
+                <div class="form-group">
+                  <label class="form-label" for="new-org-phone">Phone Number</label>
+                  <input type="text" class="form-input" id="new-org-phone" placeholder="+1 555-0199">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="new-org-plan">SaaS Plan</label>
+                  <select class="form-input" id="new-org-plan">
+                    <option value="PROFESSIONAL" selected>Professional (14-day trial)</option>
+                    <option value="STARTER">Starter</option>
+                    <option value="ENTERPRISE">Enterprise</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+              <button type="button" class="btn btn-outline btn-sm" onclick="closeAdminAddOrgModal()">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm" id="btn-create-org-submit">Create Organization</button>
+            </div>
+          </form>
         </div>
       </div>
     </section>

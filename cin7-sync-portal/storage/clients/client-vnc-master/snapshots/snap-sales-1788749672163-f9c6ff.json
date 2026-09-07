@@ -1,5 +1,5 @@
 {
-  "id": "snap-sales-1788749833945-218995",
+  "id": "snap-sales-1788749672163-f9c6ff",
   "clientId": "client-vnc-master",
   "reportType": "sales",
   "reportName": "Sales by Product Details",
@@ -4326,9 +4326,7 @@
     "profit": 10327.5,
     "recordCount": 153
   },
-  "syncRunId": "run-all-36705234",
+  "syncRunId": "run-all-f7209330",
   "status": "SUCCESS",
-  "createdAt": "2026-09-07T02:57:13.945Z",
-  "latestSnapshotId": "snap-sales-1788749833945-218995",
-  "updatedAt": "2026-09-07T02:57:13.945Z"
+  "createdAt": "2026-09-07T02:54:32.163Z"
 }

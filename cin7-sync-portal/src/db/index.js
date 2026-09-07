@@ -627,14 +627,64 @@ class MemoryDatabaseAdapter {
     }
 
     // DELETE
+    if (cleanSql.includes('DELETE FROM CLIENTS')) {
+      if (cleanSql.includes('WHERE ID = ?')) {
+        delete this.data.clients[params[0]];
+      }
+      this.save();
+      return { rows: [] };
+    }
+
     if (cleanSql.includes('DELETE FROM USERS')) {
       if (cleanSql.includes('WHERE ID = ? AND CLIENT_ID = ?') || cleanSql.includes('WHERE ID = ? AND ORGANIZATION_ID = ?')) {
         const [userId, clientId] = params;
         if (this.data.users[userId] && this.data.users[userId].client_id === clientId) {
           delete this.data.users[userId];
         }
+      } else if (cleanSql.includes('WHERE CLIENT_ID = ?')) {
+        const clientId = params[0];
+        Object.keys(this.data.users || {}).forEach(k => {
+          if (this.data.users[k].client_id === clientId) delete this.data.users[k];
+        });
       } else if (cleanSql.includes('WHERE ID = ?')) {
         delete this.data.users[params[0]];
+      }
+      this.save();
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('DELETE FROM SUBSCRIPTIONS')) {
+      if (cleanSql.includes('WHERE ORGANIZATION_ID = ?')) {
+        const orgId = params[0];
+        Object.keys(this.data.subscriptions || {}).forEach(k => {
+          if (this.data.subscriptions[k].organization_id === orgId) delete this.data.subscriptions[k];
+        });
+      } else if (cleanSql.includes('WHERE ID = ?')) {
+        delete this.data.subscriptions[params[0]];
+      }
+      this.save();
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('DELETE FROM CIN7_CONNECTIONS')) {
+      if (cleanSql.includes('WHERE CLIENT_ID = ?')) {
+        const clientId = params[0];
+        Object.keys(this.data.cin7_connections || {}).forEach(k => {
+          if (this.data.cin7_connections[k].client_id === clientId) delete this.data.cin7_connections[k];
+        });
+      } else if (cleanSql.includes('WHERE ID = ?')) {
+        delete this.data.cin7_connections[params[0]];
+      }
+      this.save();
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('DELETE FROM SYNC_RUNS')) {
+      if (cleanSql.includes('WHERE CLIENT_ID = ?')) {
+        const clientId = params[0];
+        Object.keys(this.data.sync_runs || {}).forEach(k => {
+          if (this.data.sync_runs[k].client_id === clientId) delete this.data.sync_runs[k];
+        });
       }
       this.save();
       return { rows: [] };

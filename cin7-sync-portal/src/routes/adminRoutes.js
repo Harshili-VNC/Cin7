@@ -259,6 +259,133 @@ router.get('/organizations', async (req, res) => {
 });
 
 /**
+ * POST /api/admin/organizations
+ * Creates a new client organization, provisioning isolated workspace, subscription, and admin user.
+ */
+router.post('/organizations', async (req, res) => {
+  const { companyName, contactName, email, phoneNumber, plan = 'PROFESSIONAL', timezone = 'Asia/Kolkata' } = req.body;
+
+  if (!companyName || !companyName.trim()) {
+    return res.status(400).json({ success: false, message: 'Company name is required.' });
+  }
+
+  const { v4: uuidv4 } = require('uuid');
+  const cryptoService = require('../services/cryptoService');
+  const clientStorageService = require('../services/clientStorageService');
+
+  try {
+    const clientId = `client-${uuidv4().substring(0, 8)}`;
+    const adminEmail = (email && email.trim()) ? email.trim().toLowerCase() : `admin@${companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+    const adminFullName = (contactName && contactName.trim()) ? contactName.trim() : `${companyName} Admin`;
+    const userId = `user-${uuidv4().substring(0, 8)}`;
+    const passwordHash = cryptoService.hashPassword('12345');
+
+    // 1. Create client organization record
+    await db.query(
+      `INSERT INTO clients (id, company_name, phone_number, status, onboarding_status, subscription_status, current_version, timezone)
+       VALUES (?, ?, ?, 'ACTIVE', 'completed', 'ACTIVE', 'v1.0', ?)`,
+      [clientId, companyName.trim(), phoneNumber || null, timezone]
+    );
+
+    // 2. Create primary user for organization if email doesn't already exist
+    const existingUser = await db.getOne('SELECT id FROM users WHERE email = ?', [adminEmail]);
+    if (!existingUser) {
+      await db.query(
+        `INSERT INTO users (id, client_id, full_name, email, phone_number, password_hash, role, platform_role, status, auth_provider, onboarding_status)
+         VALUES (?, ?, ?, ?, ?, ?, 'ADMIN', 'USER', 'ACTIVE', 'local', 'completed')`,
+        [userId, clientId, adminFullName, adminEmail, phoneNumber || null, passwordHash]
+      );
+    }
+
+    // 3. Initialize isolated client storage & copy master template
+    let storageInit = null;
+    try {
+      storageInit = await clientStorageService.initClientStorage(clientId);
+    } catch (e) {
+      console.warn('[STORAGE INIT WARN]', e.message);
+    }
+
+    // 4. Create subscription for the organization
+    await subscriptionService.createTrialSubscription(clientId, plan.toUpperCase(), 30);
+
+    // 5. Store workbook record in DB
+    if (storageInit && storageInit.currentPath) {
+      await db.query(
+        `INSERT INTO client_workbooks (id, client_id, workbook_path, current_version, file_name)
+         VALUES (?, ?, ?, 'v1.0', 'Controller_Reporting_Model_v5_Cin7_Actuals.xlsx')`,
+        [`wb-${uuidv4().substring(0, 8)}`, clientId, storageInit.currentPath]
+      );
+    }
+
+    // 6. Pre-seed Cin7 connection
+    const cin7Id = `cin7-${uuidv4().substring(0, 8)}`;
+    const cin7Acc = '16547ab1-814f-f797-10f2-9a73a398b9c7';
+    const encUsername = cryptoService.encrypt(cin7Acc);
+    const encApiKey = cryptoService.encrypt('MzybfJtO2UjB9_6DGC8z2p3dAQVgE2tAIK1R7UqmMwM');
+    await db.query(
+      `INSERT INTO cin7_connections (id, client_id, api_username_encrypted, api_key_encrypted, status, last_tested_at)
+       VALUES (?, ?, ?, ?, 'CONNECTED', CURRENT_TIMESTAMP)`,
+      [cin7Id, clientId, encUsername, encApiKey]
+    );
+
+    await logAction({
+      userId: req.session.user?.id || 'admin',
+      action: 'ORGANIZATION_CREATED',
+      resourceType: 'ORGANIZATION',
+      resourceId: clientId,
+      details: { companyName, plan, adminEmail }
+    });
+
+    res.json({
+      success: true,
+      message: `Organization "${companyName}" added successfully.`,
+      organization: {
+        id: clientId,
+        companyName: companyName.trim(),
+        status: 'ACTIVE',
+        plan: plan.toUpperCase()
+      }
+    });
+  } catch (err) {
+    console.error('[ADMIN CREATE ORG ERROR]', err);
+    res.status(500).json({ success: false, message: 'Failed to create organization: ' + err.message });
+  }
+});
+
+/**
+ * DELETE /api/admin/organizations/:id
+ * Removes an organization and its associated sub-records.
+ */
+router.delete('/organizations/:id', async (req, res) => {
+  const orgId = req.params.id;
+
+  if (orgId === 'client-vnc-master') {
+    return res.status(400).json({ success: false, message: 'Cannot delete the master VNC organization.' });
+  }
+
+  try {
+    await db.query('DELETE FROM clients WHERE id = ?', [orgId]);
+    await db.query('DELETE FROM users WHERE client_id = ?', [orgId]);
+    await db.query('DELETE FROM subscriptions WHERE organization_id = ?', [orgId]);
+    await db.query('DELETE FROM cin7_connections WHERE client_id = ?', [orgId]);
+    await db.query('DELETE FROM destination_files WHERE client_id = ?', [orgId]);
+    await db.query('DELETE FROM sync_runs WHERE client_id = ?', [orgId]);
+
+    await logAction({
+      userId: req.session.user?.id || 'admin',
+      action: 'ORGANIZATION_DELETED',
+      resourceType: 'ORGANIZATION',
+      resourceId: orgId
+    });
+
+    res.json({ success: true, message: 'Organization deleted successfully.' });
+  } catch (err) {
+    console.error('[ADMIN DELETE ORG ERROR]', err);
+    res.status(500).json({ success: false, message: 'Failed to delete organization.' });
+  }
+});
+
+/**
  * GET /api/admin/organizations/:id
  * Returns complete 360° organization details for deep inspection.
  */
