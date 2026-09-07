@@ -2,12 +2,13 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const db = require('../db');
 const { requireAuth, requireActiveSubscription } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
+const { sensitiveOpLimiter } = require('../middleware/rateLimitMiddleware');
 const clientStorageService = require('../services/clientStorageService');
 const editorService = require('../services/editorService');
+const ssrfProtectionService = require('../services/ssrfProtectionService');
 
 /**
  * POST /api/editor/session
@@ -15,7 +16,7 @@ const editorService = require('../services/editorService');
  * Strictly derives clientId from authenticated session.
  * Enforces subscription status.
  */
-router.post('/session', requireAuth, enforceTenantIsolation, requireActiveSubscription, async (req, res) => {
+router.post('/session', sensitiveOpLimiter, requireAuth, enforceTenantIsolation, requireActiveSubscription, async (req, res) => {
   const clientId = req.tenantId;
   const user = req.user;
   const client = req.client;
@@ -159,16 +160,21 @@ router.post('/callback/:token', express.json({ limit: '100mb' }), async (req, re
       const currentFilePath = clientStorageService.getClientCurrentWorkbookPath(clientId);
       const tempSavePath = `${currentFilePath}.tmp.${Date.now()}`;
 
-      // Download modified workbook stream from ONLYOFFICE Document Server
-      const downloadResponse = await axios({
-        method: 'GET',
-        url: url,
-        responseType: 'stream',
-        timeout: 30000
+      // Allowed ONLYOFFICE document server hosts
+      const allowedHosts = [];
+      if (process.env.ONLYOFFICE_URL) allowedHosts.push(process.env.ONLYOFFICE_URL);
+      if (process.env.ONLYOFFICE_DOCUMENT_SERVER_URL) allowedHosts.push(process.env.ONLYOFFICE_DOCUMENT_SERVER_URL);
+
+      // Download modified workbook stream securely with SSRF & DNS rebinding defense
+      const { stream } = await ssrfProtectionService.safeFetchStream(url, {
+        allowedHosts: allowedHosts.length > 0 ? allowedHosts : undefined,
+        allowLocalTesting: process.env.NODE_ENV !== 'production',
+        timeoutMs: 30000,
+        maxSizeBytes: 50 * 1024 * 1024
       });
 
       const writer = fs.createWriteStream(tempSavePath);
-      downloadResponse.data.pipe(writer);
+      stream.pipe(writer);
 
       await new Promise((resolve, reject) => {
         writer.on('finish', resolve);
@@ -185,7 +191,7 @@ router.post('/callback/:token', express.json({ limit: '100mb' }), async (req, re
       return res.json({ error: 0 });
     } catch (err) {
       console.error('[ONLYOFFICE SAVE ERROR]', err.message);
-      return res.status(500).json({ error: 1, message: 'Failed to save updated workbook stream.' });
+      return res.status(500).json({ error: 1, message: 'Failed to save updated workbook stream: ' + err.message });
     }
   }
 
@@ -258,7 +264,7 @@ router.get('/download', requireAuth, enforceTenantIsolation, async (req, res) =>
     // Build a meaningful dynamic filename: {CompanyName}_Controller_Reporting_{YYYY-MM-DD}.xlsx
     let downloadFileName = 'Controller_Reporting_Master_Template.xlsx';
     try {
-      const clientResult = await db.query('SELECT company_name FROM clients WHERE id = $1', [clientId]);
+      const clientResult = await db.query('SELECT company_name FROM clients WHERE id = ?', [clientId]);
       if (clientResult && clientResult.rows && clientResult.rows.length > 0) {
         const rawCompany = clientResult.rows[0].company_name || '';
         // Sanitize: replace spaces with underscores, strip unsafe characters

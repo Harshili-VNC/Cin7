@@ -28,7 +28,9 @@ class BillingProviderService {
       throw new Error(`Invalid plan code: ${planCode}`);
     }
 
-    if (process.env.NODE_ENV === 'test' || process.env.ENABLE_MOCK_BILLING === 'true') {
+    const isMockAllowed = process.env.NODE_ENV === 'test' || (process.env.NODE_ENV !== 'production' && process.env.ENABLE_MOCK_BILLING === 'true');
+
+    if (isMockAllowed) {
       const mockSessionId = `mock_chk_${uuidv4().substring(0, 12)}`;
       return {
         provider: 'mock-billing',
@@ -55,7 +57,9 @@ class BillingProviderService {
       throw new Error('Organization ID required for billing portal.');
     }
 
-    if (process.env.NODE_ENV === 'test' || process.env.ENABLE_MOCK_BILLING === 'true') {
+    const isMockAllowed = process.env.NODE_ENV === 'test' || (process.env.NODE_ENV !== 'production' && process.env.ENABLE_MOCK_BILLING === 'true');
+
+    if (isMockAllowed) {
       return {
         provider: 'mock-billing',
         portalUrl: `${returnUrl || '/settings'}?portal=mock_active`,
@@ -79,8 +83,10 @@ class BillingProviderService {
       throw new Error(`Target plan not found: ${newPlanCode}`);
     }
 
+    const isMockAllowed = process.env.NODE_ENV === 'test' || (process.env.NODE_ENV !== 'production' && process.env.ENABLE_MOCK_BILLING === 'true');
+
     // Update local subscription plan_id in test/mock environment
-    if (process.env.NODE_ENV === 'test' || process.env.ENABLE_MOCK_BILLING === 'true') {
+    if (isMockAllowed) {
       await db.query('UPDATE subscriptions SET plan_id = ?, status = ? WHERE organization_id = ?', [plan.id, 'ACTIVE', organizationId]);
       return {
         success: true,

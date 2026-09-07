@@ -2,7 +2,16 @@ const crypto = require('crypto');
 try { require('dotenv').config(); } catch (e) {}
 
 const ALGORITHM = 'aes-256-gcm';
-const RAW_KEY = process.env.ENCRYPTION_KEY || 'vnc_secret_encryption_key_32bytes_len_!';
+const DEFAULT_DEV_KEY = 'vnc_secret_encryption_key_32bytes_len_!';
+const RAW_KEY = process.env.ENCRYPTION_KEY || DEFAULT_DEV_KEY;
+
+// Fail-fast security check in production
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY === DEFAULT_DEV_KEY || process.env.ENCRYPTION_KEY.length < 32) {
+    console.error('❌ [FATAL SECURITY ERROR] Insecure or missing ENCRYPTION_KEY in production.');
+    throw new Error('FATAL: ENCRYPTION_KEY must be configured with at least 32 characters in production.');
+  }
+}
 
 // Ensure key is exactly 32 bytes (256 bits)
 const KEY = crypto.createHash('sha256').update(String(RAW_KEY)).digest();

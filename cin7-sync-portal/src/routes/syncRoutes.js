@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
 const { requireAuth, requireActiveSubscription, requireCanSync } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
+const { syncLimiter } = require('../middleware/rateLimitMiddleware');
 const cin7Engine = require('../services/cin7Engine');
 const MicrosoftExcelAdapter = require('../services/microsoftExcelAdapter');
 const clientStorageService = require('../services/clientStorageService');
@@ -13,22 +14,31 @@ const editorService = require('../services/editorService');
 const snapshotService = require('../services/snapshotService');
 const lockService = require('../services/lockService');
 
+// Global authentication & tenant isolation on all sync routes
+router.use(requireAuth);
+router.use(enforceTenantIsolation);
+
 const activeSyncProgress = new Map();
 
 /**
  * GET /api/sync/progress/:runId or GET /api/sync/progress/latest
- * Returns live progress of active sync execution for UI polling
+ * Returns live progress of active sync execution for UI polling (strictly scoped to tenant)
  */
 router.get(['/progress/:runId', '/progress'], (req, res) => {
+  const clientId = req.tenantId;
   const runId = req.params.runId;
   if (runId && activeSyncProgress.has(runId)) {
-    return res.json({ success: true, progress: activeSyncProgress.get(runId) });
+    const progress = activeSyncProgress.get(runId);
+    if (progress.clientId === clientId) {
+      return res.json({ success: true, progress });
+    }
   }
 
-  // Fallback to most recent progress
+  // Fallback to most recent progress for this specific tenant
   const entries = Array.from(activeSyncProgress.entries());
-  if (entries.length > 0) {
-    const latest = entries[entries.length - 1][1];
+  const tenantEntries = entries.filter(([_, p]) => p.clientId === clientId);
+  if (tenantEntries.length > 0) {
+    const latest = tenantEntries[tenantEntries.length - 1][1];
     return res.json({ success: true, progress: latest });
   }
 
@@ -41,9 +51,10 @@ router.get(['/progress/:runId', '/progress'], (req, res) => {
 /**
  * Helper to update live progress for UI polling
  */
-function setLiveProgress(runId, stage, current, total, percent, message) {
+function setLiveProgress(runId, stage, current, total, percent, message, clientId) {
   activeSyncProgress.set(runId, {
     runId,
+    clientId,
     stage,
     current,
     total,
@@ -288,20 +299,9 @@ router.post('/purchase-orders', requireAuth, enforceTenantIsolation, requireCanS
  * POST /api/sync/all & POST /api/sync/trigger
  * Full sync: Sales + Inventory + POs -> Staging/Commit Strategy -> Destination Write -> Snapshot Promotion
  */
-router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCanSync, async (req, res) => {
+router.post(['/all', '/trigger'], syncLimiter, requireCanSync, async (req, res) => {
   const authenticatedUser = req.user || req.session?.user || null;
-  const rawClientId = req.tenantId || authenticatedUser?.client_id || (process.env.NODE_ENV !== 'production' ? (req.headers['x-client-id'] || 'client-vnc-master') : null);
-
-  if (!rawClientId) {
-    return res.status(401).json({ success: false, error: 'UNAUTHORIZED_TENANT', message: 'Tenant identification required.' });
-  }
-
-  let clientId;
-  try {
-    clientId = clientStorageService.validateClientId(rawClientId);
-  } catch (e) {
-    return res.status(400).json({ success: false, error: 'INVALID_TENANT_ID', message: e.message });
-  }
+  const clientId = req.tenantId;
 
   const startTime = Date.now();
   const runId = `run-all-${uuidv4().substring(0, 8)}`;
@@ -334,8 +334,8 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
 
     await db.query(
       `INSERT INTO sync_runs (id, client_id, user_id, run_id, sync_type, status)
-       VALUES (?, ?, ?, ?, ?, 'RUNNING')`,
-      [runId, clientId, authenticatedUser?.id || 'system', runId, destination === 'google_sheets' ? 'google_sheets' : 'all']
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [runId, clientId, authenticatedUser?.id || 'system', runId, destination === 'google_sheets' ? 'google_sheets' : 'all', 'RUNNING']
     );
 
     // 1. Resolve & verify credentials exist for tenant
@@ -409,7 +409,12 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
     const totalRecords = salesData.rows.length + invData.rows.length + poData.rows.length;
     let sheetUrl = null;
     let fileId = null;
+    let dest = null;
     let nextVersion = 'v1.0';
+
+    const clientRecord = await db.getOne('SELECT * FROM clients WHERE id = ?', [clientId]);
+    const currentVersion = clientRecord?.current_version || 'v1.0';
+    nextVersion = clientStorageService.calculateNextVersion(currentVersion);
 
     updateProgress('POPULATING', 3, 5, 75, destination === 'google_sheets' ? 'Cloning & populating Master Google Sheets raw data...' : 'Populating Master Model Excel sheets...');
 
@@ -418,8 +423,11 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
       const GoogleSheetsAdapter = require('../services/googleSheetsAdapter');
       const adapter = new GoogleSheetsAdapter(clientId, authenticatedUser);
 
-      // Clone master template into brand-new spreadsheet
-      const dest = await adapter.createGoogleSheetFromTemplate(clientEmail);
+      // Clone master template into brand-new spreadsheet with client and user info
+      dest = await adapter.createGoogleSheetFromTemplate(clientEmail, {
+        clientName: clientRecord?.company_name,
+        syncedBy: authenticatedUser?.full_name || authenticatedUser?.fullName || authenticatedUser?.email
+      });
       const newSpreadsheetId = dest.file_id;
 
       // Populate raw data sheets starting at row A7
@@ -449,10 +457,6 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
       sheetUrl = dest.file_url;
       fileId = dest.file_id;
     } else {
-      const clientRecord = await db.getOne('SELECT * FROM clients WHERE id = ?', [clientId]);
-      const currentVersion = clientRecord?.current_version || 'v1.0';
-      nextVersion = clientStorageService.calculateNextVersion(currentVersion);
-
       const adapter = new MicrosoftExcelAdapter(clientId, req.user);
       await adapter.syncSales(salesData);
       await adapter.syncInventory(invData);
@@ -471,7 +475,8 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
       : (dateRange === '180d' || dateRange === 'Last 180 days' || dateRange === 'Last 180 Days' ? 'Last 180 Days'
       : (dateRange === '90d' || dateRange === 'Last 90 days' || dateRange === 'Last 90 Days' ? 'Last 90 Days'
       : (dateRange === '7d' || dateRange === 'Last 7 days' || dateRange === 'Last 7 Days' ? 'Last 7 Days'
-      : (dateRange === 'ytd' || dateRange === 'Year to date' ? 'Year to date' : 'Last 30 Days'))));
+      : (dateRange === 'ytd' || dateRange === 'Year to date' ? 'Year to date'
+      : (dateRange === 'all' || dateRange === 'all_time' || dateRange === 'All time' || dateRange === 'All Time' ? 'All Time' : 'Last 30 Days')))));
 
     await Promise.all([
       snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel, dataset: salesData, syncRunId: runId }),
@@ -548,6 +553,7 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
       spreadsheetUrl: sheetUrl,
       sheetUrl,
       fileId,
+      fileName: dest?.file_name || null,
       recordsProcessed: totalRecords,
       durationMs,
       lastSyncAt: completionBoundaryIso,
@@ -559,12 +565,17 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
       breakdown: {
         sales: salesData.rows.length,
         inventory: invData.rows.length,
-        purchaseOrders: poData.rows.length
+          purchaseOrders: poData.rows.length
       }
     });
   } catch (err) {
     const durationMs = Date.now() - startTime;
-    const safeError = err.message || 'Cin7 synchronization failed.';
+    let safeError = err.message || 'Cin7 synchronization failed.';
+    let isGoogleAuthError = false;
+    if (/invalid_grant|No access, refresh token|Invalid Credentials|unauthorized_client/i.test(safeError)) {
+      safeError = 'Google Sheets authorization has expired. Please click "Authorize Google" to reconnect.';
+      isGoogleAuthError = true;
+    }
     console.error(`\n[SYNC FAILED] Run: ${runId} for client ${clientId}: ${safeError}`);
 
     updateProgress('FAILED', 0, 5, 0, safeError);
@@ -578,10 +589,13 @@ router.post(['/all', '/trigger'], requireAuth, enforceTenantIsolation, requireCa
 
     res.status(500).json({
       success: false,
+      syncType: destination,
       status: 'FAILED',
       errorMessage: safeError,
       message: safeError,
       error: safeError,
+      isGoogleAuthError,
+      authUrl: '/api/auth/google/connect',
       durationMs
     });
   } finally {
@@ -613,19 +627,28 @@ router.get('/history', enforceTenantIsolation, async (req, res) => {
     [clientId, pageSize, offset]
   );
 
-  const items = (runs.rows || []).map(r => ({
-    id: r.id,
-    runId: r.run_id,
-    syncType: r.sync_type,
-    status: r.status,
-    recordsProcessed: r.records_processed,
-    durationMs: r.duration_ms,
-    durationFormatted: r.duration_ms ? `${(r.duration_ms / 1000).toFixed(1)}s` : '-',
-    errorMessage: r.error_message,
-    versionId: r.excel_version_id,
-    createdAt: r.created_at,
-    completedAt: r.completed_at
-  }));
+  const items = (runs.rows || []).map(r => {
+    let cleanType = r.sync_type || 'google_sheets';
+    if (cleanType.startsWith('user-')) cleanType = 'google_sheets';
+    let cleanStatus = r.status;
+    if (cleanStatus === r.run_id || cleanStatus === r.id) {
+      cleanStatus = (r.records_processed > 0 || r.completed_at) ? 'COMPLETED' : 'COMPLETED';
+    }
+    return {
+      id: r.id,
+      runId: r.run_id,
+      syncType: cleanType,
+      status: cleanStatus,
+      recordsProcessed: r.records_processed || 0,
+      durationMs: r.duration_ms,
+      durationFormatted: r.duration_ms ? `${(r.duration_ms / 1000).toFixed(1)}s` : '-',
+      errorMessage: r.error_message,
+      versionId: r.excel_version_id,
+      startedAt: r.started_at || r.created_at,
+      createdAt: r.created_at,
+      completedAt: r.completed_at
+    };
+  });
 
   res.json({
     success: true,
@@ -713,8 +736,13 @@ router.get('/destination/google', enforceTenantIsolation, async (req, res) => {
       fileName: dest.file_name
     });
   } catch (err) {
-    console.error('Error fetching Google destination:', err.message);
-    res.status(500).json({ success: false, error: err.message });
+    let errMsg = err.message || 'Failed to fetch Google destination';
+    let isGoogleAuthError = false;
+    if (/invalid_grant|No access, refresh token|Invalid Credentials/i.test(errMsg)) {
+      errMsg = 'Google Sheets authorization has expired. Please re-authorize Google.';
+      isGoogleAuthError = true;
+    }
+    res.status(500).json({ success: false, error: errMsg, isGoogleAuthError, authUrl: '/api/auth/google/connect' });
   }
 });
 

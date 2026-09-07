@@ -615,6 +615,32 @@ class SnapshotService {
       mapB.set(key, { row, key, idx });
     });
 
+    const getItemInfo = (reportType, row, fallbackKey) => {
+      let title = fallbackKey;
+      let subtitle = '';
+      if (!row || !Array.isArray(row)) return { title, subtitle };
+
+      if (reportType === 'sales') {
+        title = String(row[2] || row[4] || fallbackKey).trim();
+        const sku = String(row[5] || '').trim();
+        const prod = String(row[6] || '').trim();
+        const cust = String(row[11] || '').trim();
+        subtitle = [sku || prod, cust].filter(Boolean).join(' · ');
+      } else if (reportType === 'purchase') {
+        title = String(row[4] || fallbackKey).trim();
+        const supp = String(row[2] || '').trim();
+        const loc = String(row[12] || '').trim();
+        const status = String(row[14] || '').trim();
+        subtitle = [supp, loc, status].filter(Boolean).join(' · ');
+      } else if (reportType === 'inventory') {
+        title = String(row[1] || fallbackKey).trim();
+        const prod = String(row[2] || '').trim();
+        const loc = String(row[0] || '').trim();
+        subtitle = [prod, loc].filter(Boolean).join(' · ');
+      }
+      return { title: title || fallbackKey, subtitle };
+    };
+
     const newRecords = [];
     const removedRecords = [];
     const updatedRecords = [];
@@ -623,13 +649,45 @@ class SnapshotService {
     // 1. Check all records in Snapshot B
     for (const [key, itemB] of mapB.entries()) {
       if (!mapA.has(key)) {
+        const info = getItemInfo(snapA.reportType, itemB.row, key);
+        const deltas = [];
+
+        config.metrics.forEach(m => {
+          const valB = Number(itemB.row[m.index]) || 0;
+          if (Math.abs(valB) > 0.0001) {
+            deltas.push({
+              metric: m.label,
+              type: m.type,
+              previousValue: 0,
+              currentValue: valB,
+              delta: valB,
+              percentChange: 100
+            });
+          }
+        });
+
+        if (deltas.length === 0) {
+          deltas.push({
+            metric: 'Record Status',
+            type: 'text',
+            previousValue: 'Not in Baseline',
+            currentValue: 'Present in Comparison',
+            delta: '+1',
+            percentChange: 100
+          });
+        }
+
         newRecords.push({
           key,
+          displayTitle: info.title,
+          subtitle: info.subtitle,
           row: itemB.row,
+          deltas,
           type: 'NEW'
         });
       } else {
         const itemA = mapA.get(key);
+        const info = getItemInfo(snapA.reportType, itemB.row, key);
         const deltas = [];
         let hasChanges = false;
 
@@ -655,6 +713,8 @@ class SnapshotService {
         if (hasChanges) {
           updatedRecords.push({
             key,
+            displayTitle: info.title,
+            subtitle: info.subtitle,
             rowA: itemA.row,
             rowB: itemB.row,
             deltas,
@@ -663,6 +723,8 @@ class SnapshotService {
         } else {
           unchangedRecords.push({
             key,
+            displayTitle: info.title,
+            subtitle: info.subtitle,
             row: itemB.row,
             type: 'UNCHANGED'
           });
@@ -673,9 +735,40 @@ class SnapshotService {
     // 2. Check for removed records (present in A, absent in B)
     for (const [key, itemA] of mapA.entries()) {
       if (!mapB.has(key)) {
+        const info = getItemInfo(snapA.reportType, itemA.row, key);
+        const deltas = [];
+
+        config.metrics.forEach(m => {
+          const valA = Number(itemA.row[m.index]) || 0;
+          if (Math.abs(valA) > 0.0001) {
+            deltas.push({
+              metric: m.label,
+              type: m.type,
+              previousValue: valA,
+              currentValue: 0,
+              delta: -valA,
+              percentChange: -100
+            });
+          }
+        });
+
+        if (deltas.length === 0) {
+          deltas.push({
+            metric: 'Record Status',
+            type: 'text',
+            previousValue: 'Present in Baseline',
+            currentValue: 'Not in Comparison',
+            delta: '-1',
+            percentChange: -100
+          });
+        }
+
         removedRecords.push({
           key,
+          displayTitle: info.title,
+          subtitle: info.subtitle,
           row: itemA.row,
+          deltas,
           type: 'REMOVED'
         });
       }
@@ -734,6 +827,33 @@ class SnapshotService {
   }
 
   /**
+   * Neutralizes spreadsheet formula execution prefixes for untrusted string cells (SEC-10)
+   * Prevents CSV / Spreadsheet formula injection while preserving valid negative numbers.
+   */
+  sanitizeCsvCell(val) {
+    if (val === null || val === undefined) return '';
+
+    // Preserve native numeric types without formula escaping
+    if (typeof val === 'number' && !isNaN(val)) {
+      return val;
+    }
+
+    let str = String(val);
+
+    // Preserve strings that represent pure numbers (including negative numbers like -150.50)
+    if (/^-?\d+(\.\d+)?$/.test(str.trim())) {
+      return str.trim();
+    }
+
+    // Neutralize dangerous spreadsheet formula execution prefixes for string cells
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = "'" + str;
+    }
+
+    return str;
+  }
+
+  /**
    * Generates CSV string from an immutable snapshot, strictly within tenant isolation.
    */
   async exportSnapshotCsv(clientId, snapshotId) {
@@ -752,17 +872,19 @@ class SnapshotService {
     const headers = snapshot.headers || [];
     const rows = snapshot.rows || [];
 
-    function escapeCsv(val) {
-      const str = String(val === null || val === undefined ? '' : val);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    const formatCsvCell = (val) => {
+      const sanitized = this.sanitizeCsvCell(val);
+      const str = String(sanitized);
+      // RFC4180 CSV escaping for quotes, commas, and newlines
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
         return `"${str.replace(/"/g, '""')}"`;
       }
       return str;
-    }
+    };
 
     const lines = [
-      headers.map(escapeCsv).join(','),
-      ...rows.map(r => r.map(escapeCsv).join(','))
+      headers.map(formatCsvCell).join(','),
+      ...rows.map(r => r.map(formatCsvCell).join(','))
     ];
 
     return {

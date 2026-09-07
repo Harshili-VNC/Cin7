@@ -29,11 +29,37 @@ async function runReportHistoryTests() {
   const port = server.address().port;
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const testTenant = `client-test-${uuidv4().substring(0, 8)}`;
-  const otherTenant = `client-other-${uuidv4().substring(0, 8)}`;
+  // Register and authenticate test tenants
+  const testReg = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fullName: 'History Test User',
+      companyName: 'History Test Tenant',
+      email: `hist.user.${Date.now()}@vnc.test`,
+      password: 'HistoryPassword2026!#'
+    })
+  });
+  const testRegData = await testReg.json();
+  const testCookie = testReg.headers.get('set-cookie')?.split(';')[0] || '';
+  const testTenant = testRegData.user?.clientId || testRegData.user?.client_id;
 
-  const testHeaders = { 'x-client-id': testTenant };
-  const otherHeaders = { 'x-client-id': otherTenant };
+  const otherReg = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fullName: 'Other History User',
+      companyName: 'Other History Tenant',
+      email: `other.hist.${Date.now()}@vnc.test`,
+      password: 'HistoryPassword2026!#'
+    })
+  });
+  const otherRegData = await otherReg.json();
+  const otherCookie = otherReg.headers.get('set-cookie')?.split(';')[0] || '';
+  const otherTenant = otherRegData.user?.clientId || otherRegData.user?.client_id;
+
+  const testHeaders = { 'Cookie': testCookie };
+  const otherHeaders = { 'Cookie': otherCookie };
 
   try {
     // -----------------------------------------------------------------------

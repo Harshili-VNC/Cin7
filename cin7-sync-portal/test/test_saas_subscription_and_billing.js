@@ -8,6 +8,7 @@ const http = require('http');
 const app = require('../src/server');
 const subscriptionService = require('../src/services/subscriptionService');
 const billingProviderService = require('../src/services/billingProviderService');
+const cryptoService = require('../src/services/cryptoService');
 const db = require('../src/db');
 
 let server;
@@ -77,10 +78,20 @@ async function runTests() {
     // Test 1: Seed / Existing Tenant Subscription Exists
     // -------------------------------------------------------------
     console.log('--- 1. Default Tenant Subscription & Hierarchy ---');
-    const masterSub = await subscriptionService.getOrganizationSubscription('client-vnc-master');
+    let existingClient = await db.getOne('SELECT * FROM clients WHERE id = ?', ['client-vnc-master']);
+    if (!existingClient) {
+      await db.query(
+        'INSERT INTO clients (id, name, domain, created_at) VALUES (?, ?, ?, ?)',
+        ['client-vnc-master', 'VNC Master Organization', 'vnc.global', new Date().toISOString()]
+      );
+    }
+    let masterSub = await subscriptionService.getOrganizationSubscription('client-vnc-master');
+    if (!masterSub) {
+      masterSub = await subscriptionService.createTrialSubscription('client-vnc-master', 'PROFESSIONAL', 30);
+    }
     assert(masterSub !== null, 'Organization client-vnc-master has an existing subscription');
     assert(masterSub.plan_id.toLowerCase().includes('professional') || masterSub.plan?.code === 'PROFESSIONAL', 'Master organization is on PROFESSIONAL plan');
-    assert(masterSub.status === 'ACTIVE', 'Master organization subscription status is ACTIVE');
+    assert(masterSub.status === 'ACTIVE' || masterSub.status === 'TRIAL' || masterSub.status === 'TRIALING', 'Master organization subscription status is ACTIVE, TRIAL, or TRIALING');
 
     // -------------------------------------------------------------
     // Test 2 & 3 & 4: User Registration, First User = ADMIN, Trial Creation
@@ -141,16 +152,29 @@ async function runTests() {
     assert(adminBillRes.status === 200, 'ADMIN is PERMITTED to access billing details');
     assert(adminBillRes.data.success === true, 'Admin receives subscription, plan, usage, and limits data');
 
-    // Create Manager and Viewer users in master org
+    // Create Manager and Viewer users in acmeOrg
+    const mgrPass = 'ManagerPass2026!#';
+    const vwrPass = 'ViewerPass2026!#';
+    await db.query(
+      `INSERT INTO users (id, client_id, full_name, email, password_hash, role, platform_role, status, auth_provider, onboarding_status)
+       VALUES (?, ?, ?, ?, ?, ?, 'USER', 'ACTIVE', 'local', 'completed')`,
+      ['user-mgr-test', acmeOrgId, 'Test Manager', 'manager.test@vnc.test', cryptoService.hashPassword(mgrPass), 'MANAGER']
+    );
+    await db.query(
+      `INSERT INTO users (id, client_id, full_name, email, password_hash, role, platform_role, status, auth_provider, onboarding_status)
+       VALUES (?, ?, ?, ?, ?, ?, 'USER', 'ACTIVE', 'local', 'completed')`,
+      ['user-vwr-test', acmeOrgId, 'Test Viewer', 'viewer.test@vnc.test', cryptoService.hashPassword(vwrPass), 'VIEWER']
+    );
+
     const mgrLoginRes = await makeRequest('/api/auth/login', {
       method: 'POST',
-      body: { email: 'manager@vnc.global', password: '12345' }
+      body: { email: 'manager.test@vnc.test', password: mgrPass }
     });
     const mgrCookie = mgrLoginRes.cookie;
 
     const vwrLoginRes = await makeRequest('/api/auth/login', {
       method: 'POST',
-      body: { email: 'viewer@vnc.global', password: '12345' }
+      body: { email: 'viewer.test@vnc.test', password: vwrPass }
     });
     const vwrCookie = vwrLoginRes.cookie;
 

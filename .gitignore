@@ -9,6 +9,13 @@ node_modules/
 .env.test.local
 .env.production.local
 **/.env
+**/.env.*
+token.json
+**/token.json
+oauth-credentials.json
+**/oauth-credentials.json
+*.pem
+*.key
 
 # Build outputs
 dist/
@@ -29,26 +36,19 @@ Thumbs.db
 .idea/
 
 # Storage dynamic test files & caches
-**/storage/clients/client-test-*
-**/storage/clients/test-client-*
-**/storage/clients/client-other-*
-**/storage/clients/client-mig-*
-**/storage/clients/client-m365-*
-**/storage/clients/*/order_cache/
-**/storage/snapshots/client-test-*
-**/storage/snapshots/test-client-*
-**/storage/snapshots/client-other-*
-**/storage/snapshots/client-mig-*
-**/storage/snapshots/client-m365-*
-**/storage/current_reports/client-test-*
-**/storage/current_reports/test-client-*
-**/storage/current_reports/client-other-*
-**/storage/current_reports/client-mig-*
-**/storage/current_reports/client-m365-*
+**/storage/clients/*
+!**/storage/clients/.gitkeep
+**/storage/snapshots/*
+!**/storage/snapshots/.gitkeep
+**/storage/current_reports/*
+!**/storage/current_reports/.gitkeep
+**/storage/excel_files/*
+!**/storage/excel_files/.gitkeep
+**/storage/google_sheets/*
+!**/storage/google_sheets/.gitkeep
 **/storage/**/order_cache/
 **/storage/order_cache/
-**/storage/**/google_sheets/*.json
-**/storage/google_sheets/*.json
 *.tmp
 *.zip
 extracted-zip/
+

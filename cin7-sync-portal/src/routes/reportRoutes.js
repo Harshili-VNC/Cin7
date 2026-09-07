@@ -4,7 +4,8 @@ const { requireAuth } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
 const snapshotService = require('../services/snapshotService');
 
-// Tenant isolation middleware on all routes
+// Global authentication & tenant isolation middleware on all report routes
+router.use(requireAuth);
 router.use(enforceTenantIsolation);
 
 /**
@@ -17,6 +18,7 @@ router.get('/current', async (req, res) => {
     const currentReports = await snapshotService.getCurrentReports(clientId);
     res.json({
       success: true,
+      clientId,
       reports: currentReports
     });
   } catch (err) {

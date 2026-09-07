@@ -6,6 +6,7 @@ const session = require('express-session');
 require('dotenv').config();
 
 const db = require('./db');
+const { globalLimiter } = require('./middleware/rateLimitMiddleware');
 const authRoutes = require('./routes/authRoutes');
 const cin7Routes = require('./routes/cin7Routes');
 const syncRoutes = require('./routes/syncRoutes');
@@ -19,25 +20,105 @@ const billingRoutes = require('./routes/billingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
-const PORT = process.env.PORT || 2005;
+const PORT = process.env.PORT || 2121;
 
-// Security & Request Parsing Middleware
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ── PRODUCTION FAIL-FAST SECURITY VALIDATION ──────────────────────────────────
+const DEFAULT_DEV_SESSION_SECRET = 'vnc_cin7_portal_session_secret_2026_key';
+const SESSION_SECRET = process.env.SESSION_SECRET || DEFAULT_DEV_SESSION_SECRET;
+
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === DEFAULT_DEV_SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    console.error('❌ [FATAL SECURITY ERROR] Insecure or missing SESSION_SECRET in production.');
+    throw new Error('FATAL: SESSION_SECRET must be configured with at least 32 characters in production.');
+  }
+}
+
+// ── SECURITY HEADERS MIDDLEWARE ───────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://inventory.dearsystems.com https://inventory.cin7.com https://accounts.google.com; frame-src 'self' https://accounts.google.com http://localhost:* http://127.0.0.1:*;"
+  );
+
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// ── RESTRICTIVE CORS ALLOWLIST ────────────────────────────────────────────────
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(o => o.trim().toLowerCase())
+  .filter(Boolean);
+
+const defaultAllowedOrigins = [
+  'http://localhost:2121',
+  'http://127.0.0.1:2121',
+  'http://localhost:2005',
+  'http://127.0.0.1:2005',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
+];
+
+if (process.env.APP_URL) {
+  try {
+    const appUrlOrigin = new URL(process.env.APP_URL).origin.toLowerCase();
+    if (!defaultAllowedOrigins.includes(appUrlOrigin)) {
+      defaultAllowedOrigins.push(appUrlOrigin);
+    }
+  } catch (_) {}
+}
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser requests (curl, server-to-server) where origin is undefined
+    if (!origin) return callback(null, true);
+
+    const cleanOrigin = origin.toLowerCase();
+    const isAllowed = allowedOrigins.includes(cleanOrigin) ||
+      defaultAllowedOrigins.includes(cleanOrigin) ||
+      /^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(cleanOrigin) ||
+      /^http:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(cleanOrigin);
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS_NOT_ALLOWED: Request origin not authorized.'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'stripe-signature', 'x-billing-signature', 'x-skip-rate-limit']
+}));
+
+// Request Body Parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// HTTP-Only Secure Session Setup
+// ── HARDENED SESSION CONFIGURATION ───────────────────────────────────────────
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'vnc_cin7_portal_session_secret_2026_key',
+  name: '__vnc_portal_sid',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
+    sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     maxAge: 24 * 60 * 60 * 1000 // 24 Hours
   }
 }));
+
+// Mount Global Rate Limiter on API surface
+app.use('/api', globalLimiter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

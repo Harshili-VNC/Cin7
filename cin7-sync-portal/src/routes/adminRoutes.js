@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const os = require('os');
 const db = require('../db');
 const { requireAuth, requireSuperAdmin } = require('../middleware/authMiddleware');
@@ -278,7 +279,10 @@ router.post('/organizations', async (req, res) => {
     const adminEmail = (email && email.trim()) ? email.trim().toLowerCase() : `admin@${companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
     const adminFullName = (contactName && contactName.trim()) ? contactName.trim() : `${companyName} Admin`;
     const userId = `user-${uuidv4().substring(0, 8)}`;
-    const passwordHash = cryptoService.hashPassword('12345');
+    const rawPassword = (req.body.password && typeof req.body.password === 'string' && req.body.password.trim().length >= 6)
+      ? req.body.password.trim()
+      : crypto.randomBytes(12).toString('base64url');
+    const passwordHash = cryptoService.hashPassword(rawPassword);
 
     // 1. Create client organization record
     await db.query(
@@ -316,17 +320,6 @@ router.post('/organizations', async (req, res) => {
         [`wb-${uuidv4().substring(0, 8)}`, clientId, storageInit.currentPath]
       );
     }
-
-    // 6. Pre-seed Cin7 connection
-    const cin7Id = `cin7-${uuidv4().substring(0, 8)}`;
-    const cin7Acc = '16547ab1-814f-f797-10f2-9a73a398b9c7';
-    const encUsername = cryptoService.encrypt(cin7Acc);
-    const encApiKey = cryptoService.encrypt('MzybfJtO2UjB9_6DGC8z2p3dAQVgE2tAIK1R7UqmMwM');
-    await db.query(
-      `INSERT INTO cin7_connections (id, client_id, api_username_encrypted, api_key_encrypted, status, last_tested_at)
-       VALUES (?, ?, ?, ?, 'CONNECTED', CURRENT_TIMESTAMP)`,
-      [cin7Id, clientId, encUsername, encApiKey]
-    );
 
     await logAction({
       userId: req.session.user?.id || 'admin',
@@ -954,11 +947,19 @@ router.get('/audit', async (req, res) => {
       return acc;
     }, {});
 
+    const usersRes = await db.query('SELECT id, full_name, email FROM users');
+    const usersMap = (usersRes.rows || []).reduce((acc, u) => {
+      acc[u.id] = u.full_name || u.email;
+      return acc;
+    }, {});
+
     let mapped = logs.map(l => {
       let details = {};
       try {
         details = typeof l.details_json === 'string' ? JSON.parse(l.details_json) : (l.details_json || {});
       } catch (e) {}
+
+      const resolvedAdmin = usersMap[l.user_id] || (l.user_id === 'user-super-admin-automation' ? 'VNC Admin' : (l.user_id && !l.user_id.includes('-') ? l.user_id : 'Platform Admin'));
 
       return {
         id: l.id,
@@ -966,6 +967,7 @@ router.get('/audit', async (req, res) => {
         organization_id: l.organization_id,
         companyName: clientsMap[l.organization_id] || l.organization_id,
         userId: l.user_id,
+        adminName: resolvedAdmin,
         action: l.action,
         resource: l.resource,
         result: l.result,

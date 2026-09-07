@@ -16,6 +16,8 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     super(clientId, userOAuthAccount);
     this.clientId = clientStorageService.validateClientId(clientId || 'client-vnc-master');
     this.storageDir = clientStorageService.getClientGoogleSheetsDir(this.clientId);
+    this.user = userOAuthAccount;
+    this.userOAuthAccount = userOAuthAccount;
 
     this.masterTemplateId = process.env.GoogleMasterTemp || process.env.MASTER_TEMPLATE_ID || '1uxdMS8pATOVdGQWD-VFniQ0RbMZOtjJE';
     this.authClient = null;
@@ -62,6 +64,16 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         if (token) {
           oauth2Client.setCredentials(token);
         }
+
+        oauth2Client.on('tokens', (refreshedTokens) => {
+          try {
+            const current = fs.existsSync(tokenPath) ? JSON.parse(fs.readFileSync(tokenPath, 'utf8')) : {};
+            const merged = { ...current, ...refreshedTokens };
+            fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
+            console.log('[GOOGLE OAUTH] ✅ Tokens refreshed and saved automatically to token.json');
+          } catch (e) {}
+        });
+
         this.authClient = oauth2Client;
       } else {
         // Fallback default auth
@@ -83,12 +95,54 @@ class GoogleSheetsAdapter extends DestinationAdapter {
   /**
    * Clones the Master Google Sheet Template into a BRAND NEW spreadsheet for every sync.
    * Preserves all tabs, formatting, formulas, dashboards, and KPI sections.
+   * Dynamically includes Client Company Name and User Name/Email in the title to avoid tenant sheet collisions.
    */
-  async createGoogleSheetFromTemplate(clientEmail = null) {
+  async createGoogleSheetFromTemplate(clientEmail = null, metadata = {}) {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-    const fileName = `Controller Reporting - Sync - ${timestamp}`;
+
+    // 1. Resolve client company name
+    let clientName = metadata?.clientName || metadata?.companyName;
+    if (!clientName && this.clientId) {
+      try {
+        const clientRec = await db.getOne('SELECT company_name FROM clients WHERE id = ?', [this.clientId]);
+        if (clientRec && clientRec.company_name) {
+          clientName = clientRec.company_name;
+        }
+      } catch (err) {
+        console.warn(`[GOOGLE SHEETS] Could not load client company name for ${this.clientId}:`, err.message);
+      }
+    }
+    if (!clientName) {
+      clientName = this.clientId || 'Client';
+    }
+
+    // 2. Resolve user who initiated sync
+    const userObj = this.user || this.userOAuthAccount;
+    let syncer = metadata?.syncedBy || metadata?.userName;
+    if (!syncer && userObj) {
+      syncer = userObj.full_name || userObj.fullName || userObj.name || userObj.email;
+    }
+    if (!syncer && clientEmail) {
+      syncer = clientEmail;
+    }
+    if (!syncer || syncer === 'System') {
+      try {
+        const u = await db.getOne('SELECT full_name, email FROM users WHERE client_id = ? ORDER BY created_at ASC', [this.clientId]);
+        if (u) {
+          syncer = u.full_name || u.email || syncer;
+        }
+      } catch (e) {}
+    }
+    if (!syncer) {
+      syncer = 'System';
+    }
+
+    // Sanitize any characters that could cause issues
+    const safeClientName = String(clientName).trim().replace(/[\\/:\*\?"<>\|]/g, '');
+    const safeSyncer = String(syncer).trim().replace(/[\\/:\*\?"<>\|]/g, '');
+    const fileName = `Controller Reporting - ${safeClientName} - Synced by ${safeSyncer} - ${timestamp}`;
 
     console.log(`[GOOGLE SHEETS] Cloning Master Template (${this.masterTemplateId}) into BRAND-NEW sheet: ${fileName}`);
     const { drive } = await this.getGoogleClients();
@@ -175,8 +229,8 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     };
   }
 
-  async getOrCreateDestination(clientEmail = null) {
-    return await this.createGoogleSheetFromTemplate(clientEmail);
+  async getOrCreateDestination(clientEmail = null, metadata = {}) {
+    return await this.createGoogleSheetFromTemplate(clientEmail, metadata);
   }
 
   async injectSheetData(spreadsheetId, sheetName, rangeA1, values) {
@@ -234,8 +288,8 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     return { salesRows, invRows, poRows };
   }
 
-  async syncSales(salesData, clientEmail = null, targetDest = null) {
-    const dest = targetDest || await this.createGoogleSheetFromTemplate(clientEmail);
+  async syncSales(salesData, clientEmail = null, targetDest = null, metadata = {}) {
+    const dest = targetDest || await this.createGoogleSheetFromTemplate(clientEmail, metadata);
     console.log(`Using Spreadsheet ID: ${dest.file_id}`);
     console.log(`Using Spreadsheet URL: ${dest.file_url}`);
 

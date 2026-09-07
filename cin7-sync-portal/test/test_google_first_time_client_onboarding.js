@@ -311,8 +311,8 @@ async function runOnboardingTests() {
 
   const manualDbUser = await db.getOne('SELECT * FROM users WHERE email = ?', [manualUserEmail]);
   assert.strictEqual(manualDbUser.client_id, manualSetupRes.json.client.id);
-  assert.strictEqual(manualDbUser.onboarding_status, 'completed');
-  console.log('   ✅ POST /api/auth/setup-workspace created client organization manually and bound user');
+  assert.strictEqual(manualDbUser.onboarding_status, 'pending');
+  console.log('   ✅ POST /api/auth/setup-workspace created client organization and placed user in pending onboarding for Cin7 connection');
 
   console.log('\n=====================================================================');
   console.log('🎉 ALL 5 CRITICAL ACCEPTANCE SCENARIOS PASSED WITH FULL COMPLIANCE!');

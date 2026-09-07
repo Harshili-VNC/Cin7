@@ -1,0 +1,8 @@
+{
+  "access_token": "YOUR_GOOGLE_ACCESS_TOKEN",
+  "refresh_token": "YOUR_GOOGLE_REFRESH_TOKEN",
+  "scope": "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets",
+  "token_type": "Bearer",
+  "refresh_token_expires_in": 604799,
+  "expiry_date": 1788410970806
+}

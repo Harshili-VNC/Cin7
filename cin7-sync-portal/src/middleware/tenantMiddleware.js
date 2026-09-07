@@ -1,33 +1,30 @@
 /**
- * Tenant Scoping Middleware
+ * Tenant Scoping & Isolation Middleware
  * Strictly enforces that every request resolves tenant identification from the authenticated session.
- * Rejects any external or client-supplied tenant_id overrides to prevent multi-tenant data leaks.
+ * Rejects any external or client-supplied tenant_id overrides (e.g. x-client-id, query/body clientId)
+ * to prevent multi-tenant data leaks and unauthorized cross-organization access.
  */
 
 const clientStorageService = require('../services/clientStorageService');
 
 function enforceTenantIsolation(req, res, next) {
+  // Synchronize authenticated session user
   if (!req.user && req.session && req.session.user) {
     req.user = req.session.user;
   }
 
-  // 1. Primary Source of Truth: Authenticated User / Session
-  let rawClientId = req.user?.client_id || req.session?.user?.client_id;
-
-  // 2. If unauthenticated in test environment, allow explicit test header only
-  if (!rawClientId && process.env.NODE_ENV !== 'production') {
-    rawClientId = req.headers['x-client-id'] || 'client-vnc-master';
-  }
+  // 1. Strict Server-Side Authority: Derive tenant exclusively from authenticated session
+  const rawClientId = req.user?.client_id || req.session?.user?.client_id;
 
   if (!rawClientId) {
     return res.status(401).json({
       success: false,
       error: 'UNAUTHORIZED_TENANT',
-      message: 'Authenticated tenant context missing. Access denied.'
+      message: 'Authenticated tenant context is missing or session expired. Access denied.'
     });
   }
 
-  // 3. Format & Path Traversal Validation
+  // 2. Format & Path Traversal Validation
   try {
     const validatedClientId = clientStorageService.validateClientId(rawClientId);
     req.tenantId = validatedClientId;
@@ -37,7 +34,7 @@ function enforceTenantIsolation(req, res, next) {
     return res.status(400).json({
       success: false,
       error: 'INVALID_TENANT_ID',
-      message: err.message
+      message: 'Invalid tenant identifier structure.'
     });
   }
 }

@@ -1,6 +1,8 @@
 const assert = require('assert');
 const http = require('http');
 const app = require('../src/server');
+const cryptoService = require('../src/services/cryptoService');
+const db = require('../src/db');
 
 let server;
 let port;
@@ -54,19 +56,31 @@ async function runTests() {
   });
 
   try {
-    // 2. Login as Super Admin
+    // 2. Seed and Login as Super Admin
+    const superPass = 'SuperAdminPass2026!#';
+    const existingSa = await db.getOne('SELECT id FROM users WHERE email = ?', ['superadmin@vnc.global']);
+    if (existingSa) {
+      await db.query('UPDATE users SET password_hash = ?, platform_role = ? WHERE email = ?', [cryptoService.hashPassword(superPass), 'SUPER_ADMIN', 'superadmin@vnc.global']);
+    } else {
+      await db.query(
+        `INSERT INTO users (id, client_id, full_name, email, password_hash, role, platform_role, status, auth_provider, onboarding_status)
+         VALUES (?, ?, ?, ?, ?, ?, 'SUPER_ADMIN', 'ACTIVE', 'local', 'completed')`,
+        ['user-super-admin-root', 'client-vnc-master', 'Platform Super Admin', 'superadmin@vnc.global', cryptoService.hashPassword(superPass), 'SUPER_ADMIN']
+      );
+    }
+
     const loginRes = await makeRequest('/api/auth/login', {
       method: 'POST',
-      body: { email: 'superadmin@vnc.global', password: '12345' }
+      body: { email: 'superadmin@vnc.global', password: superPass }
     });
     assert.strictEqual(loginRes.status, 200, 'Super admin login succeeds');
     const adminCookie = loginRes.cookie;
 
     // 3. Get initial list of organizations
-    const initialListRes = await makeRequest('/api/admin/organizations', {}, adminCookie);
+    const initialListRes = await makeRequest('/api/admin/organizations?limit=100', {}, adminCookie);
     assert.strictEqual(initialListRes.status, 200, 'GET /api/admin/organizations returns 200');
-    console.log(`Initial organizations count: ${initialListRes.data.organizations.length}`);
-    const initialCount = initialListRes.data.organizations.length;
+    const initialCount = initialListRes.data.total !== undefined ? initialListRes.data.total : initialListRes.data.organizations.length;
+    console.log(`Initial organizations total: ${initialCount}`);
 
     // 4. Add a brand new client organization
     const testCompanyName = `Test Client ${Date.now()}`;
@@ -87,9 +101,10 @@ async function runTests() {
     const newOrgId = createRes.data.organization.id;
 
     // 5. Verify the new organization immediately appears in the list
-    const updatedListRes = await makeRequest('/api/admin/organizations', {}, adminCookie);
+    const updatedListRes = await makeRequest('/api/admin/organizations?limit=100', {}, adminCookie);
     assert.strictEqual(updatedListRes.status, 200);
-    assert.strictEqual(updatedListRes.data.organizations.length, initialCount + 1, 'Organizations count increased by 1');
+    const updatedCount = updatedListRes.data.total !== undefined ? updatedListRes.data.total : updatedListRes.data.organizations.length;
+    assert.strictEqual(updatedCount, initialCount + 1, 'Organizations count increased by 1');
     const found = updatedListRes.data.organizations.find(o => o.id === newOrgId);
     assert(found !== undefined, 'New organization is in the returned list');
     assert.strictEqual(found.companyName, testCompanyName, 'Company name matches');
@@ -103,9 +118,10 @@ async function runTests() {
     console.log(`✅ Cleanly deleted temporary test organization: ${newOrgId}`);
 
     // 7. Verify list is back to clean initial state
-    const finalListRes = await makeRequest('/api/admin/organizations', {}, adminCookie);
-    assert.strictEqual(finalListRes.data.organizations.length, initialCount, 'Clean list restored');
-    console.log(`✅ Final clean organization list verified (Count: ${finalListRes.data.organizations.length})`);
+    const finalListRes = await makeRequest('/api/admin/organizations?limit=100', {}, adminCookie);
+    const finalCount = finalListRes.data.total !== undefined ? finalListRes.data.total : finalListRes.data.organizations.length;
+    assert.strictEqual(finalCount, initialCount, 'Clean list restored');
+    console.log(`✅ Final clean organization list verified (Count: ${finalCount})`);
 
     console.log('\n🎉 ALL ORGANIZATION LIFECYCLE TESTS PASSED!');
   } finally {

@@ -38,8 +38,8 @@ router.get('/cin7', requireCanSync, async (req, res) => {
     const integrationObj = {
       connected: isConnected,
       status: isConnected ? 'Connected ✓' : 'Disconnected',
-      accountId: accountId || '16547ab1-814f-f797-10f2-9a73a398b9c7',
-      apiKeyMasked: '••••••••••••••••••••',
+      accountId: accountId || '',
+      apiKeyMasked: hasApiKey ? '••••••••••••••••••••' : '',
       lastVerified: conn ? conn.last_tested_at : null
     };
 

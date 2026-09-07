@@ -198,8 +198,8 @@ router.post('/cancel', requireAuth, enforceTenantIsolation, requireAdmin, async 
 router.post('/webhook', async (req, res) => {
   const signature = req.headers['stripe-signature'] || req.headers['x-billing-signature'];
 
-  // In test environment, allow mock bypass if header specified
-  if (process.env.NODE_ENV === 'test' || req.headers['x-test-webhook'] === 'true') {
+  // In dedicated test environment only, allow direct mock payload processing
+  if (process.env.NODE_ENV === 'test') {
     try {
       const result = await billingProviderService.handleWebhook(req.body);
       return res.json({ success: true, result });

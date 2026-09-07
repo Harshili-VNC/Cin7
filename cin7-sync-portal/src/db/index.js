@@ -174,32 +174,6 @@ class MemoryDatabaseAdapter {
       });
       this.save();
     }
-
-    // Pre-seed default subscription for client-vnc-master if needed
-    if (!this.data.subscriptions) this.data.subscriptions = {};
-    if (!this.data.subscriptions['client-vnc-master']) {
-      const now = new Date();
-      const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-      this.data.subscriptions['client-vnc-master'] = {
-        id: 'sub-vnc-master',
-        organization_id: 'client-vnc-master',
-        plan_id: 'plan-professional',
-        billing_provider: 'neutral',
-        external_customer_id: null,
-        external_subscription_id: null,
-        external_price_id: null,
-        status: 'ACTIVE',
-        current_period_start: now.toISOString(),
-        current_period_end: periodEnd.toISOString(),
-        trial_start: null,
-        trial_end: null,
-        cancel_at_period_end: false,
-        canceled_at: null,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString()
-      };
-      this.save();
-    }
   }
 
   save() {
@@ -231,6 +205,25 @@ class MemoryDatabaseAdapter {
       else return { rows: [{ test: 1 }] };
 
       let rows = collection.filter(item => {
+        if (cleanSql.includes('WHERE EMAIL = ? AND CLIENT_ID = ? AND STATUS = ?')) {
+          const [email, clientId, status] = params;
+          return String(item.email || '').toLowerCase() === String(email).toLowerCase() &&
+                 item.client_id === clientId &&
+                 item.status === status;
+        }
+
+        if (cleanSql.includes('WHERE EMAIL = ? AND CLIENT_ID = ?')) {
+          const [email, clientId] = params;
+          return String(item.email || '').toLowerCase() === String(email).toLowerCase() &&
+                 item.client_id === clientId;
+        }
+
+        if (cleanSql.includes('WHERE (ID = ? OR EMAIL = ?) AND CLIENT_ID = ?')) {
+          const [id, email, clientId] = params;
+          const userMatch = item.id === id || String(item.email || '').toLowerCase() === String(email).toLowerCase();
+          return userMatch && item.client_id === clientId;
+        }
+
         if (cleanSql.includes('WHERE ID = ? AND CLIENT_ID = ?') || cleanSql.includes('WHERE (ID = ? OR RUN_ID = ?) AND CLIENT_ID = ?')) {
           const runIdMatch = (item.id === params[0] || item.run_id === params[0] || (params.length === 3 && (item.id === params[1] || item.run_id === params[1])));
           const tenantMatch = item.client_id === (params.length === 3 ? params[2] : params[1]);
@@ -373,8 +366,12 @@ class MemoryDatabaseAdapter {
       } else if (params.length === 7) {
         [id, client_id, full_name, email, phone_number, password_hash, role] = params;
       } else if (params.length === 6) {
-        [id, client_id, full_name, email, password_hash, role] = params;
-        phone_number = '+1 (555) 019-2834';
+        if (cleanSql.includes('PHONE_NUMBER') && cleanSql.includes('PASSWORD_HASH')) {
+          [id, client_id, full_name, email, phone_number, password_hash] = params;
+        } else {
+          [id, client_id, full_name, email, password_hash, role] = params;
+          phone_number = '+1 (555) 019-2834';
+        }
       } else {
         [id, client_id, full_name, email, password_hash] = params;
       }
@@ -512,6 +509,9 @@ class MemoryDatabaseAdapter {
         [id, client_id, user_id, run_id, sync_type, status, destination_provider, destination_file_id, destination_file_name, excel_version_id] = params;
       } else if (params.length >= 6) {
         [id, client_id, user_id, run_id, sync_type, status] = params;
+      } else if (params.length === 5) {
+        [id, client_id, user_id, run_id, sync_type] = params;
+        status = 'RUNNING';
       } else {
         [id, client_id, sync_type, status] = params;
         run_id = id;
@@ -752,7 +752,16 @@ class MemoryDatabaseAdapter {
     }
 
     if (cleanSql.includes('UPDATE USERS')) {
-      if (cleanSql.includes('ROLE = ?') && cleanSql.includes('STATUS = ?')) {
+      if (cleanSql.includes("SET ONBOARDING_STATUS = 'COMPLETED'") && cleanSql.includes('WHERE CLIENT_ID = ?')) {
+        const clientId = params[params.length - 1];
+        Object.values(this.data.users).forEach(u => {
+          if (u.client_id === clientId || u.id === clientId) {
+            u.onboarding_status = 'completed';
+            u.onboarding_completed_at = new Date().toISOString();
+            u.updated_at = new Date().toISOString();
+          }
+        });
+      } else if (cleanSql.includes('ROLE = ?') && cleanSql.includes('STATUS = ?')) {
         const [role, status, userId, clientId] = params;
         const u = this.data.users[userId];
         if (u && (!clientId || u.client_id === clientId)) {
@@ -794,15 +803,19 @@ class MemoryDatabaseAdapter {
           u.updated_at = new Date().toISOString();
         }
       } else if (cleanSql.includes('PASSWORD_HASH = ?')) {
-        const [password_hash, userId] = params;
-        const u = this.data.users[userId];
+        const target = params[params.length - 1];
+        const password_hash = params[0];
+        const u = this.data.users[target] || Object.values(this.data.users).find(x => x.id === target || String(x.email).toLowerCase() === String(target).toLowerCase());
         if (u) {
           u.password_hash = password_hash;
+          if (cleanSql.includes('PLATFORM_ROLE = ?') && params.length >= 3) {
+            u.platform_role = params[1];
+          }
           u.updated_at = new Date().toISOString();
         }
       } else if (cleanSql.includes('FULL_NAME = ?')) {
         const [full_name, phone_number, userId] = params;
-        const u = this.data.users[userId];
+        const u = this.data.users[userId] || Object.values(this.data.users).find(x => x.id === userId || String(x.email).toLowerCase() === String(userId).toLowerCase());
         if (u) {
           u.full_name = full_name;
           if (phone_number) u.phone_number = phone_number;
@@ -833,8 +846,13 @@ class MemoryDatabaseAdapter {
     }
 
     if (cleanSql.includes('UPDATE SYNC_RUNS')) {
-      const targetId = params[params.length - 1];
-      const runRecord = this.data.sync_runs[targetId] || Object.values(this.data.sync_runs).find(r => r.run_id === targetId || r.id === targetId);
+      let runRecord = null;
+      for (const p of params) {
+        if (typeof p === 'string' && (this.data.sync_runs[p] || Object.values(this.data.sync_runs).find(r => r.run_id === p || r.id === p))) {
+          runRecord = this.data.sync_runs[p] || Object.values(this.data.sync_runs).find(r => r.run_id === p || r.id === p);
+          break;
+        }
+      }
 
       if (runRecord) {
         if (cleanSql.includes("STATUS = 'COMPLETED'")) {
@@ -903,6 +921,40 @@ class MemoryDatabaseAdapter {
         }
 
         sub.updated_at = new Date().toISOString();
+        this.save();
+      }
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('UPDATE CLIENTS')) {
+      const clientId = params[params.length - 1];
+      const client = this.data.clients[clientId] || Object.values(this.data.clients || {}).find(c => c.id === clientId);
+      if (client) {
+        if (cleanSql.includes('CURRENT_VERSION = ?') && cleanSql.includes('LAST_SYNC_AT = ?')) {
+          const [current_version, last_sync_at] = params;
+          client.current_version = current_version;
+          client.last_sync_at = last_sync_at;
+        } else if (cleanSql.includes('LAST_SYNC_AT = ?')) {
+          const [last_sync_at] = params;
+          client.last_sync_at = last_sync_at;
+        }
+        if (cleanSql.includes("SYNC_STATUS = 'SYNCED'")) {
+          client.sync_status = 'SYNCED';
+        }
+        client.updated_at = new Date().toISOString();
+        this.save();
+      }
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('UPDATE CLIENT_WORKBOOKS')) {
+      const clientId = params[params.length - 1];
+      const wb = this.data.client_workbooks[clientId] || Object.values(this.data.client_workbooks || {}).find(w => w.client_id === clientId || w.id === clientId);
+      if (wb) {
+        if (params.length >= 2) {
+          wb.current_version = params[0];
+          wb.updated_at = params[1] || new Date().toISOString();
+        }
         this.save();
       }
       return { rows: [] };

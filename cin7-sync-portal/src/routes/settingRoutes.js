@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
+const { sensitiveOpLimiter } = require('../middleware/rateLimitMiddleware');
 const cryptoService = require('../services/cryptoService');
 const cin7Engine = require('../services/cin7Engine');
 const { logAction } = require('../services/auditService');
@@ -303,9 +304,10 @@ router.get('/security/sessions', async (req, res) => {
 
 /**
  * POST /api/security/change-password
+ * POST /api/settings/password
  * Allows the authenticated user to update their own password securely.
  */
-router.post('/security/change-password', async (req, res) => {
+router.post(['/security/change-password', '/password', '/change-password'], sensitiveOpLimiter, async (req, res) => {
   const userId = req.user.id;
   const { currentPassword, newPassword, confirmPassword } = req.body;
 
@@ -317,8 +319,8 @@ router.post('/security/change-password', async (req, res) => {
     return res.status(400).json({ success: false, message: 'New passwords do not match.' });
   }
 
-  if (newPassword.length < 4) {
-    return res.status(400).json({ success: false, message: 'Password must be at least 4 characters long.' });
+  if (newPassword.length < 6) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
   }
 
   try {
@@ -328,7 +330,7 @@ router.post('/security/change-password', async (req, res) => {
     }
 
     const isValid = cryptoService.verifyPassword(currentPassword, user.password_hash);
-    if (!isValid && currentPassword !== '12345' && currentPassword !== 'password123') {
+    if (!isValid) {
       return res.status(400).json({ success: false, message: 'Incorrect current password.' });
     }
 

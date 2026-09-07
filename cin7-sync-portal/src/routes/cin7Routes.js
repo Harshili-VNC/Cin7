@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { requireAuth } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
+const { sensitiveOpLimiter } = require('../middleware/rateLimitMiddleware');
 const cryptoService = require('../services/cryptoService');
 const cin7Engine = require('../services/cin7Engine');
 const { v4: uuidv4 } = require('uuid');
@@ -14,9 +15,9 @@ router.use(enforceTenantIsolation);
  * POST /api/cin7/test-connection
  * Tests Cin7 credentials without saving
  */
-router.post('/test-connection', async (req, res) => {
-  const apiUsername = (req.body.apiUsername || req.body.accountId || process.env.CIN7_ACCOUNT_ID || '1fbf1d72-81ef-458e-b0bd-b9f92d45a11f').trim();
-  const apiKey = (req.body.apiKey || process.env.CIN7_API_KEY || 'd3f297e6-5290-8c3e-69fb-cde4f865fab7').trim();
+router.post('/test-connection', sensitiveOpLimiter, async (req, res) => {
+  const apiUsername = (req.body.apiUsername || req.body.accountId || '').trim();
+  const apiKey = (req.body.apiKey || '').trim();
 
   if (!apiUsername || !apiKey) {
     return res.status(400).json({ success: false, message: 'Cin7 API Account ID and Key are required.' });
