@@ -20,6 +20,7 @@
   "author": "VNC Global Business Edge",
   "license": "MIT",
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "axios": "^1.7.2",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -29,6 +30,7 @@
     "express-session": "^1.18.0",
     "googleapis": "^140.0.0",
     "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.0",
     "sqlite3": "^5.1.7",
     "uuid": "^10.0.0"
   }

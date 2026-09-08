@@ -57,6 +57,8 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .filter(Boolean);
 
 const defaultAllowedOrigins = [
+  'http://localhost:2029',
+  'http://127.0.0.1:2029',
   'http://localhost:2121',
   'http://127.0.0.1:2121',
   'http://localhost:2005',
