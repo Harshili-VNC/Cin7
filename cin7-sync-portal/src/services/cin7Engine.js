@@ -1201,28 +1201,35 @@ function mergeInventoryData(existingRows = [], currentRows = []) {
 }
 
 /**
- * Calculates cutoff date dynamically from current date for any standard window code.
+ * Calculates cutoff date dynamically from current date for standard window codes or custom start date.
  */
-function getWindowCutoffDate(windowCode) {
+function getWindowCutoffDate(windowCode, customStartDate = null) {
   const now = new Date();
   const code = String(windowCode || '90d').toLowerCase().trim();
+
+  if (code === 'custom' && customStartDate) {
+    const parsed = new Date(customStartDate);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
 
   if (code.includes('5y') || code.includes('5 year')) {
     return new Date(now.getTime() - 5 * 365 * 24 * 60 * 60 * 1000);
   } else if (code.includes('2y') || code.includes('2 year') || code.includes('24m') || code.includes('24 month') || code.includes('2 yr')) {
     return new Date(now.getTime() - 2 * 365 * 24 * 60 * 60 * 1000); // Past 2 years (730 days)
-  } else if (code.includes('365') || code.includes('1y') || code.includes('1 year')) {
+  } else if (code.includes('last_year') || code.includes('last year') || code.includes('365') || code.includes('1y') || code.includes('1 year')) {
     return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
   } else if (code.includes('180') || code === '180d') {
     return new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('7d') || code.includes('7 day') || code === '7') {
-    return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('30') || code === '30d') {
-    return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('ytd') || code === 'year to date') {
-    return new Date(now.getFullYear(), 0, 1);
   } else if (code.includes('90') || code === '90d') {
     return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('60') || code === '60d') {
+    return new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('30') || code === '30d') {
+    return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('7d') || code.includes('7 day') || code === '7') {
+    return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('ytd') || code === 'year to date') {
+    return new Date(now.getFullYear(), 0, 1);
   } else if (code.includes('all') || code === 'all_time') {
     return null;
   }
@@ -1231,29 +1238,41 @@ function getWindowCutoffDate(windowCode) {
 }
 
 /**
- * Rolling Window Pruning: Filters records dynamically by date window.
+ * Rolling Window Pruning: Filters records dynamically by date window or custom start/end dates.
  */
-function filterSalesByWindow(rows = [], windowCode = '30d') {
-  const cutoffDate = getWindowCutoffDate(windowCode);
-  if (!cutoffDate) return rows;
+function filterSalesByWindow(rows = [], windowCode = '30d', customOptions = {}) {
+  let startDate = typeof customOptions === 'object' ? customOptions.startDate : null;
+  let endDate = typeof customOptions === 'object' ? customOptions.endDate : null;
+  
+  const startCutoff = (windowCode === 'custom' && startDate) ? new Date(startDate + 'T00:00:00.000Z') : getWindowCutoffDate(windowCode);
+  const endCutoff = (windowCode === 'custom' && endDate) ? new Date(endDate + 'T23:59:59.999Z') : null;
 
   return rows.filter(row => {
     const dateStr = row[3] || row[1];
     if (!dateStr) return true;
     const d = new Date(dateStr);
-    return !isNaN(d.getTime()) ? d >= cutoffDate : true;
+    if (isNaN(d.getTime())) return true;
+    if (startCutoff && d < startCutoff) return false;
+    if (endCutoff && d > endCutoff) return false;
+    return true;
   });
 }
 
-function filterPurchaseByWindow(rows = [], windowCode = '30d') {
-  const cutoffDate = getWindowCutoffDate(windowCode);
-  if (!cutoffDate) return rows;
+function filterPurchaseByWindow(rows = [], windowCode = '30d', customOptions = {}) {
+  let startDate = typeof customOptions === 'object' ? customOptions.startDate : null;
+  let endDate = typeof customOptions === 'object' ? customOptions.endDate : null;
+
+  const startCutoff = (windowCode === 'custom' && startDate) ? new Date(startDate + 'T00:00:00.000Z') : getWindowCutoffDate(windowCode);
+  const endCutoff = (windowCode === 'custom' && endDate) ? new Date(endDate + 'T23:59:59.999Z') : null;
 
   return rows.filter(row => {
     const dateStr = row[3];
     if (!dateStr) return true;
     const d = new Date(dateStr);
-    return !isNaN(d.getTime()) ? d >= cutoffDate : true;
+    if (isNaN(d.getTime())) return true;
+    if (startCutoff && d < startCutoff) return false;
+    if (endCutoff && d > endCutoff) return false;
+    return true;
   });
 }
 

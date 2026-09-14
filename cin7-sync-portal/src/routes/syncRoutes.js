@@ -174,6 +174,8 @@ async function executeFullSyncBackground({
   user,
   destination,
   dateRange,
+  startDate,
+  endDate,
   isForceFull,
   clientEmail,
   startTime
@@ -198,19 +200,19 @@ async function executeFullSyncBackground({
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
     // 2. Evaluate Incremental Sync Safety
-    const salesSafety = snapshotService.isIncrementalSafe(clientId, 'sales', dateRange);
-    const poSafety = snapshotService.isIncrementalSafe(clientId, 'purchase', dateRange);
+    const salesSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : snapshotService.isIncrementalSafe(clientId, 'sales', dateRange);
+    const poSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : snapshotService.isIncrementalSafe(clientId, 'purchase', dateRange);
 
     const useIncrementalSales = !isForceFull && salesSafety.safe;
     const useIncrementalPO = !isForceFull && poSafety.safe;
 
-    const windowCutoff = cin7Engine.getWindowCutoffDate(dateRange);
+    const windowCutoff = cin7Engine.getWindowCutoffDate(dateRange, startDate);
     const windowCutoffIso = windowCutoff ? windowCutoff.toISOString() : null;
 
     const salesUpdatedSince = useIncrementalSales ? salesSafety.updatedSince : windowCutoffIso;
     const poUpdatedSince = useIncrementalPO ? poSafety.updatedSince : windowCutoffIso;
 
-    console.log(`  Date Range Selected: ${dateRange} (Window Cutoff: ${windowCutoffIso || 'All Time'})`);
+    console.log(`  Date Range Selected: ${dateRange} ${startDate ? `[${startDate} to ${endDate || 'now'}]` : ''} (Window Cutoff: ${windowCutoffIso || 'All Time'})`);
     console.log(`  Sales Strategy: ${useIncrementalSales ? `INCREMENTAL (${salesSafety.reason})` : `FULL WINDOW FETCH (${salesSafety.reason})`}`);
     console.log(`  Purchase Strategy: ${useIncrementalPO ? `INCREMENTAL (${poSafety.reason})` : `FULL WINDOW FETCH (${poSafety.reason})`}`);
     console.log(`  Inventory Strategy: CURRENT AVAILABILITY SNAPSHOT\n`);
@@ -249,10 +251,10 @@ async function executeFullSyncBackground({
     if (useIncrementalSales) {
       const existingSales = snapshotService.getCurrentReportRows(clientId, 'sales');
       const mergedSales = cin7Engine.mergeSalesData(existingSales.rows, fetchedSales.rows);
-      finalSalesRows = cin7Engine.filterSalesByWindow(mergedSales, dateRange);
+      finalSalesRows = cin7Engine.filterSalesByWindow(mergedSales, dateRange, { startDate, endDate });
       console.log(`[SALES UPSERT] Existing: ${existingSales.rows.length}, Delta fetched: ${fetchedSales.rows.length}, Merged & Rolling Filter (${dateRange}): ${finalSalesRows.length}`);
     } else {
-      finalSalesRows = cin7Engine.filterSalesByWindow(fetchedSales.rows, dateRange);
+      finalSalesRows = cin7Engine.filterSalesByWindow(fetchedSales.rows, dateRange, { startDate, endDate });
     }
     const salesData = { headers: fetchedSales.headers, rows: finalSalesRows };
 
@@ -261,10 +263,10 @@ async function executeFullSyncBackground({
     if (useIncrementalPO) {
       const existingPO = snapshotService.getCurrentReportRows(clientId, 'purchase');
       const mergedPO = cin7Engine.mergePurchaseData(existingPO.rows, fetchedPO.rows);
-      finalPORows = cin7Engine.filterPurchaseByWindow(mergedPO, dateRange);
+      finalPORows = cin7Engine.filterPurchaseByWindow(mergedPO, dateRange, { startDate, endDate });
       console.log(`[PURCHASE UPSERT] Existing: ${existingPO.rows.length}, Delta fetched: ${fetchedPO.rows.length}, Merged & Rolling Filter (${dateRange}): ${finalPORows.length}`);
     } else {
-      finalPORows = cin7Engine.filterPurchaseByWindow(fetchedPO.rows, dateRange);
+      finalPORows = cin7Engine.filterPurchaseByWindow(fetchedPO.rows, dateRange, { startDate, endDate });
     }
     const poData = { headers: fetchedPO.headers, rows: finalPORows };
 
@@ -344,11 +346,24 @@ async function executeFullSyncBackground({
 
     // 9. STAGING/COMMIT: PROMOTE SNAPSHOTS ONLY ON COMPLETE VERIFIED SUCCESS
     console.log('[SNAPSHOT COMMIT] Committing active current reports and immutable snapshots...');
-    const periodLabel = (dateRange === '5y' || /5\s*y/i.test(String(dateRange))) ? 'Last 5 Years'
-      : (dateRange === '2y' || /2\s*y|24\s*m/i.test(String(dateRange))) ? 'Last 2 Years (24 Months)'
-      : (dateRange === 'ytd' || /ytd|year to date/i.test(String(dateRange))) ? 'Year to Date (YTD)'
-      : (dateRange === '30d' || /30/i.test(String(dateRange))) ? 'Last 30 Days'
-      : 'Last 90 Days';
+    let periodLabel = 'Last 90 Days';
+    if (dateRange === 'custom') {
+      periodLabel = `Custom (${startDate || 'Start'} to ${endDate || 'Today'})`;
+    } else if (dateRange === '30d' || /30/i.test(String(dateRange))) {
+      periodLabel = 'Last 30 Days';
+    } else if (dateRange === '60d' || /60/i.test(String(dateRange))) {
+      periodLabel = 'Last 60 Days';
+    } else if (dateRange === '90d' || /90/i.test(String(dateRange))) {
+      periodLabel = 'Last 90 Days';
+    } else if (dateRange === 'last_year' || dateRange === '365d' || dateRange === '1y' || /last.*year|365/i.test(String(dateRange))) {
+      periodLabel = 'Last Year (365 Days)';
+    } else if (dateRange === 'ytd' || /ytd|year to date/i.test(String(dateRange))) {
+      periodLabel = 'Year to Date (YTD)';
+    } else if (dateRange === '2y' || /2\s*y|24\s*m/i.test(String(dateRange))) {
+      periodLabel = 'Last 2 Years (24 Months)';
+    } else if (dateRange === '5y' || /5\s*y/i.test(String(dateRange))) {
+      periodLabel = 'Last 5 Years';
+    }
 
     await Promise.all([
       snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel, dataset: salesData, syncRunId: runId }),
@@ -723,6 +738,8 @@ router.post(['/all', '/trigger'], syncLimiter, requireCanSync, async (req, res) 
   const destination = req.body?.destination || 'google_sheets';
   const clientEmail = authenticatedUser?.email || null;
   const dateRange = req.body?.dateRange || req.body?.timelinePeriod || '90d';
+  const startDate = req.body?.startDate || null;
+  const endDate = req.body?.endDate || null;
   const isForceFull = Boolean(req.body?.forceFull || req.body?.mode === 'FORCE_FULL');
 
   // Per-Client Concurrency Mutex Lock
@@ -745,11 +762,13 @@ router.post(['/all', '/trigger'], syncLimiter, requireCanSync, async (req, res) 
   setLiveProgress(runId, 'CONNECTING', 0, 5, 10, 'Connecting to Cin7 Core API...', clientId, {
     status: 'RUNNING',
     destination,
-    dateRange
+    dateRange,
+    startDate,
+    endDate
   });
 
   console.log(`\n======================================================================`);
-  console.log(`[SYNC TRIGGER] Run: ${runId} | Tenant: ${clientId} | Window: ${dateRange} | ForceFull: ${isForceFull} | Destination: ${destination}`);
+  console.log(`[SYNC TRIGGER] Run: ${runId} | Tenant: ${clientId} | Window: ${dateRange} ${startDate ? `[${startDate} to ${endDate || 'now'}]` : ''} | ForceFull: ${isForceFull} | Destination: ${destination}`);
   console.log(`======================================================================`);
 
   try {
@@ -767,6 +786,8 @@ router.post(['/all', '/trigger'], syncLimiter, requireCanSync, async (req, res) 
         user: authenticatedUser,
         destination,
         dateRange,
+        startDate,
+        endDate,
         isForceFull,
         clientEmail,
         startTime

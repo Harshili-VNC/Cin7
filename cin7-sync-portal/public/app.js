@@ -870,8 +870,49 @@ function renderSyncStatusBar(syncState = 'SUCCESS', options = {}) {
 function handleTimelineChange(val) {
   state.activeTimeline = val;
   const select = document.getElementById('sync-timeline-select');
+  const customContainer = document.getElementById('sync-custom-date-container');
   const label = select?.options[select.selectedIndex]?.text || val;
-  showToast(`Report window updated to ${label}`, 'info');
+
+  if (val === 'custom') {
+    if (customContainer) {
+      customContainer.style.display = 'flex';
+      const startInput = document.getElementById('sync-custom-start-date');
+      const endInput = document.getElementById('sync-custom-end-date');
+      const now = new Date();
+      const defaultStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      if (startInput && !startInput.value) {
+        startInput.value = defaultStart.toISOString().split('T')[0];
+      }
+      if (endInput && !endInput.value) {
+        endInput.value = now.toISOString().split('T')[0];
+      }
+      state.customStartDate = startInput?.value;
+      state.customEndDate = endInput?.value;
+    }
+    showToast('Select Custom Start and End dates for report sync', 'info');
+  } else {
+    if (customContainer) {
+      customContainer.style.display = 'none';
+    }
+    showToast(`Report window updated to ${label}`, 'info');
+  }
+}
+
+function handleCustomDateChange() {
+  const startInput = document.getElementById('sync-custom-start-date');
+  const endInput = document.getElementById('sync-custom-end-date');
+  if (!startInput || !endInput) return;
+
+  const startVal = startInput.value;
+  const endVal = endInput.value;
+
+  if (startVal && endVal && startVal > endVal) {
+    showToast('Start date cannot be after End date.', 'warning');
+    endInput.value = startVal;
+  }
+
+  state.customStartDate = startInput.value;
+  state.customEndDate = endInput.value;
 }
 
 function updateDashboardData() {
@@ -1304,7 +1345,24 @@ async function triggerSyncFlow(forceFull = false) {
   // Check if first sync (no previous sync recorded)
   const isFirstSync = !state.client?.lastSyncAt && !state.organization?.lastSyncAt;
   const effectiveDateRange = select?.value || (isFirstSync ? '90d' : '90d');
-  const effectiveLabel = select?.options[select.selectedIndex]?.text || (effectiveDateRange === '90d' ? 'Last 90 Days' : 'Last 90 Days');
+  const customStart = document.getElementById('sync-custom-start-date')?.value || null;
+  const customEnd = document.getElementById('sync-custom-end-date')?.value || null;
+
+  if (effectiveDateRange === 'custom') {
+    if (!customStart || !customEnd) {
+      showToast('Please select both a valid Start Date and End Date.', 'warning');
+      return;
+    }
+    if (customStart > customEnd) {
+      showToast('Start Date cannot be after End Date.', 'warning');
+      return;
+    }
+  }
+
+  let effectiveLabel = select?.options[select.selectedIndex]?.text || 'Last 90 Days';
+  if (effectiveDateRange === 'custom') {
+    effectiveLabel = `Custom (${customStart} to ${customEnd})`;
+  }
 
   const btnSync = document.getElementById('btn-sync-now');
   if (btnSync) {
@@ -1325,8 +1383,10 @@ async function triggerSyncFlow(forceFull = false) {
       body: JSON.stringify({
         destination: 'google_sheets',
         clientEmail: state.user?.email || null,
-        forceFull: Boolean(forceFull) || isFirstSync,
-        dateRange: effectiveDateRange
+        forceFull: Boolean(forceFull) || isFirstSync || effectiveDateRange === 'custom',
+        dateRange: effectiveDateRange,
+        startDate: effectiveDateRange === 'custom' ? customStart : null,
+        endDate: effectiveDateRange === 'custom' ? customEnd : null
       })
     });
     const result = await res.json();
