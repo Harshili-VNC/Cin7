@@ -154,7 +154,6 @@
           <div class="auth-tabs">
             <button class="auth-tab-btn active" id="tab-signin-btn" onclick="switchAuthTab('signin')">Sign in</button>
             <button class="auth-tab-btn" id="tab-signup-btn" onclick="switchAuthTab('signup')">Sign up</button>
-            <button class="auth-tab-btn" id="tab-admin-btn" onclick="switchAuthTab('admin')">🛡️ Admin</button>
           </div>
 
           <button type="button" class="btn auth-google-btn" id="google-signin-btn" onclick="handleGoogleSignIn()">
@@ -173,7 +172,7 @@
             <span class="auth-divider-line"></span>
           </div>
 
-          <!-- Sign In Form (Client) -->
+          <!-- Sign In Form -->
           <form id="signin-form" onsubmit="handleSigninSubmit(event)">
             <div class="form-group">
               <label class="form-label" for="signin-email">Work email</label>
@@ -184,50 +183,8 @@
               <input class="form-input" type="password" id="signin-password" placeholder="••••••••••••" required autocomplete="current-password">
             </div>
             <button type="submit" class="btn btn-primary btn-lg auth-submit-btn" id="signin-submit-btn">
-              Sign in as Client
+              Sign in
             </button>
-
-            <!-- ── QUICK ADMIN SIGN-IN OPTION ── -->
-            <div class="quick-roles-panel">
-              <div class="quick-roles-divider">
-                <span class="auth-divider-line"></span>
-                <span class="auth-divider-text">or platform management</span>
-                <span class="auth-divider-line"></span>
-              </div>
-
-              <div class="quick-admin-actions">
-                <button type="button" class="btn quick-role-btn-clean superadmin-btn-clean" id="btn-quick-superadmin-signin" onclick="switchAuthTab('admin')" title="Open Admin Sign In">
-                  <span class="btn-icon">🛡️</span>
-                  <span>Sign in as Admin</span>
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <!-- Admin Sign In Form -->
-          <form id="admin-signin-form" class="hidden" onsubmit="handleAdminSigninSubmit(event)">
-            <div class="admin-auth-banner">
-              <div class="admin-auth-header-badge">
-                <span class="badge-icon">🛡️</span>
-                <span>Admin Console</span>
-              </div>
-              <p class="admin-auth-desc">Administrative access for platform management, client monitoring &amp; controller configuration.</p>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="admin-signin-email">Admin Email</label>
-              <input class="form-input" type="email" id="admin-signin-email" placeholder="superadmin@vnc.global" value="" required autocomplete="email">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="admin-signin-password">Admin Password</label>
-              <input class="form-input" type="password" id="admin-signin-password" placeholder="Enter admin password" value="" required autocomplete="current-password">
-            </div>
-            <button type="submit" class="btn btn-primary btn-lg auth-submit-btn" id="admin-signin-submit-btn">
-              Sign in as Admin
-            </button>
-            <div style="text-align: center; margin-top: 1rem;">
-              <button type="button" class="link-btn" onclick="switchAuthTab('signin')" style="background: none; border: none; color: var(--color-primary, #2563eb); font-size: 0.875rem; cursor: pointer; text-decoration: underline;">&larr; Back to Client Sign In</button>
-            </div>
           </form>
 
           <!-- Sign Up Form -->

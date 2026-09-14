@@ -197,10 +197,10 @@ async function runClickTests() {
 
   // 4. Test Super Admin Login & Super Admin Portal Subviews
   console.log('\n--- 4. Testing Super Admin Sign In & 11 Admin Portal Subviews ---');
-  domElements['admin-signin-email'].value = 'superadmin@vnc.global';
-  domElements['admin-signin-password'].value = 'SuperAdmin2026!#';
-  await handleAdminSigninSubmit({ preventDefault: () => {} });
-  assert(state.user !== null && state.user.platformRole === 'SUPER_ADMIN', 'handleAdminSigninSubmit logs in as Super Admin');
+  domElements['signin-email'].value = 'superadmin@vnc.global';
+  domElements['signin-password'].value = 'SuperAdmin2026!#';
+  await handleSigninSubmit({ preventDefault: () => {} });
+  assert(state.user !== null && state.user.platformRole === 'SUPER_ADMIN', 'handleSigninSubmit logs in as Super Admin and routes to Admin Portal');
   assert(!domElements['admin-portal-view'].classList.contains('hidden'), 'Super Admin portal view is displayed');
   assert(!domElements['nav-admin-btn'].classList.contains('hidden'), 'Super Admin navbar badge button is visible');
 
