@@ -3010,6 +3010,31 @@ input:checked + .slider:before {
   box-shadow: var(--shadow-card);
 }
 
+.reconcile-type-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.reconcile-type-btn:hover {
+  border-color: #2f8fed;
+  color: #2f8fed;
+  background: rgba(47, 143, 237, 0.06);
+}
+.reconcile-type-btn.active {
+  border-color: #004682;
+  background: #004682;
+  color: #ffffff;
+}
+
 .reconcile-selectors-grid {
   display: grid;
   grid-template-columns: 1fr 1fr auto;

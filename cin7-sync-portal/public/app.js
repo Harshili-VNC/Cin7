@@ -24,6 +24,7 @@ const state = {
   reconcilePage: 1,
   reconcilePageSize: 10,
   reconcileFilter: 'all',
+  reconcileDataset: 'sales',
   workbookSheets: [
     '📋 Cover & Index',
     'KPI Dashboard',
@@ -3194,29 +3195,57 @@ function downloadSnapshotCsv() {
 async function loadReconciliationView() {
   const selectA = document.getElementById('reconcile-snap-a');
   const selectB = document.getElementById('reconcile-snap-b');
+  const dataset = state.reconcileDataset || 'sales';
 
   if (selectA) selectA.innerHTML = '<option value="">Loading snapshots...</option>';
   if (selectB) selectB.innerHTML = '<option value="">Loading snapshots...</option>';
 
   try {
-    const res = await fetch('/api/reports/snapshots-list-for-reconcile');
+    const res = await fetch(`/api/reports/snapshots-list-for-reconcile?reportType=${encodeURIComponent(dataset)}`);
     const data = await res.json();
-    const snapshots = data.snapshots || [];
+    // Filter client-side too for safety — only show snapshots matching the selected dataset
+    const typeMap = { sales: 'sales', purchase: 'purchase', inventory: 'inventory' };
+    const all = (data.snapshots || []).filter(s => {
+      const t = (s.reportType || '').toLowerCase();
+      if (dataset === 'sales') return t.includes('sale');
+      if (dataset === 'purchase') return t.includes('purch') || t.includes('po');
+      if (dataset === 'inventory') return t.includes('inv') || t.includes('stock') || t.includes('avail');
+      return true;
+    });
 
-    if (snapshots.length < 2) {
-      if (selectA) selectA.innerHTML = '<option value="">Need at least 2 snapshots to reconcile (Run a new sync to generate comparison)</option>';
-      if (selectB) selectB.innerHTML = '<option value="">Need at least 2 snapshots to reconcile</option>';
+    const datasetLabel = { sales: 'Sales Orders', purchase: 'Purchase Orders', inventory: 'Inventory' }[dataset] || dataset;
+
+    if (all.length < 2) {
+      const msg = all.length === 0
+        ? `No ${datasetLabel} snapshots found yet — run a sync first.`
+        : `Only 1 ${datasetLabel} snapshot found — run another sync to enable comparison.`;
+      if (selectA) selectA.innerHTML = `<option value="">${msg}</option>`;
+      if (selectB) selectB.innerHTML = `<option value="">${msg}</option>`;
       return;
     }
 
-    const optionsA = snapshots.map((s, idx) => `<option value="${s.id}" ${idx === 1 ? 'selected' : ''}>${s.label} (${s.recordCount} rows)</option>`).join('');
-    const optionsB = snapshots.map((s, idx) => `<option value="${s.id}" ${idx === 0 ? 'selected' : ''}>${s.label} (${s.recordCount} rows)</option>`).join('');
+    // Default: A = second-newest (older baseline), B = newest (current)
+    const optionsA = all.map((s, idx) => `<option value="${s.id}" ${idx === 1 ? 'selected' : ''}>${s.label} (${s.recordCount} rows)</option>`).join('');
+    const optionsB = all.map((s, idx) => `<option value="${s.id}" ${idx === 0 ? 'selected' : ''}>${s.label} (${s.recordCount} rows)</option>`).join('');
 
     if (selectA) selectA.innerHTML = optionsA;
     if (selectB) selectB.innerHTML = optionsB;
   } catch (err) {
     console.error('Error loading snapshots for reconcile:', err);
   }
+}
+
+function setReconcileDataset(type) {
+  state.reconcileDataset = type;
+  // Update toggle button active state
+  document.querySelectorAll('.reconcile-type-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === type);
+  });
+  // Reset results so stale data from a different type isn't visible
+  const resultsContainer = document.getElementById('reconciliation-results');
+  if (resultsContainer) resultsContainer.classList.add('hidden');
+  state.reconcileItems = [];
+  loadSnapshotsForReconcile();
 }
 
 async function triggerReconciliation() {
@@ -3230,6 +3259,22 @@ async function triggerReconciliation() {
 
   if (snapA === snapB) {
     showToast('Please select two distinct snapshots to compare.', 'error');
+    return;
+  }
+
+  // Verify both selected snapshots belong to the same dataset type
+  // (guard against stale select state after dataset switch)
+  const selectAEl = document.getElementById('reconcile-snap-a');
+  const selectBEl = document.getElementById('reconcile-snap-b');
+  const optA = selectAEl?.options[selectAEl.selectedIndex]?.text || '';
+  const optB = selectBEl?.options[selectBEl.selectedIndex]?.text || '';
+  const looksLikeSales  = t => /sales/i.test(t);
+  const looksLikePurch  = t => /purchase|cost analysis/i.test(t);
+  const looksLikeInv    = t => /inventor|availability|stock/i.test(t);
+  const typeA = looksLikeSales(optA) ? 's' : looksLikePurch(optA) ? 'p' : looksLikeInv(optA) ? 'i' : '?';
+  const typeB = looksLikeSales(optB) ? 's' : looksLikePurch(optB) ? 'p' : looksLikeInv(optB) ? 'i' : '?';
+  if (typeA !== '?' && typeB !== '?' && typeA !== typeB) {
+    showToast('Cannot compare different dataset types — both snapshots must be the same (e.g. both Sales, or both Inventory).', 'error');
     return;
   }
 

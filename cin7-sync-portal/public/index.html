@@ -960,6 +960,25 @@
               </div>
             </div>
 
+            <!-- Dataset Type Toggle -->
+            <div style="margin-top: 1.25rem; margin-bottom: 0.75rem;">
+              <label class="form-label" style="margin-bottom: 0.5rem; display: block;">Dataset to Compare</label>
+              <div id="reconcile-dataset-toggle" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button class="reconcile-type-btn active" data-type="sales" onclick="setReconcileDataset('sales')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4"/><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>
+                  Sales Orders
+                </button>
+                <button class="reconcile-type-btn" data-type="purchase" onclick="setReconcileDataset('purchase')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                  Purchase Orders
+                </button>
+                <button class="reconcile-type-btn" data-type="inventory" onclick="setReconcileDataset('inventory')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                  Inventory
+                </button>
+              </div>
+            </div>
+
             <div class="reconcile-selectors-grid">
               <div class="form-group" style="margin-top: 0;">
                 <label class="form-label" for="reconcile-snap-a">Previous Baseline Snapshot (A)</label>
