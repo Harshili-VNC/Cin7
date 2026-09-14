@@ -82,6 +82,7 @@ async function runClickTests() {
   global.window = {
     open: (url) => { global.window._lastOpenedUrl = url; },
     location: { href: 'http://localhost:8000' },
+    scrollTo: () => {},
     addEventListener: () => {},
     removeEventListener: () => {}
   };
@@ -109,8 +110,10 @@ async function runClickTests() {
             email: body.email,
             fullName: isSuper ? 'VNC Platform Admin' : 'Harshili Patni',
             role: 'ADMIN',
-            platformRole: isSuper ? 'SUPER_ADMIN' : 'USER'
+            platformRole: isSuper ? 'SUPER_ADMIN' : 'USER',
+            onboardingStatus: 'completed'
           },
+          cin7: { connected: true, status: 'CONNECTED' },
           client: { id: 'client-vnc-master', companyName: 'VNC Global Business Edge Pvt Ltd' }
         })
       };
@@ -136,8 +139,8 @@ async function runClickTests() {
   (0, eval)(appJsCode + '\nglobal.state = state; global.adminState = adminState;');
 
   assert(typeof navigateTo === 'function', 'navigateTo function is defined');
-  assert(typeof quickDemoSignIn === 'function', 'quickDemoSignIn function is defined');
-  assert(typeof quickSuperAdminSignIn === 'function', 'quickSuperAdminSignIn function is defined');
+  assert(typeof handleSigninSubmit === 'function', 'handleSigninSubmit function is defined');
+  assert(typeof handleAdminSigninSubmit === 'function', 'handleAdminSigninSubmit function is defined');
   assert(typeof switchReportsSubTab === 'function', 'switchReportsSubTab function is defined');
   assert(typeof switchSettingsTab === 'function', 'switchSettingsTab function is defined');
   assert(typeof switchAdminTab === 'function', 'switchAdminTab function is defined');
@@ -145,8 +148,10 @@ async function runClickTests() {
 
   // 3. Test Client Login & Home Screen Navigation
   console.log('\n--- 3. Testing Org Admin Home Screen & Navigation Buttons ---');
-  await quickDemoSignIn();
-  assert(state.user !== null && state.user.role === 'ADMIN', 'quickDemoSignIn logs in as Org Admin');
+  domElements['signin-email'].value = 'harshili.patni@vnc.global';
+  domElements['signin-password'].value = '123456';
+  await handleSigninSubmit({ preventDefault: () => {} });
+  assert(state.user !== null && state.user.role === 'ADMIN', 'handleSigninSubmit logs in as Org Admin');
   assert(!domElements['dashboard-view'].classList.contains('hidden'), 'Dashboard view is displayed after login');
   assert(domElements['auth-landing-view'].classList.contains('hidden'), 'Auth landing view is hidden');
 
@@ -192,8 +197,10 @@ async function runClickTests() {
 
   // 4. Test Super Admin Login & Super Admin Portal Subviews
   console.log('\n--- 4. Testing Super Admin Sign In & 11 Admin Portal Subviews ---');
-  await quickSuperAdminSignIn();
-  assert(state.user !== null && state.user.platformRole === 'SUPER_ADMIN', 'quickSuperAdminSignIn logs in as Super Admin');
+  domElements['admin-signin-email'].value = 'superadmin@vnc.global';
+  domElements['admin-signin-password'].value = 'SuperAdmin2026!#';
+  await handleAdminSigninSubmit({ preventDefault: () => {} });
+  assert(state.user !== null && state.user.platformRole === 'SUPER_ADMIN', 'handleAdminSigninSubmit logs in as Super Admin');
   assert(!domElements['admin-portal-view'].classList.contains('hidden'), 'Super Admin portal view is displayed');
   assert(!domElements['nav-admin-btn'].classList.contains('hidden'), 'Super Admin navbar badge button is visible');
 
