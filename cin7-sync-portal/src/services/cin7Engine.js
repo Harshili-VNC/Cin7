@@ -90,7 +90,7 @@ async function upsertSalesToDb(clientId, detailedSales) {
       try {
         const orderDate = sale.OrderDate ? sale.OrderDate.split('T')[0] : null;
         const invoiceDate = sale.InvoiceDate ? sale.InvoiceDate.split('T')[0] : null;
-        await db.query(
+        await db.queryWithTenant(
           `INSERT INTO cin7_sales_orders
              (client_id, cin7_sale_id, order_number, invoice_number, order_date, invoice_date,
               customer, status, combined_invoice_status, combined_shipping_status,
@@ -120,7 +120,8 @@ async function upsertSalesToDb(clientId, detailedSales) {
             sale.Type || null, sale.SourceChannel || sale.SaleChannel || null,
             sale.SalesRepresentative || null, sale.CustomerTags || null,
             sale.UpdatedDateUtc || null
-          ]
+          ],
+          safeClientId
         );
         orderCount++;
 
@@ -129,7 +130,7 @@ async function upsertSalesToDb(clientId, detailedSales) {
           const sku = String(line.SKU || '').trim();
           if (!sku) continue;
           try {
-            await db.query(
+            await db.queryWithTenant(
               `INSERT INTO cin7_order_lines
                  (client_id, cin7_sale_id, sku, product_name, brand, category, family,
                   unit, quantity, unit_price, total, average_cost)
@@ -151,7 +152,8 @@ async function upsertSalesToDb(clientId, detailedSales) {
                 line.Unit || null,
                 toNumber(line.Quantity), toNumber(line.Price || line.UnitPrice),
                 toNumber(line.Total), toNumber(line.AverageCost)
-              ]
+              ],
+              safeClientId
             );
             lineCount++;
           } catch (_) {}
@@ -174,13 +176,13 @@ async function upsertInventoryToDb(clientId, allInv) {
   const safeClientId = getSafeClientId(clientId);
   try {
     // Delete existing inventory for this client (full snapshot replace)
-    await db.query('DELETE FROM cin7_inventory WHERE client_id = ?', [safeClientId]);
+    await db.queryWithTenant('DELETE FROM cin7_inventory WHERE client_id = ?', [safeClientId], safeClientId);
     let count = 0;
     for (const i of allInv) {
       const sku = String(i.SKU || '').trim();
       if (!sku) continue;
       try {
-        await db.query(
+        await db.queryWithTenant(
           `INSERT INTO cin7_inventory
              (client_id, location, sku, product_name, unit,
               on_hand, allocated, on_order, in_transit, unit_cost, stock_on_hand, available, synced_at)
@@ -205,7 +207,8 @@ async function upsertInventoryToDb(clientId, allInv) {
             toNumber(i.UnitCost || i.AverageCost || 0),
             toNumber(i.StockOnHand || i.OnHand),
             toNumber(i.Available)
-          ]
+          ],
+          safeClientId
         );
         count++;
       } catch (_) {}
@@ -231,7 +234,7 @@ async function upsertPurchaseOrdersToDb(clientId, allPOs) {
       try {
         const orderDate = p.OrderDate ? p.OrderDate.split('T')[0] : null;
         const dueDate = p.InvoiceDueDate ? p.InvoiceDueDate.split('T')[0] : null;
-        await db.query(
+        await db.queryWithTenant(
           `INSERT INTO cin7_purchase_orders
              (client_id, cin7_po_id, order_number, invoice_number, order_date, invoice_due_date,
               supplier, status, invoice_amount, updated_date_utc, synced_at)
@@ -253,7 +256,8 @@ async function upsertPurchaseOrdersToDb(clientId, allPOs) {
             p.Supplier || null, p.Status || null,
             parseFloat(p.InvoiceAmount || 0),
             p.UpdatedDateUtc || null
-          ]
+          ],
+          safeClientId
         );
         count++;
       } catch (_) {}

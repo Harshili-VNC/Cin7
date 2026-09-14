@@ -5,6 +5,14 @@ require('dotenv').config();
 let pg;
 try {
   pg = require('pg');
+  if (pg && pg.types) {
+    // Parse PostgreSQL TIMESTAMP without time zone (OID 1114) strictly as UTC
+    pg.types.setTypeParser(1114, (str) => {
+      if (!str) return null;
+      const normalized = str.includes('T') ? str : str.replace(' ', 'T');
+      return new Date(normalized.endsWith('Z') ? normalized : normalized + 'Z');
+    });
+  }
 } catch (e) {}
 
 let supabaseJs;
