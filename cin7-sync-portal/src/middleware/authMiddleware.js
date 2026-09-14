@@ -89,8 +89,12 @@ async function requireActiveSubscription(req, res, next) {
     }
     next();
   } catch (err) {
-    console.warn('[AUTH MIDDLEWARE] Subscription check notice:', err.message);
-    next();
+    console.error('[AUTH MIDDLEWARE] Subscription check FAILED — denying access to protect tenant data:', err.message);
+    return res.status(503).json({
+      success: false,
+      error: 'SUBSCRIPTION_CHECK_FAILED',
+      message: 'Unable to verify subscription status. Please try again or contact support.'
+    });
   }
 }
 

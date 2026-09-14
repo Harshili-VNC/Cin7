@@ -3,7 +3,13 @@ const path = require('path');
 const fs = require('fs');
 const clientStorageService = require('./clientStorageService');
 
-const SECRET_KEY = process.env.SESSION_SECRET || 'vnc_cin7_portal_session_secret_2026_key';
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('[editorService] FATAL: SESSION_SECRET environment variable must be set in production.');
+}
+const SECRET_KEY = process.env.SESSION_SECRET || (() => {
+  console.warn('[editorService] WARNING: SESSION_SECRET not set — using insecure default. Set SESSION_SECRET before deploying.');
+  return 'vnc_cin7_portal_session_secret_2026_key';
+})();
 const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 Minutes
 
 class EditorService {

@@ -5,6 +5,7 @@ const path = require('path');
 const { google } = require('googleapis');
 const { v4: uuidv4 } = require('uuid');
 const clientStorageService = require('./clientStorageService');
+const cryptoService = require('./cryptoService');
 
 const SALES_SHEET = 'Sales Transactions Raw Data';
 const INVENTORY_SHEET = 'Inventory On Hand Raw Data';
@@ -31,12 +32,25 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     }
 
     // Try oauth token from user account first if present
-    if (this.userOAuthAccount && this.userOAuthAccount.access_token) {
-      const oauth2Client = new google.auth.OAuth2();
-      oauth2Client.setCredentials({
+    let userTokens = null;
+    if (this.userOAuthAccount && this.userOAuthAccount.googleTokensEncrypted) {
+      try {
+        const decrypted = cryptoService.decrypt(this.userOAuthAccount.googleTokensEncrypted);
+        if (decrypted) userTokens = JSON.parse(decrypted);
+      } catch (_) {}
+    } else if (this.userOAuthAccount && this.userOAuthAccount.access_token) {
+      userTokens = {
         access_token: this.userOAuthAccount.access_token,
         refresh_token: this.userOAuthAccount.refresh_token
-      });
+      };
+    }
+
+    if (userTokens) {
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      oauth2Client.setCredentials(userTokens);
       this.authClient = oauth2Client;
     } else {
       // Look for credentials file
@@ -52,7 +66,17 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         const tokenPath = path.join(path.dirname(credPath), 'token.json');
         let token = null;
         if (fs.existsSync(tokenPath)) {
-          token = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+          try {
+            const raw = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+            if (raw && raw.encrypted) {
+              const decrypted = cryptoService.decrypt(raw.encrypted);
+              if (decrypted) token = JSON.parse(decrypted);
+            } else {
+              token = raw;
+            }
+          } catch (e) {
+            console.warn('[GOOGLE OAUTH] Notice parsing token.json:', e.message);
+          }
         }
 
         const oauth2Client = new google.auth.OAuth2(
@@ -67,11 +91,25 @@ class GoogleSheetsAdapter extends DestinationAdapter {
 
         oauth2Client.on('tokens', (refreshedTokens) => {
           try {
-            const current = fs.existsSync(tokenPath) ? JSON.parse(fs.readFileSync(tokenPath, 'utf8')) : {};
+            let current = {};
+            if (fs.existsSync(tokenPath)) {
+              try {
+                const raw = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+                if (raw && raw.encrypted) {
+                  const decrypted = cryptoService.decrypt(raw.encrypted);
+                  if (decrypted) current = JSON.parse(decrypted);
+                } else {
+                  current = raw;
+                }
+              } catch (_) {}
+            }
             const merged = { ...current, ...refreshedTokens };
-            fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
-            console.log('[GOOGLE OAUTH] ✅ Tokens refreshed and saved automatically to token.json');
-          } catch (e) {}
+            const encryptedPayload = cryptoService.encrypt(JSON.stringify(merged));
+            fs.writeFileSync(tokenPath, JSON.stringify({ encrypted: encryptedPayload }, null, 2));
+            console.log('[GOOGLE OAUTH] ✅ Tokens refreshed, encrypted, and saved to token.json');
+          } catch (e) {
+            console.warn('[GOOGLE OAUTH] Warning saving refreshed tokens:', e.message);
+          }
         });
 
         this.authClient = oauth2Client;

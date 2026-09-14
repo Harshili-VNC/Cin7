@@ -7,6 +7,11 @@ try {
   pg = require('pg');
 } catch (e) {}
 
+let supabaseJs;
+try {
+  supabaseJs = require('@supabase/supabase-js');
+} catch (e) {}
+
 class MemoryDatabaseAdapter {
   constructor() {
     this.storageFile = path.join(__dirname, 'portal_db_store.json');
@@ -191,7 +196,9 @@ class MemoryDatabaseAdapter {
   save() {
     try {
       fs.writeFileSync(this.storageFile, JSON.stringify(this.data, null, 2));
-    } catch (err) {}
+    } catch (err) {
+      console.error('[MemoryDB] CRITICAL: Failed to persist data store:', err.message);
+    }
   }
 
   async query(sql, params = []) {
@@ -217,28 +224,33 @@ class MemoryDatabaseAdapter {
       // Cin7 live data tables
       else if (cleanSql.includes('FROM CIN7_ORDER_CACHE')) {
         const clientId = params[0];
+        if (!clientId) throw new Error('[MemoryDB] clientId is required for CIN7_ORDER_CACHE queries');
         collection = Object.values(this.data.cin7_order_cache || {})
-          .filter(r => !clientId || r.client_id === clientId);
+          .filter(r => r.client_id === clientId);
       }
       else if (cleanSql.includes('FROM CIN7_SALES_ORDERS')) {
         const clientId = params[0];
+        if (!clientId) throw new Error('[MemoryDB] clientId is required for CIN7_SALES_ORDERS queries');
         collection = Object.values(this.data.cin7_sales_orders || {})
-          .filter(r => !clientId || r.client_id === clientId);
+          .filter(r => r.client_id === clientId);
       }
       else if (cleanSql.includes('FROM CIN7_ORDER_LINES')) {
         const clientId = params[0];
+        if (!clientId) throw new Error('[MemoryDB] clientId is required for CIN7_ORDER_LINES queries');
         collection = (this.data.cin7_order_lines || [])
-          .filter(r => !clientId || r.client_id === clientId);
+          .filter(r => r.client_id === clientId);
       }
       else if (cleanSql.includes('FROM CIN7_INVENTORY')) {
         const clientId = params[0];
+        if (!clientId) throw new Error('[MemoryDB] clientId is required for CIN7_INVENTORY queries');
         collection = Object.values(this.data.cin7_inventory || {})
-          .filter(r => !clientId || r.client_id === clientId);
+          .filter(r => r.client_id === clientId);
       }
       else if (cleanSql.includes('FROM CIN7_PURCHASE_ORDERS')) {
         const clientId = params[0];
+        if (!clientId) throw new Error('[MemoryDB] clientId is required for CIN7_PURCHASE_ORDERS queries');
         collection = Object.values(this.data.cin7_purchase_orders || {})
-          .filter(r => !clientId || r.client_id === clientId);
+          .filter(r => r.client_id === clientId);
       }
       else return { rows: [{ test: 1 }] };
 
@@ -1102,12 +1114,115 @@ class PostgresDatabaseAdapter {
     const res = await this.query(sql, params);
     return res.rows || [];
   }
+
+  async queryWithTenant(sql, params = [], clientId) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL app.current_client_id = '${clientId}'`);
+      let paramCount = 0;
+      const pgSql = sql.replace(/\?/g, () => `$${++paramCount}`);
+      const res = await client.query(pgSql, params);
+      await client.query('COMMIT');
+      return res;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }
 
-const isPgMode = process.env.USE_SQLITE_DEV === 'false' && pg;
+class SupabaseDatabaseAdapter {
+  constructor() {
+    const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+    this.pool = new pg.Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false }
+    });
 
-if (isPgMode) {
-  console.log('Connecting to PostgreSQL Database:', process.env.DATABASE_URL);
+    // Initialize Supabase JS client (for auth/storage/realtime — future use)
+    if (supabaseJs && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      this.supabase = supabaseJs.createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      );
+      console.log('[SupabaseAdapter] Supabase JS client initialized.');
+    } else {
+      console.warn('[SupabaseAdapter] Supabase JS client NOT initialized — SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing.');
+    }
+
+    this.initSchema();
+  }
+
+  async initSchema() {
+    try {
+      const schemaPath = path.join(__dirname, 'schema.sql');
+      if (fs.existsSync(schemaPath)) {
+        const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+        await this.pool.query(schemaSql);
+        console.log('[SupabaseAdapter] Schema initialized successfully.');
+      }
+    } catch (err) {
+      console.error('[SupabaseAdapter] Warning initializing schema:', err.message);
+    }
+  }
+
+  async query(sql, params = []) {
+    let paramCount = 0;
+    const pgSql = sql.replace(/\?/g, () => `$${++paramCount}`);
+    const res = await this.pool.query(pgSql, params);
+    return res;
+  }
+
+  async getOne(sql, params = []) {
+    const res = await this.query(sql, params);
+    return res.rows && res.rows.length > 0 ? res.rows[0] : null;
+  }
+
+  async getAll(sql, params = []) {
+    const res = await this.query(sql, params);
+    return res.rows || [];
+  }
+
+  async queryWithTenant(sql, params = [], clientId) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL app.current_client_id = '${clientId}'`);
+      let paramCount = 0;
+      const pgSql = sql.replace(/\?/g, () => `$${++paramCount}`);
+      const res = await client.query(pgSql, params);
+      await client.query('COMMIT');
+      return res;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }
 
-module.exports = isPgMode ? new PostgresDatabaseAdapter() : new MemoryDatabaseAdapter();
+// Adapter selection:
+// 1. If SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY set → SupabaseDatabaseAdapter (production)
+// 2. If DATABASE_URL set and USE_SQLITE_DEV !== 'true' → PostgresDatabaseAdapter (self-hosted pg)
+// 3. Otherwise → MemoryDatabaseAdapter (local dev only — not for production)
+const isSupabaseMode = ((process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) || process.env.SUPABASE_DB_URL || (process.env.SUPABASE_URL && !process.env.DATABASE_URL)) && supabaseJs && pg;
+const isPgMode = !isSupabaseMode && process.env.DATABASE_URL && process.env.USE_SQLITE_DEV !== 'true' && pg;
+
+if (isSupabaseMode) {
+  console.log('[DB] Using SupabaseDatabaseAdapter → Supabase project:', process.env.SUPABASE_URL || process.env.SUPABASE_DB_URL);
+} else if (isPgMode) {
+  console.log('[DB] Using PostgresDatabaseAdapter →', process.env.DATABASE_URL);
+} else {
+  console.warn('[DB] WARNING: Using MemoryDatabaseAdapter — data will NOT persist across restarts. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for production.');
+}
+
+module.exports = isSupabaseMode
+  ? new SupabaseDatabaseAdapter()
+  : isPgMode
+    ? new PostgresDatabaseAdapter()
+    : new MemoryDatabaseAdapter();

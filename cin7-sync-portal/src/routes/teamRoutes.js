@@ -4,6 +4,7 @@ const db = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
 const cryptoService = require('../services/cryptoService');
+const crypto = require('crypto');
 const { logAction } = require('../services/auditService');
 const { v4: uuidv4 } = require('uuid');
 
@@ -84,7 +85,9 @@ const subscriptionService = require('../services/subscriptionService');
     }
 
     const userId = `user-${uuidv4().substring(0, 8)}`;
-    const tempPassword = password || 'Welcome123!';
+    // Generate a cryptographically random temporary password if none supplied by the admin.
+    // The inviting admin is responsible for communicating this to the new team member securely.
+    const tempPassword = password || crypto.randomBytes(12).toString('base64url');
     const passwordHash = cryptoService.hashPassword(tempPassword);
 
     await db.query(

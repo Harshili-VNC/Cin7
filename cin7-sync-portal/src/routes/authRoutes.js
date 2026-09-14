@@ -178,6 +178,34 @@ router.get('/google/callback', async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     const { tokens } = await oauth2Client.getToken(req.query.code);
     oauth2Client.setCredentials(tokens);
+
+    oauth2Client.on('tokens', (refreshedTokens) => {
+      try {
+        const credPathCandidate1 = path.resolve(__dirname, '../../', process.env.GOOGLE_CREDENTIALS_PATH || '../cin7-sheets/oauth-credentials.json');
+        const credPathCandidate2 = path.resolve(__dirname, '../../../cin7-sheets/oauth-credentials.json');
+        const baseDir = fs.existsSync(credPathCandidate1) ? path.dirname(credPathCandidate1) : (fs.existsSync(credPathCandidate2) ? path.dirname(credPathCandidate2) : path.resolve(__dirname, '../../../cin7-sheets'));
+        const tokenPath = path.join(baseDir, 'token.json');
+        let current = {};
+        if (fs.existsSync(tokenPath)) {
+          try {
+            const raw = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+            if (raw && raw.encrypted) {
+              const decrypted = cryptoService.decrypt(raw.encrypted);
+              if (decrypted) current = JSON.parse(decrypted);
+            } else {
+              current = raw;
+            }
+          } catch (_) {}
+        }
+        const merged = { ...current, ...refreshedTokens };
+        const encryptedTokens = cryptoService.encrypt(JSON.stringify(merged));
+        fs.writeFileSync(tokenPath, JSON.stringify({ encrypted: encryptedTokens }, null, 2));
+        console.log(`[GOOGLE AUTH] ✅ Refreshed Google tokens encrypted and saved to: ${tokenPath}`);
+      } catch (refreshErr) {
+        console.warn('[GOOGLE AUTH] Warning saving refreshed tokens:', refreshErr.message);
+      }
+    });
+
     const profileResponse = await google.oauth2({ version: 'v2', auth: oauth2Client }).userinfo.get();
     const profile = profileResponse.data || {};
     const email = String(profile.email || '').toLowerCase().trim();
@@ -196,8 +224,9 @@ router.get('/google/callback', async (req, res) => {
         fs.mkdirSync(baseDir, { recursive: true });
       }
       const tokenPath = path.join(baseDir, 'token.json');
-      fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2));
-      console.log(`[GOOGLE AUTH] ✅ Automatically saved Google Drive & Sheets tokens to: ${tokenPath}`);
+      const encryptedTokens = cryptoService.encrypt(JSON.stringify(tokens));
+      fs.writeFileSync(tokenPath, JSON.stringify({ encrypted: encryptedTokens }, null, 2));
+      console.log(`[GOOGLE AUTH] ✅ Saved encrypted Google tokens to: ${tokenPath}`);
     } catch (saveTokenErr) {
       console.warn('[GOOGLE AUTH] Warning saving token.json:', saveTokenErr.message);
     }
@@ -222,14 +251,15 @@ router.get('/google/callback', async (req, res) => {
     if (!user) throw new Error('Unable to create or load the Google user account.');
     
     const sessionUserData = sessionUserFromGoogleProfile(user, profile);
-    sessionUserData.googleTokens = tokens;
+    // Store only the encrypted token reference in session — never plaintext OAuth tokens
+    sessionUserData.googleTokensEncrypted = cryptoService.encrypt(JSON.stringify(tokens));
 
     // Session regeneration for session fixation protection
     await new Promise((resolve, reject) => {
       req.session.regenerate((err) => {
         if (err) return reject(err);
         req.session.user = sessionUserData;
-        req.session.googleTokens = tokens;
+        req.session.googleTokensEncrypted = sessionUserData.googleTokensEncrypted;
         req.session.save(saveErr => saveErr ? reject(saveErr) : resolve());
       });
     });
@@ -557,26 +587,7 @@ router.post(['/switch-client', '/select-client'], async (req, res) => {
  */
 router.get('/me', async (req, res) => {
   if (!req.session || !req.session.user) {
-    if (process.env.NODE_ENV !== 'production') {
-      const users = Object.values(db.data?.users || {});
-      const activeUser = users.find(u => u.status === 'ACTIVE' && u.email !== 'automation.vncglobalgroup@gmail.com') || users[0];
-      if (activeUser && req.session) {
-        req.session.user = {
-          id: activeUser.id,
-          email: activeUser.email,
-          fullName: activeUser.full_name || activeUser.name || 'Harshili',
-          role: (activeUser.role === 'CLIENT' || !activeUser.role) ? 'ADMIN' : activeUser.role.toUpperCase(),
-          platformRole: (activeUser.platform_role || 'USER').toUpperCase(),
-          client_id: activeUser.client_id,
-          clientId: activeUser.client_id,
-          onboardingStatus: activeUser.onboarding_status || 'completed'
-        };
-      } else {
-        return res.status(401).json({ authenticated: false });
-      }
-    } else {
-      return res.status(401).json({ authenticated: false });
-    }
+    return res.status(401).json({ authenticated: false });
   }
 
   const sessionUser = req.session.user;

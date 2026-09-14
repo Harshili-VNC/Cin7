@@ -23,9 +23,10 @@ const memoryOrderCache = new Map();
 async function warmMemoryCacheFromDb(clientId) {
   try {
     const safeClientId = getSafeClientId(clientId);
-    const rows = await db.getAll(
+    const { rows } = await db.queryWithTenant(
       'SELECT cin7_sale_id, updated_date_utc, detail_json FROM cin7_order_cache WHERE client_id = ?',
-      [safeClientId]
+      [safeClientId],
+      safeClientId
     );
     let loaded = 0;
     for (const row of rows) {
@@ -58,14 +59,15 @@ async function storeOrderDetailToDb(clientId, saleId, detail, updatedDateUtc) {
   try {
     const safeClientId = getSafeClientId(clientId);
     const detailJson = JSON.stringify(detail);
-    await db.query(
+    await db.queryWithTenant(
       `INSERT INTO cin7_order_cache (client_id, cin7_sale_id, updated_date_utc, detail_json, stored_at)
        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT (client_id, cin7_sale_id) DO UPDATE SET
          updated_date_utc = EXCLUDED.updated_date_utc,
          detail_json      = EXCLUDED.detail_json,
          stored_at        = EXCLUDED.stored_at`,
-      [safeClientId, saleId, updatedDateUtc || null, detailJson]
+      [safeClientId, saleId, updatedDateUtc || null, detailJson],
+      safeClientId
     );
   } catch (e) {
     console.warn('[CIN7 DB CACHE] storeOrderDetailToDb failed (non-fatal):', e.message);
@@ -197,10 +199,10 @@ async function upsertInventoryToDb(clientId, allInv) {
           [
             safeClientId,
             i.Location || 'Main Warehouse', sku,
-            i.Name || null, 'Case',
+            i.Name || null, i.Unit || i.UnitOfMeasure || 'each',
             toNumber(i.OnHand), toNumber(i.Allocated),
             toNumber(i.OnOrder), toNumber(i.InTransit),
-            18.50,
+            toNumber(i.UnitCost || i.AverageCost || 0),
             toNumber(i.StockOnHand || i.OnHand),
             toNumber(i.Available)
           ]
@@ -501,9 +503,9 @@ function mapSaleLineToRow(sale, line) {
     sale.InvoiceNumber || '',
     sku,
     sku,
-    line.Brand || 'Cin7',
-    line.Category || 'Finished Goods',
-    line.Family || 'Finished Goods',
+    line.Brand || '',
+    line.Category || '',
+    line.Family || '',
     sale.Type || 'Commercial',
     sale.Customer || '',
     sale.Status || sale.CombinedInvoiceStatus || '',
@@ -800,7 +802,7 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
       console.log(`Sales: records fetched from page ${page}: ${sales.length} (Total in Cin7: ${totalInApi})`);
       allSales = allSales.concat(sales);
 
-      if (sales.length === 0 || allSales.length >= totalInApi || page >= 50) {
+      if (sales.length === 0 || allSales.length >= totalInApi) {
         break;
       }
       page++;
@@ -873,7 +875,7 @@ async function fetchInventory(clientId) {
       console.log(`Inventory: records fetched from page ${page}: ${inv.length} (Total in Cin7: ${totalInApi})`);
       allInv = allInv.concat(inv);
 
-      if (inv.length === 0 || allInv.length >= totalInApi || page >= 50) {
+      if (inv.length === 0 || allInv.length >= totalInApi) {
         break;
       }
       page++;
@@ -895,12 +897,12 @@ async function fetchInventory(clientId) {
       i.Location || 'Main Warehouse',
       i.SKU || 'SKU-GEN',
       i.Name || 'Cin7 Item',
-      'Case',
+      i.Unit || i.UnitOfMeasure || 'each',
       toNumber(i.OnHand),
       toNumber(i.Allocated),
       toNumber(i.OnOrder),
       toNumber(i.InTransit),
-      18.50,
+      toNumber(i.UnitCost || i.AverageCost || 0),
       toNumber(i.StockOnHand || i.OnHand),
       toNumber(i.Available)
     ]);
@@ -958,7 +960,7 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
       console.log(`Purchase Orders: records fetched from page ${page}: ${pos.length} (Total in Cin7: ${totalInApi})`);
       allPOs = allPOs.concat(pos);
 
-      if (pos.length === 0 || allPOs.length >= totalInApi || page >= 50) {
+      if (pos.length === 0 || allPOs.length >= totalInApi) {
         break;
       }
       page++;
@@ -994,9 +996,9 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
         p.InvoiceDueDate ? p.InvoiceDueDate.split('T')[0] : (p.OrderDate ? p.OrderDate.split('T')[0] : '2026-12-31'),
         p.OrderNumber || `PO-${2000 + idx}`,
         p.InvoiceNumber || `INV-${p.OrderNumber || idx}`,
-        'Cin7',
-        'Finished Goods',
-        'Finished Goods',
+        '',
+        '',
+        '',
         p.OrderNumber || `PO-SKU-${idx}`,
         p.Supplier || 'Packaging & Goods',
         'Case',

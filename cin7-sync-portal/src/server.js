@@ -5,6 +5,12 @@ const cookieParser = require('cookie-parser');
 const session = require('express-session');
 require('dotenv').config();
 
+// Persistent session store — uses the same Supabase / Postgres connection
+let pgSession;
+try { pgSession = require('connect-pg-simple')(session); } catch (e) {
+  console.warn('[server] connect-pg-simple not installed — falling back to MemoryStore (not suitable for production). Run: npm install connect-pg-simple');
+}
+
 const db = require('./db');
 const { globalLimiter } = require('./middleware/rateLimitMiddleware');
 const authRoutes = require('./routes/authRoutes');
@@ -106,7 +112,22 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // ── HARDENED SESSION CONFIGURATION ───────────────────────────────────────────
+const sessionDbUrl = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+const sessionStore = (pgSession && sessionDbUrl)
+  ? new pgSession({
+      conString: sessionDbUrl,
+      tableName: 'user_sessions',
+      createTableIfMissing: true,
+      ssl: process.env.SUPABASE_DB_URL ? { rejectUnauthorized: false } : false
+    })
+  : undefined; // Falls back to MemoryStore when pg not configured
+
+if (!sessionStore) {
+  console.warn('[server] WARNING: Using in-memory session store — sessions will be lost on restart. Set SUPABASE_DB_URL or DATABASE_URL and install connect-pg-simple for production.');
+}
+
 app.use(session({
+  store: sessionStore,
   name: '__vnc_portal_sid',
   secret: SESSION_SECRET,
   resave: false,
@@ -171,7 +192,7 @@ app.use((err, req, res, next) => {
 // Start Server
 if (require.main === module) {
   const os = require('os');
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 VNC Cin7 SaaS Reporting Portal Server running:`);
     console.log(`  > Local:   http://localhost:${PORT}`);
     
@@ -186,6 +207,23 @@ if (require.main === module) {
     }
     console.log('');
   });
+
+  // Graceful shutdown — allows in-flight requests to complete and closes the DB pool cleanly
+  const shutdown = (signal) => {
+    console.log(`\n[server] ${signal} received. Shutting down gracefully...`);
+    server.close(() => {
+      console.log('[server] HTTP server closed.');
+      process.exit(0);
+    });
+    // Force exit after 10 seconds if something hangs
+    setTimeout(() => {
+      console.error('[server] Forced exit after shutdown timeout.');
+      process.exit(1);
+    }, 10000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
 }
 
 module.exports = app;

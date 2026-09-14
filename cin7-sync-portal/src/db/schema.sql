@@ -268,3 +268,83 @@ CREATE INDEX IF NOT EXISTS idx_cin7_sales_orders_client ON cin7_sales_orders(cli
 CREATE INDEX IF NOT EXISTS idx_cin7_order_lines_client_sale ON cin7_order_lines(client_id, cin7_sale_id);
 CREATE INDEX IF NOT EXISTS idx_cin7_inventory_client ON cin7_inventory(client_id);
 CREATE INDEX IF NOT EXISTS idx_cin7_purchase_orders_client ON cin7_purchase_orders(client_id);
+
+-- ── ROW LEVEL SECURITY (RLS) ──────────────────────────────────────────────────
+-- Defense-in-depth tenant isolation. The app layer enforces client_id filtering;
+-- RLS provides a database-level guarantee even if a query bug slips through.
+-- All policies read current_setting('app.current_client_id', true) which the
+-- application sets per-transaction via SET LOCAL before running tenant queries.
+-- The Supabase service-role key bypasses RLS entirely (Supabase default).
+
+DO $$ BEGIN
+  ALTER TABLE clients                ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE users                  ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_connections       ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE client_workbooks       ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE sync_runs              ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE sync_logs              ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE report_snapshots       ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE audit_logs             ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE subscriptions          ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_order_cache       ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_sales_orders      ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_order_lines       ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_inventory         ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_purchase_orders   ENABLE ROW LEVEL SECURITY;
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'RLS enable: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS clients_tenant ON clients;
+  CREATE POLICY clients_tenant ON clients USING (id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'clients RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS users_tenant ON users;
+  CREATE POLICY users_tenant ON users USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'users RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS cin7_connections_tenant ON cin7_connections;
+  CREATE POLICY cin7_connections_tenant ON cin7_connections USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_connections RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS client_workbooks_tenant ON client_workbooks;
+  CREATE POLICY client_workbooks_tenant ON client_workbooks USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'client_workbooks RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS sync_runs_tenant ON sync_runs;
+  CREATE POLICY sync_runs_tenant ON sync_runs USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sync_runs RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS sync_logs_tenant ON sync_logs;
+  CREATE POLICY sync_logs_tenant ON sync_logs USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sync_logs RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS report_snapshots_tenant ON report_snapshots;
+  CREATE POLICY report_snapshots_tenant ON report_snapshots USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'report_snapshots RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS audit_logs_tenant ON audit_logs;
+  CREATE POLICY audit_logs_tenant ON audit_logs USING (organization_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'audit_logs RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS subscriptions_tenant ON subscriptions;
+  CREATE POLICY subscriptions_tenant ON subscriptions USING (organization_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'subscriptions RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS cin7_order_cache_tenant ON cin7_order_cache;
+  CREATE POLICY cin7_order_cache_tenant ON cin7_order_cache USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_order_cache RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS cin7_sales_orders_tenant ON cin7_sales_orders;
+  CREATE POLICY cin7_sales_orders_tenant ON cin7_sales_orders USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_sales_orders RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS cin7_order_lines_tenant ON cin7_order_lines;
+  CREATE POLICY cin7_order_lines_tenant ON cin7_order_lines USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_order_lines RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS cin7_inventory_tenant ON cin7_inventory;
+  CREATE POLICY cin7_inventory_tenant ON cin7_inventory USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_inventory RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS cin7_purchase_orders_tenant ON cin7_purchase_orders;
+  CREATE POLICY cin7_purchase_orders_tenant ON cin7_purchase_orders USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_purchase_orders RLS: %', SQLERRM; END $$;
