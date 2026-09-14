@@ -47,6 +47,20 @@ async function runTests() {
     const regEmail = 'john.smith@acme.com';
     const clientAId = 'client-acme-001';
     const userAId = 'user-john-001';
+    const clientBId = 'client-google-002';
+    const userBId = 'user-google-002';
+    const gEmail = 'sarah@globaltech.com';
+
+    // Cleanup previous test runs if any
+    try {
+      await db.query('DELETE FROM cin7_connections WHERE client_id IN (?, ?)', [clientAId, clientBId]);
+      await db.query('DELETE FROM oauth_accounts WHERE user_id IN (?, ?)', [userAId, userBId]);
+      await db.query('DELETE FROM client_workbooks WHERE client_id IN (?, ?)', [clientAId, clientBId]);
+      await db.query('DELETE FROM users WHERE id IN (?, ?)', [userAId, userBId]);
+      await db.query('DELETE FROM clients WHERE id IN (?, ?)', [clientAId, clientBId]);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
 
     await db.query(
       'INSERT INTO clients (id, company_name, phone_number, status) VALUES (?, ?, ?, ?)',
@@ -60,8 +74,8 @@ async function runTests() {
     );
 
     await db.query(
-      'INSERT INTO client_preferences (id, client_id, destination) VALUES (?, ?, ?)',
-      ['pref-acme-001', clientAId, 'microsoft']
+      'INSERT INTO client_workbooks (id, client_id, workbook_path, file_name) VALUES (?, ?, ?, ?)',
+      ['wb-acme-001', clientAId, 'workbooks/acme.xlsx', 'acme.xlsx']
     );
 
     const savedUserA = await db.getOne('SELECT * FROM users WHERE email = ?', [regEmail]);
@@ -92,9 +106,6 @@ async function runTests() {
 
     // 6. Scenario C & F: Google OAuth Account Registration
     console.log('\n--- 6. Scenario C & F: Google OAuth Registration & Preference ---');
-    const clientBId = 'client-google-002';
-    const userBId = 'user-google-002';
-    const gEmail = 'sarah@globaltech.com';
 
     await db.query(
       'INSERT INTO clients (id, company_name, phone_number, status) VALUES (?, ?, ?, ?)',
@@ -108,13 +119,13 @@ async function runTests() {
     );
 
     await db.query(
-      'INSERT INTO client_preferences (id, client_id, destination) VALUES (?, ?, ?)',
-      ['pref-google-002', clientBId, 'google']
+      'INSERT INTO client_workbooks (id, client_id, workbook_path, file_name) VALUES (?, ?, ?, ?)',
+      ['wb-google-002', clientBId, 'workbooks/google.xlsx', 'google.xlsx']
     );
 
     const savedUserB = await db.getOne('SELECT * FROM users WHERE email = ?', [gEmail]);
-    const prefB = await db.getOne('SELECT * FROM client_preferences WHERE client_id = ?', [clientBId]);
-    assert(savedUserB && prefB.destination === 'google', 'Google OAuth user saved with Google Sheets destination preference');
+    const wbB = await db.getOne('SELECT * FROM client_workbooks WHERE client_id = ?', [clientBId]);
+    assert(savedUserB && wbB.file_name === 'google.xlsx', 'Google OAuth user saved with workbook preference');
 
     // 7. Cin7 Connection & Onboarding Routing
     console.log('\n--- 7. Cin7 Connection & Onboarding Routing ---');

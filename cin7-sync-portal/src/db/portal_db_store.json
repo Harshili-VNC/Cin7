@@ -55,7 +55,7 @@
       "full_name": "Platform Super Admin",
       "email": "superadmin@vnc.global",
       "phone_number": "+1 (555) 019-2834",
-      "password_hash": "f8891982b8e64c94bd1fbc1a86d8b073:76727df3889ceff241091077c8000c30146bf246c1d4795eecb27dc6c74cbfc7190ebd62ad221532367eaa6e2b795185746b82f422670e76c16caac3d57c0b8e",
+      "password_hash": "c9df2bfaac095c6119dfa3488e3a074e:4c42aab06f25e29e1dbdbaf1022a4ffe5d3d8551e39af91bbfbea8b77b7e1e97df6fd6ac3eba15a114a2bf47ae645006a6728316d185857541817fa8f6b0e433",
       "role": "SUPER_ADMIN",
       "platform_role": "SUPER_ADMIN",
       "status": "ACTIVE",

@@ -1101,8 +1101,47 @@ class PostgresDatabaseAdapter {
         await this.pool.query(schemaSql);
         console.log('PostgreSQL Schema initialized successfully.');
       }
+      await this.seedSuperAdmin();
     } catch (err) {
       console.error('Warning initializing PostgreSQL schema:', err.message);
+    }
+  }
+
+  async seedSuperAdmin() {
+    try {
+      const adminEmail = (process.env.ADMIN_EMAIL || 'superadmin@vnc.global').toLowerCase().trim();
+      const adminPassword = process.env.ADMIN_PASSWORD || 'SuperAdmin2026!#';
+      const cryptoService = require('../services/cryptoService');
+
+      const masterClientId = 'client-05262fcf';
+      const existingClient = await this.getOne('SELECT id FROM clients WHERE id = ?', [masterClientId]);
+      if (!existingClient) {
+        await this.query(
+          `INSERT INTO clients (id, company_name, status, subscription_status, onboarding_status)
+           VALUES (?, 'VNC Global Business Edge', 'ACTIVE', 'ACTIVE', 'completed')
+           ON CONFLICT (id) DO NOTHING`,
+          [masterClientId]
+        );
+      }
+
+      const existingUser = await this.getOne('SELECT id, password_hash, role, platform_role FROM users WHERE email = ?', [adminEmail]);
+      if (!existingUser) {
+        const hash = cryptoService.hashPassword(adminPassword);
+        await this.query(
+          `INSERT INTO users (id, client_id, full_name, email, password_hash, role, platform_role, auth_provider, status, onboarding_status)
+           VALUES (?, ?, 'Platform Super Admin', ?, ?, 'SUPER_ADMIN', 'SUPER_ADMIN', 'local', 'ACTIVE', 'completed')
+           ON CONFLICT (email) DO NOTHING`,
+          ['user-super-admin-root', masterClientId, adminEmail, hash]
+        );
+      } else if (!cryptoService.verifyPassword(adminPassword, existingUser.password_hash) || existingUser.platform_role !== 'SUPER_ADMIN') {
+        const hash = cryptoService.hashPassword(adminPassword);
+        await this.query(
+          `UPDATE users SET password_hash = ?, platform_role = 'SUPER_ADMIN', role = 'SUPER_ADMIN', status = 'ACTIVE' WHERE email = ?`,
+          [hash, adminEmail]
+        );
+      }
+    } catch (err) {
+      console.warn('[DB] Warning seeding super admin:', err.message);
     }
   }
 
@@ -1173,8 +1212,47 @@ class SupabaseDatabaseAdapter {
         await this.pool.query(schemaSql);
         console.log('[SupabaseAdapter] Schema initialized successfully.');
       }
+      await this.seedSuperAdmin();
     } catch (err) {
       console.error('[SupabaseAdapter] Warning initializing schema:', err.message);
+    }
+  }
+
+  async seedSuperAdmin() {
+    try {
+      const adminEmail = (process.env.ADMIN_EMAIL || 'superadmin@vnc.global').toLowerCase().trim();
+      const adminPassword = process.env.ADMIN_PASSWORD || 'SuperAdmin2026!#';
+      const cryptoService = require('../services/cryptoService');
+
+      const masterClientId = 'client-05262fcf';
+      const existingClient = await this.getOne('SELECT id FROM clients WHERE id = ?', [masterClientId]);
+      if (!existingClient) {
+        await this.query(
+          `INSERT INTO clients (id, company_name, status, subscription_status, onboarding_status)
+           VALUES (?, 'VNC Global Business Edge', 'ACTIVE', 'ACTIVE', 'completed')
+           ON CONFLICT (id) DO NOTHING`,
+          [masterClientId]
+        );
+      }
+
+      const existingUser = await this.getOne('SELECT id, password_hash, role, platform_role FROM users WHERE email = ?', [adminEmail]);
+      if (!existingUser) {
+        const hash = cryptoService.hashPassword(adminPassword);
+        await this.query(
+          `INSERT INTO users (id, client_id, full_name, email, password_hash, role, platform_role, auth_provider, status, onboarding_status)
+           VALUES (?, ?, 'Platform Super Admin', ?, ?, 'SUPER_ADMIN', 'SUPER_ADMIN', 'local', 'ACTIVE', 'completed')
+           ON CONFLICT (email) DO NOTHING`,
+          ['user-super-admin-root', masterClientId, adminEmail, hash]
+        );
+      } else if (!cryptoService.verifyPassword(adminPassword, existingUser.password_hash) || existingUser.platform_role !== 'SUPER_ADMIN') {
+        const hash = cryptoService.hashPassword(adminPassword);
+        await this.query(
+          `UPDATE users SET password_hash = ?, platform_role = 'SUPER_ADMIN', role = 'SUPER_ADMIN', status = 'ACTIVE' WHERE email = ?`,
+          [hash, adminEmail]
+        );
+      }
+    } catch (err) {
+      console.warn('[SupabaseAdapter] Warning seeding super admin:', err.message);
     }
   }
 

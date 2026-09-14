@@ -8,6 +8,7 @@
 const http = require('http');
 const app = require('../src/server');
 const db = require('../src/db');
+const cryptoService = require('../src/services/cryptoService');
 
 let server;
 let baseUrl;
@@ -75,36 +76,67 @@ async function runTests() {
     // Auth Sessions Setup
     // -------------------------------------------------------------
     console.log('--- 1. Session Setup & Role Logins ---');
+
+    const superPass = 'SuperAdmin2026!#';
+    const testPass = 'TestPass2026!#';
+
+    // Seed test users
+    await db.query('UPDATE users SET password_hash = ?, platform_role = ? WHERE email = ?', [cryptoService.hashPassword(superPass), 'SUPER_ADMIN', 'superadmin@vnc.global']);
+    await db.query('UPDATE users SET password_hash = ?, role = ? WHERE email = ?', [cryptoService.hashPassword(testPass), 'ADMIN', 'harshili.patni@vnc.global']);
+
+    // Ensure manager and viewer exist
+    const clientMaster = 'client-05262fcf';
+    const existingMgr = await db.getOne('SELECT id FROM users WHERE email = ?', ['manager@vnc.global']);
+    if (!existingMgr) {
+      await db.query(
+        `INSERT INTO users (id, client_id, full_name, email, password_hash, role, platform_role, auth_provider, status, onboarding_status)
+         VALUES (?, ?, 'Test Manager', 'manager@vnc.global', ?, 'MANAGER', 'USER', 'local', 'ACTIVE', 'completed')`,
+        ['user-test-mgr-001', clientMaster, cryptoService.hashPassword(testPass)]
+      );
+    } else {
+      await db.query('UPDATE users SET password_hash = ?, role = ? WHERE email = ?', [cryptoService.hashPassword(testPass), 'MANAGER', 'manager@vnc.global']);
+    }
+
+    const existingVwr = await db.getOne('SELECT id FROM users WHERE email = ?', ['viewer@vnc.global']);
+    if (!existingVwr) {
+      await db.query(
+        `INSERT INTO users (id, client_id, full_name, email, password_hash, role, platform_role, auth_provider, status, onboarding_status)
+         VALUES (?, ?, 'Test Viewer', 'viewer@vnc.global', ?, 'VIEWER', 'USER', 'local', 'ACTIVE', 'completed')`,
+        ['user-test-vwr-001', clientMaster, cryptoService.hashPassword(testPass)]
+      );
+    } else {
+      await db.query('UPDATE users SET password_hash = ?, role = ? WHERE email = ?', [cryptoService.hashPassword(testPass), 'VIEWER', 'viewer@vnc.global']);
+    }
     
     // 1. Super Admin Login
     const saLogin = await makeRequest('/api/auth/login', {
       method: 'POST',
-      body: { email: 'superadmin@vnc.global', password: '12345' }
+      body: { email: 'superadmin@vnc.global', password: superPass }
     });
     assert(saLogin.status === 200, 'Super Admin logs in successfully');
-    assert(saLogin.data.user.platformRole === 'SUPER_ADMIN', 'Super Admin has platform_role = SUPER_ADMIN');
+    assert(saLogin.data.user && saLogin.data.user.platformRole === 'SUPER_ADMIN', 'Super Admin has platform_role = SUPER_ADMIN');
     const saCookie = saLogin.cookie;
 
     // 2. Org Admin Login
     const adminLogin = await makeRequest('/api/auth/login', {
       method: 'POST',
-      body: { email: 'harshili.patni@vnc.global', password: '12345' }
+      body: { email: 'harshili.patni@vnc.global', password: testPass }
     });
     assert(adminLogin.status === 200, 'Org Admin logs in successfully');
-    assert(adminLogin.data.user.platformRole === 'USER', 'Org Admin has platform_role = USER');
+    assert(adminLogin.data.user && adminLogin.data.user.platformRole === 'USER', 'Org Admin has platform_role = USER');
     const adminCookie = adminLogin.cookie;
 
     // 3. Org Manager Login
     const mgrLogin = await makeRequest('/api/auth/login', {
       method: 'POST',
-      body: { email: 'manager@vnc.global', password: '12345' }
+      body: { email: 'manager@vnc.global', password: testPass }
     });
     const mgrCookie = mgrLogin.cookie;
 
     // 4. Org Viewer Login
     const vwrLogin = await makeRequest('/api/auth/login', {
       method: 'POST',
-      body: { email: 'viewer@vnc.global', password: '12345' }
+      body: { email: 'viewer@vnc.global', password: testPass }
     });
     const vwrCookie = vwrLogin.cookie;
 
