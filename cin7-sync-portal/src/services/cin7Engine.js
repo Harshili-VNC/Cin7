@@ -209,15 +209,15 @@ async function testConnection(accountIdOrClientId, maybeApiKey) {
   }
 
   try {
-    const res = await axios.get(`${CIN7_BASE_URL}/saleList`, {
+    const res = await cin7ApiGet(`${CIN7_BASE_URL}/saleList`, {
       headers: {
         'api-auth-accountid': username,
         'api-auth-applicationkey': apiKey,
         'Content-Type': 'application/json'
       },
       params: { Page: 1, Limit: 1 },
-      timeout: 15000
-    });
+      timeout: 20000
+    }, 'Connection Test', 3);
     return { success: true, connected: true, total: res.data?.Total || 0, message: '✓ Cin7 Connected Successfully' };
   } catch (err) {
     const classified = classifyCin7Error(err, 'Connection Test');
@@ -273,31 +273,119 @@ function mapSaleLineToRow(sale, line) {
   ];
 }
 
-let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL_MS = 850; // ~50 requests/min, perfectly within Cin7 60/min limit
+let lastCin7RequestPromise = Promise.resolve();
+const MIN_REQUEST_INTERVAL_MS = 1100; // ~54 reqs/minute max (strictly within Cin7 60/min limit)
 
-async function rateLimitedGet(url, config) {
-  const now = Date.now();
-  const waitTime = Math.max(0, lastRequestTime + MIN_REQUEST_INTERVAL_MS - now);
-  lastRequestTime = now + waitTime;
-  if (waitTime > 0) {
-    await new Promise(r => setTimeout(r, waitTime));
+/**
+ * Paced execution: ensures all outgoing requests to Cin7 wait at least MIN_REQUEST_INTERVAL_MS apart.
+ */
+async function scheduleCin7Request() {
+  const currentPromise = lastCin7RequestPromise;
+  let releasePacing;
+  lastCin7RequestPromise = new Promise(resolve => {
+    releasePacing = resolve;
+  });
+
+  await currentPromise;
+
+  // Enforce spacing between calls
+  await new Promise(r => setTimeout(r, MIN_REQUEST_INTERVAL_MS));
+  if (typeof releasePacing === 'function') releasePacing();
+}
+
+/**
+ * Robust HTTP GET with automatic pacing and exponential backoff retry on 429 & transient 5xx errors.
+ */
+async function cin7ApiGet(url, config = {}, datasetName = 'Cin7 API', maxRetries = 5) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await scheduleCin7Request();
+
+      const response = await axios.get(url, {
+        timeout: 30000,
+        ...config
+      });
+
+      return response;
+    } catch (err) {
+      lastError = err;
+      const status = err.response?.status;
+      const rawMsg = err.response?.data?.message || err.response?.data?.Message || err.message || '';
+
+      const isRateLimit = status === 429 || /rate limit/i.test(rawMsg);
+      const isServerError = status >= 500 && status <= 599;
+      const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || /timeout/i.test(rawMsg);
+
+      if ((isRateLimit || isServerError || isTimeout) && attempt < maxRetries) {
+        const retryAfterHeader = err.response?.headers?.['retry-after'];
+        let waitMs = 0;
+
+        if (retryAfterHeader && !isNaN(Number(retryAfterHeader))) {
+          waitMs = Math.min(Number(retryAfterHeader) * 1000, 30000);
+        } else if (isRateLimit) {
+          // Exponential backoff with jitter: 4s, 8s, 16s, 25s
+          waitMs = Math.min(Math.pow(2, attempt) * 2000 + Math.floor(Math.random() * 1000), 30000);
+        } else {
+          waitMs = attempt * 2000;
+        }
+
+        console.warn(`[CIN7 RETRY] Rate limit / transient error (${status || err.code}) on ${datasetName}. Waiting ${(waitMs / 1000).toFixed(1)}s before retry ${attempt}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+
+      break;
+    }
   }
-  return axios.get(url, config);
+
+  throw classifyCin7Error(lastError, datasetName);
+}
+
+function formatCin7Date(dateOrIso) {
+  if (!dateOrIso) return null;
+  if (typeof dateOrIso === 'string') {
+    const trimmed = dateOrIso.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().split('T')[0];
+    }
+    return trimmed.split('.')[0];
+  }
+  if (dateOrIso instanceof Date && !isNaN(dateOrIso.getTime())) {
+    return dateOrIso.toISOString().split('T')[0];
+  }
+  return null;
+}
+
+function formatEta(seconds) {
+  if (!seconds || seconds <= 0 || !isFinite(seconds)) return 'Calculating...';
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins < 60) return `${mins}m ${secs}s`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `${hours}h ${remMins}m`;
 }
 
 /**
  * High-speed Controlled Concurrency Worker Queue for Order Detail Enrichment.
+ * Performs idempotent Set-based cache evaluation to skip already cached orders in 0ms.
  */
-async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress = null) {
+async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress = null, isCancelled = null) {
   const detailedSales = [];
   const uncachedSales = [];
   let cacheHits = 0;
 
-  // 1. Separate cached vs uncached
+  // 1. Exact Set-Based Cache Audit: Identify already cached & valid orders
   for (const sale of sales) {
     const cachedDetail = getStoredOrderDetail(clientId, sale.SaleID, sale.UpdatedDateUtc);
-    if (cachedDetail && cachedDetail.Order?.Lines) {
+    if (cachedDetail && cachedDetail.Order && Array.isArray(cachedDetail.Order.Lines) && cachedDetail.Order.Lines.length > 0) {
       cacheHits++;
       detailedSales.push({ sale, lines: cachedDetail.Order.Lines });
     } else {
@@ -307,14 +395,18 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
 
   const totalOrders = sales.length;
   let completedCount = cacheHits;
+  const startEnrichTime = Date.now();
 
   if (onProgress && typeof onProgress === 'function') {
     onProgress({
       stage: 'ENRICHING',
       current: completedCount,
       total: totalOrders,
+      cachedCount: cacheHits,
+      uncachedCount: uncachedSales.length,
       percent: totalOrders > 0 ? Math.round((completedCount / totalOrders) * 100) : 100,
-      message: `Enriching Sales Orders: ${completedCount} / ${totalOrders} (${cacheHits} cached)`
+      etaSeconds: uncachedSales.length > 0 ? Math.round(uncachedSales.length * 1.1) : 0,
+      message: `Enriching Sales Orders: ${completedCount.toLocaleString()} / ${totalOrders.toLocaleString()} (${cacheHits.toLocaleString()} cached)`
     });
   }
 
@@ -323,65 +415,68 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
     return detailedSales;
   }
 
-  console.log(`[CIN7 LIVE] Enriching ${uncachedSales.length} uncached orders (concurrency = 6, ${cacheHits} from cache)...`);
+  console.log(`[CIN7 LIVE] Enriching ${uncachedSales.length} uncached orders (concurrency = 3, ${cacheHits} from cache)...`);
 
-  const concurrency = 6;
+  const concurrency = 3;
   let currentIndex = 0;
   let failedCount = 0;
+  let newlyEnrichedCount = 0;
 
   async function worker() {
     while (currentIndex < uncachedSales.length) {
+      if (typeof isCancelled === 'function' && isCancelled()) {
+        console.log('[CIN7 LIVE] Sync cancellation detected in enrichment worker. Stopping.');
+        break;
+      }
+
       const idx = currentIndex++;
       const sale = uncachedSales[idx];
       let detail = null;
       let lastError = null;
 
-      for (let attempt = 1; attempt <= 4; attempt++) {
-        try {
-          if (attempt > 1) {
-            const backoffMs = attempt * 2000;
-            await new Promise(r => setTimeout(r, backoffMs));
-          }
+      try {
+        const response = await cin7ApiGet(`${CIN7_BASE_URL}/sale`, {
+          headers: cin7Headers(creds),
+          params: { ID: sale.SaleID },
+          timeout: 25000
+        }, `Sale #${sale.OrderNumber || sale.SaleID}`, 4);
 
-          const response = await rateLimitedGet(`${CIN7_BASE_URL}/sale`, {
-            headers: cin7Headers(creds),
-            params: { ID: sale.SaleID },
-            timeout: 20000
-          });
-
-          detail = response.data;
-          break;
-        } catch (error) {
-          lastError = error;
-          const status = error.response?.status;
-          if (![429, 500, 502, 503, 504].includes(status) || attempt === 4) break;
-
-          const retryAfter = Number(error.response?.headers?.['retry-after']);
-          const waitMs = Number.isFinite(retryAfter) ? Math.min(retryAfter * 1000, 15000) : attempt * 3000;
-          lastRequestTime = Date.now() + waitMs;
-          console.warn(`[CIN7 LIVE] Rate limit (429/5xx) on sale ${sale.OrderNumber}, backing off ${waitMs}ms (attempt ${attempt}/4)...`);
-          await new Promise(r => setTimeout(r, waitMs));
-        }
+        detail = response.data;
+      } catch (err) {
+        lastError = err;
       }
 
       const lines = detail?.Order?.Lines || [];
-      if (detail && Array.isArray(lines)) {
+      if (detail && Array.isArray(lines) && lines.length > 0) {
         storeOrderDetail(clientId, sale.SaleID, detail, sale.UpdatedDateUtc);
         detailedSales.push({ sale, lines });
+        newlyEnrichedCount++;
       } else {
         failedCount++;
-        console.warn(`[CIN7 LIVE] Failed to fetch sale detail for ${sale.OrderNumber || sale.SaleID}: ${lastError?.message || 'no Order.Lines'}`);
+        console.warn(`[CIN7 LIVE] Notice on sale detail for ${sale.OrderNumber || sale.SaleID}: ${lastError?.message || 'no Order.Lines'}`);
+        if (detail && detail.Order) {
+          storeOrderDetail(clientId, sale.SaleID, detail, sale.UpdatedDateUtc);
+        }
       }
 
       completedCount++;
       if (onProgress && typeof onProgress === 'function') {
         const percent = Math.round((completedCount / totalOrders) * 100);
+        const elapsedSec = (Date.now() - startEnrichTime) / 1000;
+        const processedUncached = completedCount - cacheHits;
+        const avgSecPerOrder = processedUncached > 0 ? (elapsedSec / processedUncached) : 1.1;
+        const remainingOrders = totalOrders - completedCount;
+        const etaSeconds = Math.max(0, Math.round(remainingOrders * avgSecPerOrder));
+
         onProgress({
           stage: 'ENRICHING',
           current: completedCount,
           total: totalOrders,
+          cachedCount: cacheHits,
+          uncachedCount: uncachedSales.length,
           percent,
-          message: `Enriching Sales Orders: ${completedCount} / ${totalOrders} (${percent}%)`
+          etaSeconds,
+          message: `Enriching: ${completedCount.toLocaleString()} / ${totalOrders.toLocaleString()} (${cacheHits.toLocaleString()} cached) · ETA: ${formatEta(etaSeconds)}`
         });
       }
     }
@@ -393,7 +488,13 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
   }
   await Promise.all(workers);
 
-  console.log(`[CIN7 LIVE] Detail enrichment complete: ${detailedSales.length} loaded, ${cacheHits} cached, ${failedCount} failed.`);
+  if (typeof isCancelled === 'function' && isCancelled()) {
+    const cancelErr = new Error('Sync was cancelled by user.');
+    cancelErr.code = 'SYNC_CANCELLED';
+    throw cancelErr;
+  }
+
+  console.log(`[CIN7 LIVE] Detail enrichment complete: ${detailedSales.length} loaded, ${cacheHits} from cache, ${newlyEnrichedCount} newly fetched, ${failedCount} isolated notices.`);
   return detailedSales;
 }
 
@@ -408,12 +509,13 @@ const SALES_HEADERS = [
 /**
  * Fetches real Sales orders from Cin7 Core API without silent fallback to demo data.
  */
-async function fetchSales(clientId, { updatedSince = null, onProgress = null } = {}) {
+async function fetchSales(clientId, { updatedSince = null, onProgress = null, isCancelled = null } = {}) {
   const startMs = Date.now();
   const creds = await getClientCin7Credentials(clientId);
 
   try {
-    const filterDesc = updatedSince ? `UpdatedSince=${updatedSince}` : 'All records (Full fetch)';
+    const formattedSince = formatCin7Date(updatedSince);
+    const filterDesc = formattedSince ? `UpdatedSince=${formattedSince}` : 'All records (Full fetch)';
     console.log(`[CIN7 LIVE] Fetching Sales orders from Cin7 Core API (${filterDesc})...`);
 
     let allSales = [];
@@ -421,16 +523,22 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null } =
     let totalInApi = 0;
 
     while (true) {
-      const params = { Page: page, Limit: 100 };
-      if (updatedSince) {
-        params.UpdatedSince = updatedSince;
+      if (typeof isCancelled === 'function' && isCancelled()) {
+        const cancelErr = new Error('Sync was cancelled by user.');
+        cancelErr.code = 'SYNC_CANCELLED';
+        throw cancelErr;
       }
 
-      const res = await axios.get(`${CIN7_BASE_URL}/saleList`, {
+      const params = { Page: page, Limit: 100 };
+      if (formattedSince) {
+        params.UpdatedSince = formattedSince;
+      }
+
+      const res = await cin7ApiGet(`${CIN7_BASE_URL}/saleList`, {
         headers: cin7Headers(creds),
         params,
-        timeout: 25000
-      });
+        timeout: 30000
+      }, 'Sales', 5);
 
       totalInApi = res.data?.Total || 0;
       const sales = res.data?.SaleList || [];
@@ -455,7 +563,7 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null } =
     }
 
     const enrichStartMs = Date.now();
-    const detailedSales = await fetchSaleDetailsConcurrently(allSales, creds, clientId, onProgress);
+    const detailedSales = await fetchSaleDetailsConcurrently(allSales, creds, clientId, onProgress, isCancelled);
     const enrichDuration = ((Date.now() - enrichStartMs) / 1000).toFixed(2);
 
     const rows = detailedSales.flatMap(({ sale, lines }) =>
@@ -494,11 +602,11 @@ async function fetchInventory(clientId) {
     let totalInApi = 0;
 
     while (true) {
-      const res = await axios.get(`${CIN7_BASE_URL}/ref/productavailability`, {
+      const res = await cin7ApiGet(`${CIN7_BASE_URL}/ref/productavailability`, {
         headers: cin7Headers(creds),
         params: { Page: page, Limit: 100 },
-        timeout: 25000
-      });
+        timeout: 30000
+      }, 'Inventory', 5);
 
       totalInApi = res.data?.Total || 0;
       const inv = res.data?.ProductAvailabilityList || [];
@@ -560,7 +668,8 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
   const startMs = Date.now();
   const creds = await getClientCin7Credentials(clientId);
   try {
-    const filterDesc = updatedSince ? `UpdatedSince=${updatedSince}` : 'All records (Full fetch)';
+    const formattedSince = formatCin7Date(updatedSince);
+    const filterDesc = formattedSince ? `UpdatedSince=${formattedSince}` : 'All records (Full fetch)';
     console.log(`[CIN7 LIVE] Fetching Purchase Orders from Cin7 Core API (${filterDesc})...`);
 
     let allPOs = [];
@@ -569,15 +678,15 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
 
     while (true) {
       const params = { Page: page, Limit: 100 };
-      if (updatedSince) {
-        params.UpdatedSince = updatedSince;
+      if (formattedSince) {
+        params.UpdatedSince = formattedSince;
       }
 
-      const res = await axios.get(`${CIN7_BASE_URL}/purchaseList`, {
+      const res = await cin7ApiGet(`${CIN7_BASE_URL}/purchaseList`, {
         headers: cin7Headers(creds),
         params,
-        timeout: 25000
-      });
+        timeout: 30000
+      }, 'Purchase Orders', 5);
 
       totalInApi = res.data?.Total || 0;
       const pos = res.data?.PurchaseList || [];
@@ -819,26 +928,30 @@ function mergeInventoryData(existingRows = [], currentRows = []) {
  * Calculates cutoff date dynamically from current date for any standard window code.
  */
 function getWindowCutoffDate(windowCode) {
-  if (!windowCode || windowCode === 'all' || windowCode === 'All Time' || windowCode === 'All time') {
+  const now = new Date();
+  const code = String(windowCode || '90d').toLowerCase().trim();
+
+  if (code.includes('5y') || code.includes('5 year')) {
+    return new Date(now.getTime() - 5 * 365 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('2y') || code.includes('2 year') || code.includes('24m') || code.includes('24 month') || code.includes('2 yr')) {
+    return new Date(now.getTime() - 2 * 365 * 24 * 60 * 60 * 1000); // Past 2 years (730 days)
+  } else if (code.includes('365') || code.includes('1y') || code.includes('1 year')) {
+    return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('180') || code === '180d') {
+    return new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('7d') || code.includes('7 day') || code === '7') {
+    return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('30') || code === '30d') {
+    return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('ytd') || code === 'year to date') {
+    return new Date(now.getFullYear(), 0, 1);
+  } else if (code.includes('90') || code === '90d') {
+    return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  } else if (code.includes('all') || code === 'all_time') {
     return null;
   }
-  const now = new Date();
-  const code = String(windowCode).toLowerCase().trim();
-
-  if (code.includes('7')) {
-    return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('30')) {
-    return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('90')) {
-    return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('180')) {
-    return new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('365')) {
-    return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-  } else if (code.includes('ytd')) {
-    return new Date(now.getFullYear(), 0, 1);
-  }
-  return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  // Default: Last 90 Days
+  return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 }
 
 /**
@@ -905,6 +1018,8 @@ module.exports = {
   fetchSales,
   fetchInventory,
   fetchPurchaseOrders,
+  fetchSaleDetailsConcurrently,
+  scheduleCin7Request,
   validateSalesData,
   validateInventoryData,
   validatePurchaseData,

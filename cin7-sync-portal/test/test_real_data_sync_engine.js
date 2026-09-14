@@ -63,13 +63,18 @@ async function runSuite() {
     const rawAccountId = 'acc-tenant-a-12345';
     const rawApiKey = 'key-tenant-a-secret98765';
 
+    await db.query(
+      `INSERT INTO clients (id, company_name, sync_status) VALUES (?, ?, 'READY') ON CONFLICT (id) DO NOTHING`,
+      [testTenantId, 'Tenant A']
+    );
+
     // Seed tenant credentials into database
     const encUser = cryptoService.encrypt(rawAccountId);
     const encKey = cryptoService.encrypt(rawApiKey);
 
     await db.query(
       `INSERT INTO cin7_connections (id, client_id, api_username_encrypted, api_key_encrypted, status)
-       VALUES (?, ?, ?, ?, 'CONNECTED')`,
+       VALUES (?, ?, ?, ?, 'CONNECTED') ON CONFLICT (client_id) DO UPDATE SET api_username_encrypted = EXCLUDED.api_username_encrypted, api_key_encrypted = EXCLUDED.api_key_encrypted`,
       [`cin7-${testTenantId}`, testTenantId, encUser, encKey]
     );
 
@@ -236,7 +241,7 @@ async function runSuite() {
 
   await itAsync('Should verify Google Sheets Raw Data mapping at row A7', async () => {
     const adapter = new GoogleSheetsAdapter('client-vnc-master');
-    assert.strictEqual(adapter.masterTemplateId, process.env.GoogleMasterTemp || '1Qnx6RdCgI7krHtZru10J6r11ZpIkubCSR1jzUbs5G9Q');
+    assert.strictEqual(adapter.masterTemplateId, process.env.GoogleMasterTemp || process.env.MASTER_TEMPLATE_ID || '1uxdMS8pATOVdGQWD-VFniQ0RbMZOtjJE');
 
     // Test verifyDataWritten behavior with expected counts
     const mockSheetsApi = {
@@ -273,6 +278,9 @@ async function runSuite() {
     const clientA = 'client-tenant-alpha';
     const clientB = 'client-tenant-beta';
 
+    await db.query(`INSERT INTO clients (id, company_name, sync_status) VALUES (?, ?, 'READY') ON CONFLICT (id) DO NOTHING`, [clientA, 'Tenant Alpha']);
+    await db.query(`INSERT INTO clients (id, company_name, sync_status) VALUES (?, ?, 'READY') ON CONFLICT (id) DO NOTHING`, [clientB, 'Tenant Beta']);
+
     const encUserA = cryptoService.encrypt('acc-alpha-user');
     const encKeyA = cryptoService.encrypt('key-alpha-secret');
 
@@ -281,13 +289,13 @@ async function runSuite() {
 
     await db.query(
       `INSERT INTO cin7_connections (id, client_id, api_username_encrypted, api_key_encrypted, status)
-       VALUES (?, ?, ?, ?, 'CONNECTED')`,
+       VALUES (?, ?, ?, ?, 'CONNECTED') ON CONFLICT (client_id) DO UPDATE SET api_username_encrypted = EXCLUDED.api_username_encrypted, api_key_encrypted = EXCLUDED.api_key_encrypted`,
       [`cin7-${clientA}`, clientA, encUserA, encKeyA]
     );
 
     await db.query(
       `INSERT INTO cin7_connections (id, client_id, api_username_encrypted, api_key_encrypted, status)
-       VALUES (?, ?, ?, ?, 'CONNECTED')`,
+       VALUES (?, ?, ?, ?, 'CONNECTED') ON CONFLICT (client_id) DO UPDATE SET api_username_encrypted = EXCLUDED.api_username_encrypted, api_key_encrypted = EXCLUDED.api_key_encrypted`,
       [`cin7-${clientB}`, clientB, encUserB, encKeyB]
     );
 
@@ -305,6 +313,7 @@ async function runSuite() {
 
   await itAsync('Should preserve previous successful snapshot when a sync operation fails', async () => {
     const testClientId = 'client-test-preserve-snap';
+    await db.query(`INSERT INTO clients (id, company_name, sync_status) VALUES (?, ?, 'READY') ON CONFLICT (id) DO NOTHING`, [testClientId, 'Preserve Snap Tenant']);
 
     // 1. Establish existing known good snapshot
     const existingDataset = {

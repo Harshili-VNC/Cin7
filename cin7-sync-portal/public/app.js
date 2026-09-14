@@ -99,6 +99,16 @@ async function checkAuthStatus() {
       } else if (data.user.onboardingStatus === 'completed' || data.cin7?.connected === true) {
         navigateTo('dashboard');
         loadRecentActivityFromHistory();
+
+        // Check if a background sync is currently running for this client
+        try {
+          const syncStatusRes = await fetch('/api/sync/status');
+          const syncStatus = await syncStatusRes.json();
+          if (syncStatus.success && syncStatus.isSyncing && syncStatus.activeRunId) {
+            console.log('[CIN7 UI] Reconnecting to running background sync:', syncStatus.activeRunId);
+            startSyncPolling(syncStatus.activeRunId, 'Background Sync');
+          }
+        } catch (e) {}
       } else {
         navigateTo('onboarding');
       }
@@ -118,10 +128,10 @@ function updateUIHeader() {
     if (navbar) navbar.classList.remove('hidden');
 
     // Populate user pill
-    const name = state.user.fullName || state.user.full_name || state.user.name || 'Harshili Patni';
+    const name = state.user.fullName || state.user.full_name || state.user.name || 'User';
     const role = (state.user.role || 'ADMIN').toUpperCase();
     const platformRole = (state.user.platformRole || state.user.platform_role || 'USER').toUpperCase();
-    const org = state.client?.companyName || state.user.companyName || 'VNC Global Business Edge';
+    const org = state.client?.companyName || state.user.companyName || 'VNC Workspace';
 
     const avatarEl = document.getElementById('nav-user-avatar');
     const nameEl = document.getElementById('nav-user-name');
@@ -502,7 +512,7 @@ async function quickSuperAdminSignIn() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'automation.vncglobalgroup@gmail.com',
+        email: 'superadmin@vnc.global',
         password: 'SuperAdmin2026!#'
       })
     });
@@ -1122,13 +1132,33 @@ function renderActivityList() {
 
 // ── 4. SYNC FLOW & MODAL ────────────────────────────────────────────────────
 
-async function triggerSyncFlow(forceFull = false) {
-  const select = document.getElementById('sync-timeline-select');
+// ── 4. SYNC FLOW & MODAL ────────────────────────────────────────────────────
 
-  // First sync (no prior successful sync recorded) always uses ALL TIME to capture full history
-  const isFirstSync = !state.client?.lastSyncAt && !state.organization?.lastSyncAt;
-  const effectiveDateRange = isFirstSync ? 'all' : (select?.value || '30d');
-  const effectiveLabel = isFirstSync ? 'All Time (First Sync)' : (select?.options[select.selectedIndex]?.text || 'Last 30 days');
+let activeSyncPollTimer = null;
+let currentActiveRunId = null;
+
+function setSyncModalStage(stageNum) {
+  [1, 2, 3, 4, 5].forEach(s => {
+    const item = document.getElementById(`sync-stage-${s}`);
+    const bullet = item?.querySelector('.stage-bullet');
+    if (!bullet) return;
+    if (s < stageNum) {
+      bullet.className = 'stage-bullet done';
+      bullet.innerText = '✓';
+    } else if (s === stageNum) {
+      bullet.className = 'stage-bullet active';
+      bullet.innerText = s;
+    } else {
+      bullet.className = 'stage-bullet';
+      bullet.innerText = s;
+    }
+  });
+}
+
+function startSyncPolling(runId, effectiveLabel = 'Sync') {
+  currentActiveRunId = runId;
+  state.isSyncing = true;
+  state.lastSyncError = null;
 
   const modal = document.getElementById('sync-modal');
   const progressView = document.getElementById('sync-modal-progress-view');
@@ -1139,9 +1169,6 @@ async function triggerSyncFlow(forceFull = false) {
   const enrichDetail = document.getElementById('sync-stage-3-detail');
   const btnSync = document.getElementById('btn-sync-now');
 
-  state.isSyncing = true;
-  state.lastSyncError = null;
-  renderSyncStatusBar('SYNCING', { message: `Preparing ${effectiveLabel.toLowerCase()} sync...` });
   if (btnSync) {
     btnSync.disabled = true;
     btnSync.style.opacity = '0.75';
@@ -1151,71 +1178,128 @@ async function triggerSyncFlow(forceFull = false) {
   if (progressView) progressView.classList.remove('hidden');
   if (completeView) completeView.classList.add('hidden');
   if (modal) modal.classList.remove('hidden');
-  if (enrichDetail) enrichDetail.innerText = '';
 
-  function setStage(stageNum) {
-    [1, 2, 3, 4, 5].forEach(s => {
-      const item = document.getElementById(`sync-stage-${s}`);
-      const bullet = item?.querySelector('.stage-bullet');
-      if (!bullet) return;
-      if (s < stageNum) {
-        bullet.className = 'stage-bullet done';
-        bullet.innerText = '✓';
-      } else if (s === stageNum) {
-        bullet.className = 'stage-bullet active';
-        bullet.innerText = s;
-      } else {
-        bullet.className = 'stage-bullet';
-        bullet.innerText = s;
-      }
-    });
-  }
+  if (activeSyncPollTimer) clearInterval(activeSyncPollTimer);
 
-  setStage(1);
-  if (fill) fill.style.width = '10%';
-  if (statusMsg) statusMsg.innerText = 'Connecting to Cin7 Core API...';
-
-  // Live progress polling loop
-  let isPolling = true;
-  const pollInterval = setInterval(async () => {
-    if (!isPolling) return;
+  activeSyncPollTimer = setInterval(async () => {
     try {
-      const pRes = await fetch('/api/sync/progress');
+      const pUrl = runId ? `/api/sync/progress/${runId}` : '/api/sync/progress';
+      const pRes = await fetch(pUrl);
       const pData = await pRes.json();
-      if (pData.success && pData.progress) {
-        const p = pData.progress;
-        if (fill && p.percent) fill.style.width = `${Math.min(100, Math.max(10, p.percent))}%`;
-        if (statusMsg && p.message) statusMsg.innerText = p.message;
-        renderSyncStatusBar('SYNCING', { message: p.message || 'Processing Cin7 records...' });
 
-        switch (p.stage) {
-          case 'CONNECTING':
-            setStage(1);
-            break;
-          case 'FETCHING':
-            setStage(2);
-            break;
-          case 'ENRICHING':
-            setStage(3);
-            if (enrichDetail && p.total > 0) {
-              enrichDetail.innerText = `(${p.current}/${p.total})`;
-            }
-            break;
-          case 'VALIDATING':
-            setStage(4);
-            break;
-          case 'POPULATING':
-            setStage(5);
-            break;
-          case 'FINALIZING':
-            setStage(5);
-            break;
+      if (!pData.success || !pData.progress) return;
+      const p = pData.progress;
+
+      if (fill && p.percent != null) {
+        fill.style.width = `${Math.min(100, Math.max(10, p.percent))}%`;
+      }
+      if (statusMsg && p.message) {
+        statusMsg.innerText = p.message;
+      }
+      renderSyncStatusBar('SYNCING', { message: p.message || 'Processing Cin7 records...' });
+
+      switch (p.stage) {
+        case 'CONNECTING':
+          setSyncModalStage(1);
+          break;
+        case 'FETCHING':
+          setSyncModalStage(2);
+          break;
+        case 'ENRICHING':
+          setSyncModalStage(3);
+          if (enrichDetail && p.total > 0) {
+            const cachedTxt = p.cachedCount ? ` · ${p.cachedCount.toLocaleString()} cached` : '';
+            enrichDetail.innerText = `(${p.current.toLocaleString()}/${p.total.toLocaleString()}${cachedTxt})`;
+          }
+          break;
+        case 'VALIDATING':
+          setSyncModalStage(4);
+          break;
+        case 'POPULATING':
+        case 'CALCULATING':
+        case 'VERIFYING':
+        case 'FINALIZING':
+          setSyncModalStage(5);
+          break;
+      }
+
+      // Check for completion
+      if (p.stage === 'COMPLETED' || p.status === 'COMPLETED') {
+        clearInterval(activeSyncPollTimer);
+        activeSyncPollTimer = null;
+        currentActiveRunId = null;
+
+        if (btnSync) {
+          btnSync.disabled = false;
+          btnSync.style.opacity = '';
         }
+
+        setSyncModalStage(6); // Checkmarks all stages
+        if (fill) fill.style.width = '100%';
+        if (statusMsg) statusMsg.innerText = 'Sync complete! All reports verified.';
+
+        const finalResult = p.result || p;
+        const url = finalResult.spreadsheetUrl || finalResult.sheetUrl || (finalResult.fileId ? `https://docs.google.com/spreadsheets/d/${finalResult.fileId}/edit` : null);
+        state.spreadsheetUrl = url;
+        state.googleSheetUrl = url;
+        state.spreadsheetId = finalResult.spreadsheetId || finalResult.fileId;
+
+        setTimeout(() => showSyncCompleted(finalResult), 500);
+      } else if (p.stage === 'FAILED' || p.status === 'FAILED') {
+        clearInterval(activeSyncPollTimer);
+        activeSyncPollTimer = null;
+        currentActiveRunId = null;
+
+        if (btnSync) {
+          btnSync.disabled = false;
+          btnSync.style.opacity = '';
+        }
+
+        state.isSyncing = false;
+        state.lastSyncError = p.error || p.message || 'Sync failed on server';
+        renderSyncStatusBar('ERROR', { errorDetail: state.lastSyncError });
+        showToast(state.lastSyncError, 'error');
+        closeSyncModal();
+      } else if (p.stage === 'CANCELLED' || p.status === 'CANCELLED') {
+        clearInterval(activeSyncPollTimer);
+        activeSyncPollTimer = null;
+        currentActiveRunId = null;
+
+        if (btnSync) {
+          btnSync.disabled = false;
+          btnSync.style.opacity = '';
+        }
+
+        state.isSyncing = false;
+        renderSyncStatusBar('IDLE', { message: 'Sync cancelled.' });
+        showToast('Sync was stopped by user.', 'info');
+        closeSyncModal();
       }
     } catch (err) {
-      // Ignore polling errors
+      console.warn('[SYNC POLL] Poll tick error:', err.message);
     }
-  }, 350);
+  }, 400);
+}
+
+async function triggerSyncFlow(forceFull = false) {
+  const select = document.getElementById('sync-timeline-select');
+
+  // Check if first sync (no previous sync recorded)
+  const isFirstSync = !state.client?.lastSyncAt && !state.organization?.lastSyncAt;
+  const effectiveDateRange = select?.value || (isFirstSync ? '90d' : '90d');
+  const effectiveLabel = select?.options[select.selectedIndex]?.text || (effectiveDateRange === '90d' ? 'Last 90 Days' : 'Last 90 Days');
+
+  const btnSync = document.getElementById('btn-sync-now');
+  if (btnSync) {
+    btnSync.disabled = true;
+    btnSync.style.opacity = '0.75';
+  }
+
+  setSyncModalStage(1);
+  const fill = document.getElementById('sync-progress-fill');
+  const statusMsg = document.getElementById('sync-modal-live-status');
+  if (fill) fill.style.width = '10%';
+  if (statusMsg) statusMsg.innerText = 'Initiating background sync...';
 
   try {
     const res = await fetch('/api/sync/trigger', {
@@ -1230,42 +1314,35 @@ async function triggerSyncFlow(forceFull = false) {
     });
     const result = await res.json();
 
-    isPolling = false;
-    clearInterval(pollInterval);
-    if (btnSync) {
-      btnSync.disabled = false;
-      btnSync.style.opacity = '';
-    }
-
-    if (result.success) {
-      setStage(6); // marks all 5 done
-      if (fill) fill.style.width = '100%';
-      if (statusMsg) statusMsg.innerText = 'Sync complete! All reports verified.';
-
-      const url = result.spreadsheetUrl || result.sheetUrl || (result.fileId ? `https://docs.google.com/spreadsheets/d/${result.fileId}/edit` : null);
-      state.spreadsheetUrl = url;
-      state.googleSheetUrl = url;
-      state.spreadsheetId = result.spreadsheetId || result.fileId;
-
-      console.log("Google Sheet URL returned by backend:", url);
-      console.log("Sync strategy used:", result.strategy);
-
-      setTimeout(() => showSyncCompleted(result), 500);
+    if (res.status === 202 || result.status === 'RUNNING' || result.success) {
+      const runId = result.runId;
+      startSyncPolling(runId, effectiveLabel);
     } else {
-      state.isSyncing = false;
-      state.lastSyncError = result.error || result.errorMessage || result.message || 'Sync failed on server';
-      const isGoogleAuthError = Boolean(result.isGoogleAuthError || /invalid_grant|authorization has expired|re-authorize|re-authenticate/i.test(state.lastSyncError));
-      renderSyncStatusBar('ERROR', { errorDetail: state.lastSyncError });
-      if (isGoogleAuthError) {
-        showToast('Google authorization required. Click "Authorize Google" to connect in 1 click.', 'error');
-      } else {
-        showToast(state.lastSyncError, 'error');
+      if (btnSync) {
+        btnSync.disabled = false;
+        btnSync.style.opacity = '';
       }
+      state.isSyncing = false;
+      state.lastSyncError = result.error || result.errorMessage || result.message || 'Failed to start sync';
+
+      if (res.status === 409 && result.activeRunId) {
+        showToast('Sync is already running. Reconnecting to live progress...', 'info');
+        startSyncPolling(result.activeRunId, effectiveLabel);
+        return;
+      }
+
+      if (res.status === 401 || result.error === 'UNAUTHORIZED' || state.lastSyncError === 'UNAUTHORIZED') {
+        showToast('Session expired. Please sign in to continue.', 'error');
+        navigateTo('auth-landing');
+        closeSyncModal();
+        return;
+      }
+
+      renderSyncStatusBar('ERROR', { errorDetail: state.lastSyncError });
+      showToast(state.lastSyncError, 'error');
       closeSyncModal();
     }
   } catch (e) {
-    isPolling = false;
-    clearInterval(pollInterval);
     if (btnSync) {
       btnSync.disabled = false;
       btnSync.style.opacity = '';
@@ -1275,6 +1352,37 @@ async function triggerSyncFlow(forceFull = false) {
     renderSyncStatusBar('ERROR', { errorDetail: state.lastSyncError });
     console.error('Background sync trigger error:', e);
     showToast('Failed to trigger sync: ' + e.message, 'error');
+    closeSyncModal();
+  }
+}
+
+async function cancelActiveSync() {
+  const btnCancel = document.getElementById('btn-sync-cancel');
+  if (btnCancel) {
+    btnCancel.disabled = true;
+    btnCancel.innerText = 'Stopping...';
+  }
+
+  try {
+    const res = await fetch('/api/sync/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    showToast(data.message || 'Cancellation requested.', 'info');
+  } catch (e) {
+    console.error('Cancel sync error:', e);
+  } finally {
+    if (activeSyncPollTimer) {
+      clearInterval(activeSyncPollTimer);
+      activeSyncPollTimer = null;
+    }
+    if (btnCancel) {
+      btnCancel.disabled = false;
+      btnCancel.innerText = 'Stop Sync';
+    }
+    state.isSyncing = false;
+    renderSyncStatusBar('IDLE', { message: 'Sync stopped.' });
     closeSyncModal();
   }
 }

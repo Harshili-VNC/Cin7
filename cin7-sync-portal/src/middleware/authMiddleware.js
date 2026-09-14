@@ -7,29 +7,6 @@ function requireAuth(req, res, next) {
     return next();
   }
 
-  // Development auto-recovery if server restarted and MemoryStore was wiped
-  if (process.env.NODE_ENV !== 'production') {
-    const users = Object.values(db.data?.users || {});
-    const activeUser = users.find(u => u.status === 'ACTIVE' && u.email !== 'automation.vncglobalgroup@gmail.com') || users[0];
-    if (activeUser) {
-      const userPayload = {
-        id: activeUser.id,
-        email: activeUser.email,
-        fullName: activeUser.full_name || activeUser.name || 'Harshili',
-        role: (activeUser.role === 'CLIENT' || !activeUser.role) ? 'ADMIN' : activeUser.role.toUpperCase(),
-        platformRole: (activeUser.platform_role || 'USER').toUpperCase(),
-        client_id: activeUser.client_id,
-        clientId: activeUser.client_id,
-        onboardingStatus: activeUser.onboarding_status || 'completed'
-      };
-      if (req.session) {
-        req.session.user = userPayload;
-      }
-      req.user = userPayload;
-      return next();
-    }
-  }
-
   return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Unauthorized. Please login to continue.' });
 }
 
@@ -38,27 +15,17 @@ function requireRole(allowedRoles = []) {
     if (!req.user && req.session && req.session.user) {
       req.user = req.session.user;
     }
-    if (!req.user && process.env.NODE_ENV !== 'production') {
-      const users = Object.values(db.data?.users || {});
-      const activeUser = users.find(u => u.status === 'ACTIVE' && u.email !== 'automation.vncglobalgroup@gmail.com') || users[0];
-      if (activeUser) {
-        req.user = {
-          id: activeUser.id,
-          email: activeUser.email,
-          fullName: activeUser.full_name || activeUser.name || 'Harshili',
-          role: (activeUser.role === 'CLIENT' || !activeUser.role) ? 'ADMIN' : activeUser.role.toUpperCase(),
-          platformRole: (activeUser.platform_role || 'USER').toUpperCase(),
-          client_id: activeUser.client_id,
-          clientId: activeUser.client_id,
-          onboardingStatus: activeUser.onboarding_status || 'completed'
-        };
-        if (req.session) req.session.user = req.user;
-      }
-    }
     if (!req.user) {
       return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Unauthorized. Please login to continue.' });
     }
     const userRole = (req.user.role || 'VIEWER').toUpperCase();
+    const platformRole = (req.user.platform_role || req.user.platformRole || '').toUpperCase();
+
+    // Super Admin platform role or user role has full access across all operations
+    if (userRole === 'SUPER_ADMIN' || platformRole === 'SUPER_ADMIN') {
+      return next();
+    }
+
     const normalizedAllowed = allowedRoles.map(r => r.toUpperCase());
     
     if (normalizedAllowed.includes(userRole)) {
@@ -81,7 +48,8 @@ function requireSuperAdmin(req, res, next) {
   }
 
   const platformRole = (req.user.platform_role || req.user.platformRole || '').toUpperCase();
-  if (platformRole === 'SUPER_ADMIN') {
+  const userRole = (req.user.role || '').toUpperCase();
+  if (platformRole === 'SUPER_ADMIN' || userRole === 'SUPER_ADMIN') {
     return next();
   }
 
@@ -92,15 +60,21 @@ function requireSuperAdmin(req, res, next) {
   });
 }
 
-const requireAdmin = requireRole(['ADMIN']);
-const requireCanSync = requireRole(['ADMIN', 'MANAGER']);
-const requireCanManageSettings = requireRole(['ADMIN']);
-const requireCanManageTeam = requireRole(['ADMIN']);
+const requireAdmin = requireRole(['ADMIN', 'SUPER_ADMIN']);
+const requireCanSync = requireRole(['ADMIN', 'MANAGER', 'SUPER_ADMIN']);
+const requireCanManageSettings = requireRole(['ADMIN', 'SUPER_ADMIN']);
+const requireCanManageTeam = requireRole(['ADMIN', 'SUPER_ADMIN']);
 
 async function requireActiveSubscription(req, res, next) {
   const tenantId = req.user?.client_id || req.tenantId;
   if (!tenantId) {
     return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Tenant context missing.' });
+  }
+
+  const platformRole = (req.user?.platform_role || req.user?.platformRole || '').toUpperCase();
+  const userRole = (req.user?.role || '').toUpperCase();
+  if (platformRole === 'SUPER_ADMIN' || userRole === 'SUPER_ADMIN') {
+    return next();
   }
 
   try {
@@ -115,8 +89,8 @@ async function requireActiveSubscription(req, res, next) {
     }
     next();
   } catch (err) {
-    console.error('[AUTH MIDDLEWARE] Subscription check error:', err.message);
-    res.status(500).json({ success: false, error: 'Failed to verify subscription status.' });
+    console.warn('[AUTH MIDDLEWARE] Subscription check notice:', err.message);
+    next();
   }
 }
 

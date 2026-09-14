@@ -47,13 +47,13 @@
 
           <!-- User Identity Badge -->
           <div class="nav-user-pill" id="nav-user-pill">
-            <div class="nav-user-avatar" id="nav-user-avatar">HP</div>
+            <div class="nav-user-avatar" id="nav-user-avatar">--</div>
             <div class="nav-user-details">
               <div style="display: flex; align-items: center; gap: 0.375rem;">
-                <span class="nav-user-name" id="nav-user-name">Harshili Patni</span>
-                <span class="nav-role-badge" id="nav-user-role">Admin</span>
+                <span class="nav-user-name" id="nav-user-name"></span>
+                <span class="nav-role-badge" id="nav-user-role"></span>
               </div>
-              <span class="nav-user-meta" id="nav-user-org">VNC Global Business Edge</span>
+              <span class="nav-user-meta" id="nav-user-org"></span>
             </div>
           </div>
 
@@ -226,7 +226,7 @@
 
             <div class="form-group">
               <label class="form-label" for="admin-signin-email">Admin Email</label>
-              <input class="form-input" type="email" id="admin-signin-email" placeholder="automation.vncglobalgroup@gmail.com" value="automation.vncglobalgroup@gmail.com" required autocomplete="email">
+              <input class="form-input" type="email" id="admin-signin-email" placeholder="superadmin@vnc.global" value="superadmin@vnc.global" required autocomplete="email">
             </div>
             <div class="form-group">
               <label class="form-label" for="admin-signin-password">Admin Password</label>
@@ -555,13 +555,11 @@
               </label>
               <div class="sync-select-wrapper">
                 <select class="sync-timeline-select" id="sync-timeline-select" onchange="handleTimelineChange(this.value)">
-                  <option value="7d">Last 7 days</option>
-                  <option value="30d" selected>Last 30 days</option>
-                  <option value="90d">Last 90 days</option>
-                  <option value="180d">Last 180 days</option>
-                  <option value="365d">Last 365 days</option>
-                  <option value="ytd">Year to date</option>
-                  <option value="all">All time</option>
+                  <option value="90d" selected>Last 90 Days</option>
+                  <option value="30d">Last 30 Days</option>
+                  <option value="ytd">Year to Date (YTD)</option>
+                  <option value="2y">Last 2 Years (24 Months)</option>
+                  <option value="5y">Last 5 Years</option>
                 </select>
                 <svg class="select-chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               </div>
@@ -3344,6 +3342,13 @@
               <span>Populating 17 Master Model sheets</span>
             </li>
           </ul>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+            <span style="font-size: 0.75rem; color: var(--muted-foreground);" id="sync-modal-eta-text">Safe to refresh or navigate away — sync runs in background.</span>
+            <button type="button" id="btn-sync-cancel" onclick="cancelActiveSync()" style="display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;" onmouseover="this.style.borderColor='#ef4444'; this.style.color='#ef4444';" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted-foreground)';">
+              Stop Sync
+            </button>
+          </div>
         </div>
 
         <!-- Complete View -->

@@ -8,7 +8,7 @@ class LockService {
   constructor() {
     // Map<clientId, { runId, acquiredAt, timeoutHandle }>
     this.activeLocks = new Map();
-    this.STALE_LOCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max lock duration
+    this.STALE_LOCK_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes max lock duration for large initial syncs
   }
 
   validateClientId(clientId) {
@@ -16,6 +16,27 @@ class LockService {
       throw new Error(`Invalid clientId: '${clientId}'. Must match ^[a-zA-Z0-9_-]{1,64}$`);
     }
     return clientId;
+  }
+
+  /**
+   * Refreshes the acquiredAt timestamp of an active lock to keep it alive during active background sync.
+   * @param {string} clientId
+   * @param {string} runId
+   */
+  touchLock(clientId, runId) {
+    try {
+      const safeClientId = this.validateClientId(clientId);
+      if (this.activeLocks.has(safeClientId)) {
+        const existing = this.activeLocks.get(safeClientId);
+        if (!runId || existing.runId === runId) {
+          existing.acquiredAt = Date.now();
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
   }
 
   /**

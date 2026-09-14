@@ -30,9 +30,9 @@ const REPORT_CONFIG = {
       return `${orderNo}__${sku}`;
     },
     metrics: [
-      { key: 'quantity', index: 19, label: 'Quantity', type: 'number' },
+      { key: 'quantity', index: 18, label: 'Quantity', type: 'number' },
       { key: 'revenue', index: 20, label: 'Revenue', type: 'currency' },
-      { key: 'cogs', index: 22, label: 'COGS', type: 'currency' },
+      { key: 'cogs', index: 21, label: 'COGS', type: 'currency' },
       { key: 'profit', index: 24, label: 'Gross Profit', type: 'currency' }
     ],
     displayCols: [
@@ -42,9 +42,9 @@ const REPORT_CONFIG = {
       { index: 6, label: 'Product' },
       { index: 11, label: 'Customer' },
       { index: 17, label: 'Channel' },
-      { index: 19, label: 'Quantity', type: 'number' },
+      { index: 18, label: 'Quantity', type: 'number' },
       { index: 20, label: 'Revenue ($)', type: 'currency' },
-      { index: 22, label: 'COGS ($)', type: 'currency' },
+      { index: 21, label: 'COGS ($)', type: 'currency' },
       { index: 24, label: 'Profit ($)', type: 'currency' }
     ]
   },

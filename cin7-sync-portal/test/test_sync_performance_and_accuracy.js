@@ -12,6 +12,11 @@ async function runTestSuite() {
   console.log('================================================================\n');
 
   const testClientId = `test-client-perf-${Date.now()}`;
+  await db.query(
+    `INSERT INTO clients (id, company_name, sync_status) VALUES (?, ?, 'READY') ON CONFLICT (id) DO NOTHING`,
+    [testClientId, 'Test Perf Client']
+  );
+
   const STORAGE_ROOT = path.join(__dirname, '../storage');
   const SYNC_STATE_FILE = path.join(STORAGE_ROOT, 'sync_state', `${testClientId}.json`);
   const CURRENT_SALES_FILE = path.join(STORAGE_ROOT, 'current_reports', testClientId, 'sales.json');
