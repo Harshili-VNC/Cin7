@@ -823,9 +823,16 @@ router.get('/history', enforceTenantIsolation, async (req, res) => {
   const items = (runs.rows || []).map(r => {
     let cleanType = r.sync_type || 'google_sheets';
     if (cleanType.startsWith('user-')) cleanType = 'google_sheets';
-    let cleanStatus = r.status;
+    let cleanStatus = (r.status || 'COMPLETED').toUpperCase();
     if (cleanStatus === r.run_id || cleanStatus === r.id) {
       cleanStatus = (r.records_processed > 0 || r.completed_at) ? 'COMPLETED' : 'COMPLETED';
+    }
+    // If status in DB is RUNNING but not currently active in memory, mark as INTERRUPTED
+    if (cleanStatus === 'RUNNING') {
+      const active = activeSyncProgress.get(r.run_id || r.id);
+      if (!active || active.stage === 'COMPLETED' || active.stage === 'ERROR' || active.stage === 'IDLE') {
+        cleanStatus = 'INTERRUPTED';
+      }
     }
     return {
       id: r.id,

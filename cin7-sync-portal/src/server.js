@@ -206,6 +206,10 @@ if (require.main === module) {
       }
     }
     console.log('');
+    // Auto-heal orphaned sync runs from prior unexpected server shutdowns
+    try {
+      db.query("UPDATE sync_runs SET status = 'INTERRUPTED', completed_at = CURRENT_TIMESTAMP WHERE status = 'RUNNING'").catch(() => {});
+    } catch (_) {}
   });
 
   // Graceful shutdown — allows in-flight requests to complete and closes the DB pool cleanly

@@ -1028,11 +1028,14 @@ async function loadRecentActivityFromHistory() {
     const activities = data.syncRuns.slice(0, 10).map(run => {
       const isOk = run.status === 'COMPLETED' || run.status === 'SUCCESS';
       const isFailed = run.status === 'FAILED' || run.status === 'ERROR';
+      const isCancelled = run.status === 'CANCELLED' || run.status === 'ABORTED';
+      const isInterrupted = run.status === 'INTERRUPTED';
       const records = Number(run.recordsProcessed || 0);
 
       let title = '';
       let countBadge = '';
       let detail = '';
+      let statusIcon = 'ok';
 
       if (isOk) {
         if (records > 0) {
@@ -1054,14 +1057,27 @@ async function loadRecentActivityFromHistory() {
           countBadge = 'Up to date';
           detail = 'All actuals are up-to-date with Cin7 Core · No new changes';
         }
+        statusIcon = 'ok';
       } else if (isFailed) {
         title = 'Sync Failed';
-        countBadge = 'Error';
+        countBadge = 'Failed';
         detail = escapeHtml(run.errorMessage || 'Synchronization did not complete successfully.');
+        statusIcon = 'warn';
+      } else if (isCancelled) {
+        title = 'Sync Cancelled';
+        countBadge = 'Cancelled';
+        detail = 'Sync operation was stopped by user.';
+        statusIcon = 'warn';
+      } else if (isInterrupted) {
+        title = 'Sync Interrupted';
+        countBadge = 'Interrupted';
+        detail = 'Sync was interrupted by server restart or timeout.';
+        statusIcon = 'warn';
       } else {
         title = 'Sync in Progress';
         countBadge = 'Running';
         detail = 'Processing live data from Cin7 Core API...';
+        statusIcon = 'info';
       }
 
       const timeInfo = formatSyncTime(run.completedAt || run.startedAt || run.createdAt);
@@ -1073,7 +1089,7 @@ async function loadRecentActivityFromHistory() {
         detail,
         timeMain: timeInfo.main,
         timeRel: timeInfo.rel,
-        status: isOk ? 'ok' : (isFailed ? 'warn' : 'info')
+        status: statusIcon
       };
     });
 
