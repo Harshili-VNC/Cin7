@@ -28,7 +28,13 @@ class MemoryDatabaseAdapter {
       audit_logs: [],
       plans: {},
       subscriptions: {},
-      billing_events: []
+      billing_events: [],
+      // Cin7 live data store (in-memory equivalent of DB tables)
+      cin7_order_cache: {},      // keyed by `${client_id}__${cin7_sale_id}`
+      cin7_sales_orders: {},     // keyed by `${client_id}__${cin7_sale_id}`
+      cin7_order_lines: [],      // array of line objects
+      cin7_inventory: {},        // keyed by `${client_id}__${location}__${sku}`
+      cin7_purchase_orders: {}   // keyed by `${client_id}__${cin7_po_id}`
     };
     if (fs.existsSync(this.storageFile)) {
       try {
@@ -44,6 +50,12 @@ class MemoryDatabaseAdapter {
         if (!this.data.plans) this.data.plans = {};
         if (!this.data.subscriptions) this.data.subscriptions = {};
         if (!this.data.billing_events) this.data.billing_events = [];
+        // Cin7 live data stores (backfill for existing JSON stores)
+        if (!this.data.cin7_order_cache) this.data.cin7_order_cache = {};
+        if (!this.data.cin7_sales_orders) this.data.cin7_sales_orders = {};
+        if (!this.data.cin7_order_lines) this.data.cin7_order_lines = [];
+        if (!this.data.cin7_inventory) this.data.cin7_inventory = {};
+        if (!this.data.cin7_purchase_orders) this.data.cin7_purchase_orders = {};
 
         // Backfill new fields for existing client records
         Object.values(this.data.clients || {}).forEach(c => {
@@ -202,6 +214,32 @@ class MemoryDatabaseAdapter {
       else if (cleanSql.includes('FROM PLANS')) collection = Object.values(this.data.plans || {});
       else if (cleanSql.includes('FROM SUBSCRIPTIONS')) collection = Object.values(this.data.subscriptions || {});
       else if (cleanSql.includes('FROM BILLING_EVENTS')) collection = this.data.billing_events || [];
+      // Cin7 live data tables
+      else if (cleanSql.includes('FROM CIN7_ORDER_CACHE')) {
+        const clientId = params[0];
+        collection = Object.values(this.data.cin7_order_cache || {})
+          .filter(r => !clientId || r.client_id === clientId);
+      }
+      else if (cleanSql.includes('FROM CIN7_SALES_ORDERS')) {
+        const clientId = params[0];
+        collection = Object.values(this.data.cin7_sales_orders || {})
+          .filter(r => !clientId || r.client_id === clientId);
+      }
+      else if (cleanSql.includes('FROM CIN7_ORDER_LINES')) {
+        const clientId = params[0];
+        collection = (this.data.cin7_order_lines || [])
+          .filter(r => !clientId || r.client_id === clientId);
+      }
+      else if (cleanSql.includes('FROM CIN7_INVENTORY')) {
+        const clientId = params[0];
+        collection = Object.values(this.data.cin7_inventory || {})
+          .filter(r => !clientId || r.client_id === clientId);
+      }
+      else if (cleanSql.includes('FROM CIN7_PURCHASE_ORDERS')) {
+        const clientId = params[0];
+        collection = Object.values(this.data.cin7_purchase_orders || {})
+          .filter(r => !clientId || r.client_id === clientId);
+      }
       else return { rows: [{ test: 1 }] };
 
       let rows = collection.filter(item => {
@@ -624,6 +662,59 @@ class MemoryDatabaseAdapter {
       this.data.audit_logs.unshift(record);
       this.save();
       return { rows: [record] };
+    }
+
+    // Cin7 live data INSERT / UPSERT (ON CONFLICT ... DO UPDATE treated as upsert)
+    if (cleanSql.includes('INSERT INTO CIN7_ORDER_CACHE')) {
+      const [clientId, saleId, updatedDateUtc, detailJson] = params;
+      const key = `${clientId}__${saleId}`;
+      if (!this.data.cin7_order_cache) this.data.cin7_order_cache = {};
+      this.data.cin7_order_cache[key] = { client_id: clientId, cin7_sale_id: saleId, updated_date_utc: updatedDateUtc, detail_json: detailJson, stored_at: new Date().toISOString() };
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('INSERT INTO CIN7_SALES_ORDERS')) {
+      const [clientId, saleId, orderNumber, invoiceNumber, orderDate, invoiceDate, customer, status, combinedInvoiceStatus, combinedShippingStatus, type, sourceChannel, salesRep, customerTags, updatedDateUtc] = params;
+      const key = `${clientId}__${saleId}`;
+      if (!this.data.cin7_sales_orders) this.data.cin7_sales_orders = {};
+      this.data.cin7_sales_orders[key] = { client_id: clientId, cin7_sale_id: saleId, order_number: orderNumber, invoice_number: invoiceNumber, order_date: orderDate, invoice_date: invoiceDate, customer, status, combined_invoice_status: combinedInvoiceStatus, combined_shipping_status: combinedShippingStatus, type, source_channel: sourceChannel, sales_representative: salesRep, customer_tags: customerTags, updated_date_utc: updatedDateUtc, synced_at: new Date().toISOString() };
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('INSERT INTO CIN7_ORDER_LINES')) {
+      const [clientId, saleId, sku, productName, brand, category, family, unit, quantity, unitPrice, total, averageCost] = params;
+      if (!this.data.cin7_order_lines) this.data.cin7_order_lines = [];
+      const existing = this.data.cin7_order_lines.findIndex(r => r.client_id === clientId && r.cin7_sale_id === saleId && r.sku === sku);
+      const record = { client_id: clientId, cin7_sale_id: saleId, sku, product_name: productName, brand, category, family, unit, quantity, unit_price: unitPrice, total, average_cost: averageCost };
+      if (existing >= 0) this.data.cin7_order_lines[existing] = record;
+      else this.data.cin7_order_lines.push(record);
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('INSERT INTO CIN7_INVENTORY')) {
+      const [clientId, location, sku, productName, unit, onHand, allocated, onOrder, inTransit, unitCost, stockOnHand, available] = params;
+      const key = `${clientId}__${location}__${sku}`;
+      if (!this.data.cin7_inventory) this.data.cin7_inventory = {};
+      this.data.cin7_inventory[key] = { client_id: clientId, location, sku, product_name: productName, unit, on_hand: onHand, allocated, on_order: onOrder, in_transit: inTransit, unit_cost: unitCost, stock_on_hand: stockOnHand, available, synced_at: new Date().toISOString() };
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('INSERT INTO CIN7_PURCHASE_ORDERS')) {
+      const [clientId, poId, orderNumber, invoiceNumber, orderDate, dueDate, supplier, status, invoiceAmount, updatedDateUtc] = params;
+      const key = `${clientId}__${poId}`;
+      if (!this.data.cin7_purchase_orders) this.data.cin7_purchase_orders = {};
+      this.data.cin7_purchase_orders[key] = { client_id: clientId, cin7_po_id: poId, order_number: orderNumber, invoice_number: invoiceNumber, order_date: orderDate, invoice_due_date: dueDate, supplier, status, invoice_amount: invoiceAmount, updated_date_utc: updatedDateUtc, synced_at: new Date().toISOString() };
+      return { rows: [] };
+    }
+
+    if (cleanSql.includes('DELETE FROM CIN7_INVENTORY')) {
+      const clientId = params[0];
+      if (this.data.cin7_inventory) {
+        Object.keys(this.data.cin7_inventory).forEach(k => {
+          if (this.data.cin7_inventory[k].client_id === clientId) delete this.data.cin7_inventory[k];
+        });
+      }
+      return { rows: [] };
     }
 
     // DELETE

@@ -175,3 +175,96 @@ CREATE INDEX IF NOT EXISTS idx_report_snapshots_client_id ON report_snapshots(cl
 CREATE INDEX IF NOT EXISTS idx_report_snapshots_created_at ON report_snapshots(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_org_id ON audit_logs(organization_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+
+-- ── CIN7 LIVE DATA STORE ─────────────────────────────────────────────────────
+-- Persists all Cin7 API data in the database so synced data survives server
+-- restarts, spreadsheet deletion, and enables fast incremental re-syncs.
+
+-- Order detail cache: replaces per-client disk JSON files.
+-- Keyed by (client_id, cin7_sale_id); updated_date_utc used for staleness check.
+CREATE TABLE IF NOT EXISTS cin7_order_cache (
+    client_id         VARCHAR(64)  NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    cin7_sale_id      VARCHAR(255) NOT NULL,
+    updated_date_utc  TEXT,
+    detail_json       TEXT         NOT NULL,
+    stored_at         TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (client_id, cin7_sale_id)
+);
+
+-- Sales order headers (one row per Cin7 sale)
+CREATE TABLE IF NOT EXISTS cin7_sales_orders (
+    client_id                 VARCHAR(64)  NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    cin7_sale_id              VARCHAR(255) NOT NULL,
+    order_number              VARCHAR(255),
+    invoice_number            VARCHAR(255),
+    order_date                DATE,
+    invoice_date              DATE,
+    customer                  VARCHAR(255),
+    status                    VARCHAR(100),
+    combined_invoice_status   VARCHAR(100),
+    combined_shipping_status  VARCHAR(100),
+    type                      VARCHAR(100),
+    source_channel            VARCHAR(255),
+    sales_representative      VARCHAR(255),
+    customer_tags             TEXT,
+    updated_date_utc          TEXT,
+    synced_at                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (client_id, cin7_sale_id)
+);
+
+-- Sales order line items (one row per SKU per sale)
+CREATE TABLE IF NOT EXISTS cin7_order_lines (
+    client_id     VARCHAR(64)    NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    cin7_sale_id  VARCHAR(255)   NOT NULL,
+    sku           VARCHAR(255)   NOT NULL DEFAULT '',
+    product_name  VARCHAR(255),
+    brand         VARCHAR(255),
+    category      VARCHAR(255),
+    family        VARCHAR(255),
+    unit          VARCHAR(100),
+    quantity      DECIMAL(15,4)  DEFAULT 0,
+    unit_price    DECIMAL(15,4)  DEFAULT 0,
+    total         DECIMAL(15,4)  DEFAULT 0,
+    average_cost  DECIMAL(15,4)  DEFAULT 0,
+    PRIMARY KEY (client_id, cin7_sale_id, sku)
+);
+
+-- Inventory: current availability snapshot (fully replaced on each sync)
+CREATE TABLE IF NOT EXISTS cin7_inventory (
+    client_id     VARCHAR(64)    NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    location      VARCHAR(255)   NOT NULL DEFAULT 'Main Warehouse',
+    sku           VARCHAR(255)   NOT NULL,
+    product_name  VARCHAR(255),
+    unit          VARCHAR(100),
+    on_hand       DECIMAL(15,4)  DEFAULT 0,
+    allocated     DECIMAL(15,4)  DEFAULT 0,
+    on_order      DECIMAL(15,4)  DEFAULT 0,
+    in_transit    DECIMAL(15,4)  DEFAULT 0,
+    unit_cost     DECIMAL(15,4)  DEFAULT 0,
+    stock_on_hand DECIMAL(15,4)  DEFAULT 0,
+    available     DECIMAL(15,4)  DEFAULT 0,
+    synced_at     TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (client_id, location, sku)
+);
+
+-- Purchase order headers (one row per Cin7 PO)
+CREATE TABLE IF NOT EXISTS cin7_purchase_orders (
+    client_id        VARCHAR(64)   NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    cin7_po_id       VARCHAR(255)  NOT NULL,
+    order_number     VARCHAR(255),
+    invoice_number   VARCHAR(255),
+    order_date       DATE,
+    invoice_due_date DATE,
+    supplier         VARCHAR(255),
+    status           VARCHAR(100),
+    invoice_amount   DECIMAL(15,4) DEFAULT 0,
+    updated_date_utc TEXT,
+    synced_at        TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (client_id, cin7_po_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cin7_order_cache_client ON cin7_order_cache(client_id);
+CREATE INDEX IF NOT EXISTS idx_cin7_sales_orders_client ON cin7_sales_orders(client_id);
+CREATE INDEX IF NOT EXISTS idx_cin7_order_lines_client_sale ON cin7_order_lines(client_id, cin7_sale_id);
+CREATE INDEX IF NOT EXISTS idx_cin7_inventory_client ON cin7_inventory(client_id);
+CREATE INDEX IF NOT EXISTS idx_cin7_purchase_orders_client ON cin7_purchase_orders(client_id);

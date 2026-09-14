@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 let axios;
 try { axios = require('axios'); } catch (e) {}
 try { require('dotenv').config(); } catch (e) {}
@@ -11,6 +12,255 @@ const cryptoService = require('./cryptoService');
 
 // In-memory cache map for instantaneous lookups: Map<`${clientId}__${saleId}`, detail>
 const memoryOrderCache = new Map();
+
+// ── DB-BACKED ORDER DETAIL CACHE ─────────────────────────────────────────────
+
+/**
+ * Bulk-loads all cached order details for a client from the DB into the
+ * in-memory cache. Called once at the start of enrichment so individual
+ * workers never need to hit the DB per-order.
+ */
+async function warmMemoryCacheFromDb(clientId) {
+  try {
+    const safeClientId = getSafeClientId(clientId);
+    const rows = await db.getAll(
+      'SELECT cin7_sale_id, updated_date_utc, detail_json FROM cin7_order_cache WHERE client_id = ?',
+      [safeClientId]
+    );
+    let loaded = 0;
+    for (const row of rows) {
+      const cacheKey = `${safeClientId}__${row.cin7_sale_id}`;
+      if (!memoryOrderCache.has(cacheKey)) {
+        try {
+          const detail = JSON.parse(row.detail_json);
+          memoryOrderCache.set(cacheKey, {
+            saleId: row.cin7_sale_id,
+            clientId: safeClientId,
+            updatedDateUtc: row.updated_date_utc,
+            storedAt: new Date().toISOString(),
+            detail
+          });
+          loaded++;
+        } catch (_) {}
+      }
+    }
+    if (loaded > 0) console.log(`[CIN7 DB CACHE] Warmed ${loaded} order details from DB into memory.`);
+  } catch (e) {
+    console.warn('[CIN7 DB CACHE] Could not warm memory cache from DB (non-fatal):', e.message);
+  }
+}
+
+/**
+ * Persists an order detail to the DB cache (cin7_order_cache table).
+ * Fire-and-forget — never throws.
+ */
+async function storeOrderDetailToDb(clientId, saleId, detail, updatedDateUtc) {
+  try {
+    const safeClientId = getSafeClientId(clientId);
+    const detailJson = JSON.stringify(detail);
+    await db.query(
+      `INSERT INTO cin7_order_cache (client_id, cin7_sale_id, updated_date_utc, detail_json, stored_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT (client_id, cin7_sale_id) DO UPDATE SET
+         updated_date_utc = EXCLUDED.updated_date_utc,
+         detail_json      = EXCLUDED.detail_json,
+         stored_at        = EXCLUDED.stored_at`,
+      [safeClientId, saleId, updatedDateUtc || null, detailJson]
+    );
+  } catch (e) {
+    console.warn('[CIN7 DB CACHE] storeOrderDetailToDb failed (non-fatal):', e.message);
+  }
+}
+
+// ── DB UPSERT FUNCTIONS ───────────────────────────────────────────────────────
+
+/**
+ * Upserts all fetched sales orders and their line items into the database.
+ * Called after successful enrichment. Fire-and-forget — never throws.
+ */
+async function upsertSalesToDb(clientId, detailedSales) {
+  if (!detailedSales || detailedSales.length === 0) return;
+  const safeClientId = getSafeClientId(clientId);
+  let orderCount = 0;
+  let lineCount = 0;
+  try {
+    for (const { sale, lines } of detailedSales) {
+      try {
+        const orderDate = sale.OrderDate ? sale.OrderDate.split('T')[0] : null;
+        const invoiceDate = sale.InvoiceDate ? sale.InvoiceDate.split('T')[0] : null;
+        await db.query(
+          `INSERT INTO cin7_sales_orders
+             (client_id, cin7_sale_id, order_number, invoice_number, order_date, invoice_date,
+              customer, status, combined_invoice_status, combined_shipping_status,
+              type, source_channel, sales_representative, customer_tags, updated_date_utc, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT (client_id, cin7_sale_id) DO UPDATE SET
+             order_number             = EXCLUDED.order_number,
+             invoice_number           = EXCLUDED.invoice_number,
+             order_date               = EXCLUDED.order_date,
+             invoice_date             = EXCLUDED.invoice_date,
+             customer                 = EXCLUDED.customer,
+             status                   = EXCLUDED.status,
+             combined_invoice_status  = EXCLUDED.combined_invoice_status,
+             combined_shipping_status = EXCLUDED.combined_shipping_status,
+             type                     = EXCLUDED.type,
+             source_channel           = EXCLUDED.source_channel,
+             sales_representative     = EXCLUDED.sales_representative,
+             customer_tags            = EXCLUDED.customer_tags,
+             updated_date_utc         = EXCLUDED.updated_date_utc,
+             synced_at                = EXCLUDED.synced_at`,
+          [
+            safeClientId, sale.SaleID,
+            sale.OrderNumber || null, sale.InvoiceNumber || null,
+            orderDate, invoiceDate,
+            sale.Customer || null, sale.Status || null,
+            sale.CombinedInvoiceStatus || null, sale.CombinedShippingStatus || null,
+            sale.Type || null, sale.SourceChannel || sale.SaleChannel || null,
+            sale.SalesRepresentative || null, sale.CustomerTags || null,
+            sale.UpdatedDateUtc || null
+          ]
+        );
+        orderCount++;
+
+        // Upsert each line with a valid SKU
+        for (const line of (lines || [])) {
+          const sku = String(line.SKU || '').trim();
+          if (!sku) continue;
+          try {
+            await db.query(
+              `INSERT INTO cin7_order_lines
+                 (client_id, cin7_sale_id, sku, product_name, brand, category, family,
+                  unit, quantity, unit_price, total, average_cost)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (client_id, cin7_sale_id, sku) DO UPDATE SET
+                 product_name = EXCLUDED.product_name,
+                 brand        = EXCLUDED.brand,
+                 category     = EXCLUDED.category,
+                 family       = EXCLUDED.family,
+                 unit         = EXCLUDED.unit,
+                 quantity     = EXCLUDED.quantity,
+                 unit_price   = EXCLUDED.unit_price,
+                 total        = EXCLUDED.total,
+                 average_cost = EXCLUDED.average_cost`,
+              [
+                safeClientId, sale.SaleID, sku,
+                line.Name || line.Description || null,
+                line.Brand || null, line.Category || null, line.Family || null,
+                line.Unit || null,
+                toNumber(line.Quantity), toNumber(line.Price || line.UnitPrice),
+                toNumber(line.Total), toNumber(line.AverageCost)
+              ]
+            );
+            lineCount++;
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+    console.log(`[CIN7 DB] Upserted ${orderCount} sales orders and ${lineCount} line items to database.`);
+  } catch (e) {
+    console.warn('[CIN7 DB] upsertSalesToDb failed (non-fatal):', e.message);
+  }
+}
+
+/**
+ * Upserts current inventory availability into the database.
+ * Inventory is a full replace per client — deletes old rows then inserts fresh.
+ * Fire-and-forget — never throws.
+ */
+async function upsertInventoryToDb(clientId, allInv) {
+  if (!allInv || allInv.length === 0) return;
+  const safeClientId = getSafeClientId(clientId);
+  try {
+    // Delete existing inventory for this client (full snapshot replace)
+    await db.query('DELETE FROM cin7_inventory WHERE client_id = ?', [safeClientId]);
+    let count = 0;
+    for (const i of allInv) {
+      const sku = String(i.SKU || '').trim();
+      if (!sku) continue;
+      try {
+        await db.query(
+          `INSERT INTO cin7_inventory
+             (client_id, location, sku, product_name, unit,
+              on_hand, allocated, on_order, in_transit, unit_cost, stock_on_hand, available, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT (client_id, location, sku) DO UPDATE SET
+             product_name  = EXCLUDED.product_name,
+             unit          = EXCLUDED.unit,
+             on_hand       = EXCLUDED.on_hand,
+             allocated     = EXCLUDED.allocated,
+             on_order      = EXCLUDED.on_order,
+             in_transit    = EXCLUDED.in_transit,
+             unit_cost     = EXCLUDED.unit_cost,
+             stock_on_hand = EXCLUDED.stock_on_hand,
+             available     = EXCLUDED.available,
+             synced_at     = EXCLUDED.synced_at`,
+          [
+            safeClientId,
+            i.Location || 'Main Warehouse', sku,
+            i.Name || null, 'Case',
+            toNumber(i.OnHand), toNumber(i.Allocated),
+            toNumber(i.OnOrder), toNumber(i.InTransit),
+            18.50,
+            toNumber(i.StockOnHand || i.OnHand),
+            toNumber(i.Available)
+          ]
+        );
+        count++;
+      } catch (_) {}
+    }
+    console.log(`[CIN7 DB] Upserted ${count} inventory records to database.`);
+  } catch (e) {
+    console.warn('[CIN7 DB] upsertInventoryToDb failed (non-fatal):', e.message);
+  }
+}
+
+/**
+ * Upserts purchase orders into the database.
+ * Fire-and-forget — never throws.
+ */
+async function upsertPurchaseOrdersToDb(clientId, allPOs) {
+  if (!allPOs || allPOs.length === 0) return;
+  const safeClientId = getSafeClientId(clientId);
+  let count = 0;
+  try {
+    for (const p of allPOs) {
+      const poId = String(p.ID || p.PurchaseID || p.OrderID || '').trim();
+      if (!poId) continue;
+      try {
+        const orderDate = p.OrderDate ? p.OrderDate.split('T')[0] : null;
+        const dueDate = p.InvoiceDueDate ? p.InvoiceDueDate.split('T')[0] : null;
+        await db.query(
+          `INSERT INTO cin7_purchase_orders
+             (client_id, cin7_po_id, order_number, invoice_number, order_date, invoice_due_date,
+              supplier, status, invoice_amount, updated_date_utc, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT (client_id, cin7_po_id) DO UPDATE SET
+             order_number     = EXCLUDED.order_number,
+             invoice_number   = EXCLUDED.invoice_number,
+             order_date       = EXCLUDED.order_date,
+             invoice_due_date = EXCLUDED.invoice_due_date,
+             supplier         = EXCLUDED.supplier,
+             status           = EXCLUDED.status,
+             invoice_amount   = EXCLUDED.invoice_amount,
+             updated_date_utc = EXCLUDED.updated_date_utc,
+             synced_at        = EXCLUDED.synced_at`,
+          [
+            safeClientId, poId,
+            p.OrderNumber || null, p.InvoiceNumber || null,
+            orderDate, dueDate,
+            p.Supplier || null, p.Status || null,
+            parseFloat(p.InvoiceAmount || 0),
+            p.UpdatedDateUtc || null
+          ]
+        );
+        count++;
+      } catch (_) {}
+    }
+    console.log(`[CIN7 DB] Upserted ${count} purchase orders to database.`);
+  } catch (e) {
+    console.warn('[CIN7 DB] upsertPurchaseOrdersToDb failed (non-fatal):', e.message);
+  }
+}
 
 function getSafeClientId(clientId) {
   return clientStorageService.validateClientId(clientId);
@@ -382,6 +632,9 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
   const uncachedSales = [];
   let cacheHits = 0;
 
+  // 0. Bulk-load DB cache into memory so workers never hit DB per-order
+  await warmMemoryCacheFromDb(clientId);
+
   // 1. Exact Set-Based Cache Audit: Identify already cached & valid orders
   for (const sale of sales) {
     const cachedDetail = getStoredOrderDetail(clientId, sale.SaleID, sale.UpdatedDateUtc);
@@ -449,6 +702,8 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
       const lines = detail?.Order?.Lines || [];
       if (detail && Array.isArray(lines) && lines.length > 0) {
         storeOrderDetail(clientId, sale.SaleID, detail, sale.UpdatedDateUtc);
+        // Also persist to DB cache (fire-and-forget)
+        storeOrderDetailToDb(clientId, sale.SaleID, detail, sale.UpdatedDateUtc).catch(() => {});
         detailedSales.push({ sale, lines });
         newlyEnrichedCount++;
       } else {
@@ -579,6 +834,11 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
     console.log(`  Total Lines Produced: ${rows.length}`);
     console.log(`  Total Sales Duration: ${totalDuration}s\n`);
 
+    // Persist enriched sales to database (fire-and-forget — does not block response)
+    upsertSalesToDb(clientId, detailedSales).catch(e =>
+      console.warn('[CIN7 DB] Background sales upsert error (non-fatal):', e.message)
+    );
+
     return { headers: SALES_HEADERS, rows, isIncrementalEmpty: false };
   } catch (err) {
     if (process.env.CIN7_MOCK_FALLBACK === 'true') {
@@ -645,6 +905,11 @@ async function fetchInventory(clientId) {
       toNumber(i.Available)
     ]);
 
+    // Persist inventory to database (fire-and-forget)
+    upsertInventoryToDb(clientId, allInv).catch(e =>
+      console.warn('[CIN7 DB] Background inventory upsert error (non-fatal):', e.message)
+    );
+
     return { headers, rows };
   } catch (err) {
     if (process.env.CIN7_MOCK_FALLBACK === 'true') {
@@ -710,6 +975,11 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
       }
       return { headers, rows: [], isIncrementalEmpty: false };
     }
+
+    // Persist purchase orders to database (fire-and-forget)
+    upsertPurchaseOrdersToDb(clientId, allPOs).catch(e =>
+      console.warn('[CIN7 DB] Background PO upsert error (non-fatal):', e.message)
+    );
 
     const rows = allPOs.map((p, idx) => {
       const d = p.OrderDate ? new Date(p.OrderDate) : new Date();
@@ -1034,5 +1304,10 @@ module.exports = {
   filterPurchaseByWindow,
   getCanonicalSalesData,
   getCanonicalInventoryData,
-  getCanonicalPurchaseOrdersData
+  getCanonicalPurchaseOrdersData,
+  // DB persistence
+  upsertSalesToDb,
+  upsertInventoryToDb,
+  upsertPurchaseOrdersToDb,
+  warmMemoryCacheFromDb
 };
