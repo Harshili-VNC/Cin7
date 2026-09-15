@@ -156,6 +156,22 @@
             <button class="auth-tab-btn" id="tab-signup-btn" onclick="switchAuthTab('signup')">Sign up</button>
           </div>
 
+          <button type="button" class="btn auth-google-btn" id="google-signin-btn" onclick="handleGoogleSignIn()">
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>Continue with Google</span>
+          </button>
+          
+          <div class="auth-divider">
+            <span class="auth-divider-line"></span>
+            <span class="auth-divider-text">or with work email</span>
+            <span class="auth-divider-line"></span>
+          </div>
+
           <!-- Sign In Form -->
           <form id="signin-form" onsubmit="handleSigninSubmit(event)">
             <div class="form-group">
@@ -523,6 +539,10 @@
 
             <!-- 3. Sync Action Buttons -->
             <div class="sync-bar-actions">
+              <button type="button" class="btn btn-outline btn-sm sync-quick-btn" id="btn-pull-sheets" onclick="handlePullFromGoogleSheets()" title="Pull latest edits from Google Sheet into Dashboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span id="btn-pull-sheets-text">Pull from Google Sheet</span>
+              </button>
               <button type="button" class="btn btn-outline btn-sm sync-quick-btn" onclick="openWorkbookViewer()" title="Preview 14 Master Sheets">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
                 <span>Preview Model</span>
@@ -586,7 +606,10 @@
           <!-- Recent Activity Card -->
           <div class="card">
             <div class="card-header-clean">
-              <h3>Recent activity</h3>
+              <div>
+                <h3 style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--foreground);">Recent activity</h3>
+                <span style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;">Showing recent 10 sync runs</span>
+              </div>
               <span class="badge badge-live">
                 <span style="width: 6px; height: 6px; border-radius: 9999px; background: currentColor; display: inline-block;"></span>
                 Live
@@ -595,6 +618,11 @@
             <div class="card-body">
               <div class="activity-list" id="recent-activity-list">
                 <!-- Activity items populated dynamically via app.js -->
+              </div>
+              <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); text-align: center;">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="navigateTo('reports'); switchReportsSubTab('history');" style="font-size: 0.75rem; color: var(--vnc-blue); font-weight: 600; padding: 0.25rem 0.5rem; text-decoration: none;">
+                  View full history in Reports &rarr;
+                </button>
               </div>
             </div>
           </div>
@@ -612,6 +640,10 @@
                 <button class="btn btn-primary" style="background: #0f9d58; border-color: #0f9d58; color: white;" onclick="openInGoogleSheets()">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>
                   Open in Google Sheets
+                </button>
+                <button class="btn btn-outline" id="btn-pull-sheets-card" style="font-size: 0.8125rem; display: flex; align-items: center; justify-content: center; gap: 0.35rem;" onclick="handlePullFromGoogleSheets()" title="Pull latest edits from Google Sheet into Dashboard">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <span>Pull updates to Dashboard</span>
                 </button>
                 <button class="btn btn-outline" style="font-size: 0.8125rem;" onclick="openWorkbookViewer()">
                   Preview 17 sheets

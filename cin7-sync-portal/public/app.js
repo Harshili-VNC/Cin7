@@ -172,7 +172,7 @@ function updateUIHeader() {
     // RBAC UI permissions
     const adminElements = document.querySelectorAll('.admin-only');
     const managerPlusElements = document.querySelectorAll('.manager-only');
-    const syncButtons = document.querySelectorAll('#btn-sync-now, #btn-sync-sales, #btn-sync-inventory, #btn-sync-purchases');
+    const syncButtons = document.querySelectorAll('#btn-sync-now, #btn-sync-sales, #btn-sync-inventory, #btn-sync-purchases, #btn-pull-sheets, #btn-pull-sheets-card');
 
     if (role === 'VIEWER' && platformRole !== 'SUPER_ADMIN') {
       adminElements.forEach(el => el.style.display = 'none');
@@ -1538,6 +1538,114 @@ function showSyncCompleted(result = {}) {
 function closeSyncModal() {
   const modal = document.getElementById('sync-modal');
   if (modal) modal.classList.add('hidden');
+}
+
+/**
+ * ── 4B. PULL FROM GOOGLE SHEETS ──────────────────────────────────────────
+ * Reads modified / updated rows from the active Google Spreadsheet back into
+ * the portal's current report snapshots and refreshes the dashboard metrics.
+ */
+async function handlePullFromGoogleSheets() {
+  const btn = document.getElementById('btn-pull-sheets');
+  const btnText = document.getElementById('btn-pull-sheets-text');
+  const btnCard = document.getElementById('btn-pull-sheets-card');
+
+  if (state.isSyncing) {
+    showToast('A sync operation is already in progress.', 'warning');
+    return;
+  }
+
+  // Set loading UI states
+  if (btn) {
+    btn.disabled = true;
+    btn.style.opacity = '0.75';
+  }
+  if (btnText) {
+    btnText.innerHTML = '<span class="spinner" style="display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:rot 0.8s linear infinite; vertical-align:middle; margin-right:4px;"></span> Pulling...';
+  }
+  if (btnCard) {
+    btnCard.disabled = true;
+    btnCard.style.opacity = '0.75';
+  }
+
+  showToast('Pulling latest data from Google Sheet...', 'info');
+  renderSyncStatusBar('SYNCING', { message: 'Reading modified rows from Google Sheet...' });
+
+  try {
+    const res = await fetch('/api/sync/pull-sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        spreadsheetId: state.spreadsheetId || null
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      const errMsg = data.message || data.error || 'Failed to pull Google Sheet data.';
+      state.lastSyncError = errMsg;
+      renderSyncStatusBar('ERROR', { errorDetail: errMsg });
+      showToast(errMsg, 'error');
+      return;
+    }
+
+    // Success state
+    showToast(`Successfully pulled ${data.recordsProcessed.toLocaleString()} records from Google Sheet!`, 'success');
+
+    state.lastSyncTime = data.lastSyncAt || new Date().toISOString();
+    state.lastSyncError = null;
+    state.latestSyncResult = data;
+    if (state.client) {
+      state.client.lastSyncAt = state.lastSyncTime;
+      state.client.recordsSynced = data.recordsProcessed;
+    }
+
+    // Add activity record
+    const timeInfo = formatSyncTime(state.lastSyncTime);
+    const durationSec = ((data.durationMs || 1000) / 1000).toFixed(1);
+    const newEntry = {
+      id: Date.now(),
+      title: 'Google Sheet → Dashboard Pull',
+      countBadge: `${Number(data.recordsProcessed).toLocaleString()} records`,
+      detail: `Pulled live rows from Google Sheet into Dashboard snapshots · Took ${durationSec}s`,
+      timeMain: timeInfo.main,
+      timeRel: timeInfo.rel || 'Just now',
+      status: 'ok'
+    };
+    state.recentActivities.unshift(newEntry);
+    state.recentActivities = state.recentActivities.slice(0, 10);
+    try { localStorage.setItem('vnc_recent_activities', JSON.stringify(state.recentActivities)); } catch (_) {}
+    renderActivityList();
+
+    // Refresh dashboard metric cards and status bar
+    updateDashboardData();
+
+    // If on reports view, refresh current reports data
+    if (typeof loadReportsView === 'function') {
+      const reportsView = document.getElementById('reports-view');
+      if (reportsView && !reportsView.classList.contains('hidden')) {
+        loadReportsView();
+      }
+    }
+  } catch (err) {
+    console.error('Pull from Google Sheets error:', err);
+    state.lastSyncError = err.message || 'Network error while pulling Google Sheet.';
+    renderSyncStatusBar('ERROR', { errorDetail: state.lastSyncError });
+    showToast(state.lastSyncError, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = '';
+    }
+    if (btnText) {
+      btnText.innerText = 'Pull from Google Sheet';
+    }
+    if (btnCard) {
+      btnCard.disabled = false;
+      btnCard.style.opacity = '';
+    }
+  }
 }
 
 // ── 5. SETTINGS PAGE & SYSTEM HEALTH ────────────────────────────────────────

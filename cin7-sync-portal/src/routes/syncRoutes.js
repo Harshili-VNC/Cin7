@@ -967,4 +967,151 @@ router.get('/destination/google', enforceTenantIsolation, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/sync/pull-sheets
+ * Pulls latest edits/data from the client's Google Sheet into the dashboard and snapshot store.
+ */
+router.post('/pull-sheets', requireAuth, enforceTenantIsolation, requireCanSync, requireActiveSubscription, async (req, res) => {
+  const clientId = req.tenantId;
+  const user = req.user;
+  const startTime = Date.now();
+  const runId = `run-pull-${uuidv4().substring(0, 8)}`;
+
+  // Acquire mutex lock to prevent concurrent sync operations
+  const lockRes = lockService.acquireLock(clientId, runId);
+  if (!lockRes.acquired) {
+    return res.status(409).json({
+      success: false,
+      error: 'SYNC_ALREADY_IN_PROGRESS',
+      message: lockRes.reason || 'A sync operation is already in progress for this workspace.'
+    });
+  }
+
+  try {
+    // 1. Resolve spreadsheet ID (from body or destination_files DB)
+    let spreadsheetId = req.body?.spreadsheetId;
+    let spreadsheetUrl = null;
+    let fileName = null;
+
+    if (!spreadsheetId) {
+      const dest = await db.getOne(
+        "SELECT file_id, file_name, file_url FROM destination_files WHERE client_id = ? AND provider = 'google' ORDER BY created_at DESC LIMIT 1",
+        [clientId]
+      );
+      if (dest) {
+        spreadsheetId = dest.file_id;
+        spreadsheetUrl = dest.file_url;
+        fileName = dest.file_name;
+      }
+    }
+
+    if (!spreadsheetId) {
+      return res.status(404).json({
+        success: false,
+        error: 'NO_GOOGLE_SHEET_FOUND',
+        message: 'No Google Sheet destination found for this workspace. Please run a sync to Google Sheets first.'
+      });
+    }
+
+    // 2. Read spreadsheet data using GoogleSheetsAdapter
+    const GoogleSheetsAdapter = require('../services/googleSheetsAdapter');
+    const adapter = new GoogleSheetsAdapter(clientId, user);
+    
+    console.log(`[PULL GOOGLE SHEETS] Reading latest data from spreadsheet ${spreadsheetId} for tenant ${clientId}...`);
+    const sheetData = await adapter.readSpreadsheetData(spreadsheetId);
+
+    const salesCount = sheetData.sales.rows.length;
+    const invCount = sheetData.inventory.rows.length;
+    const poCount = sheetData.purchase.rows.length;
+    const totalRecords = salesCount + invCount + poCount;
+
+    // 3. Reject completely empty sheets to avoid replacing valid snapshots with 0 records
+    if (totalRecords === 0) {
+      return res.status(422).json({
+        success: false,
+        error: 'EMPTY_SHEET_DATA',
+        message: 'The Google Sheet contains no data rows in the Raw Data worksheets.'
+      });
+    }
+
+    // 4. Strict schema & data validation before modifying any snapshots
+    console.log('[PULL GOOGLE SHEETS] Validating extracted data against schema rules...');
+    const salesVal = cin7Engine.validateSalesData(sheetData.sales, { allowEmpty: true });
+    const invVal = cin7Engine.validateInventoryData(sheetData.inventory, { allowEmpty: true });
+    const poVal = cin7Engine.validatePurchaseData(sheetData.purchase, { allowEmpty: true });
+
+    console.log(`  - Sales validated: ${salesVal.rowCount} rows`);
+    console.log(`  - Inventory validated: ${invVal.rowCount} rows`);
+    console.log(`  - Purchase validated: ${poVal.rowCount} rows`);
+
+    // 5. Atomic snapshot and current report updates (Only when validation completely passes)
+    const periodLabel = 'Google Sheet Sync';
+    await Promise.all([
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel, dataset: sheetData.sales, syncRunId: runId }),
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current Stock', dataset: sheetData.inventory, syncRunId: runId }),
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel, dataset: sheetData.purchase, syncRunId: runId })
+    ]);
+
+    const durationMs = Date.now() - startTime;
+    const completionBoundaryIso = new Date().toISOString();
+
+    // 6. Record audit sync run and update client last_sync_at
+    await db.query(
+      `INSERT INTO sync_runs (id, client_id, user_id, run_id, sync_type, status, records_processed, duration_ms, excel_version_id, created_at, completed_at)
+       VALUES (?, ?, ?, ?, 'google_sheet_pull', 'COMPLETED', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [runId, clientId, user?.id || 'system', runId, totalRecords, durationMs, spreadsheetId]
+    );
+
+    await db.query(
+      `UPDATE clients SET last_sync_at = ?, sync_status = 'SYNCED' WHERE id = ?`,
+      [completionBoundaryIso, clientId]
+    );
+
+    console.log(`[PULL GOOGLE SHEETS COMPLETE] ${totalRecords} records pulled and committed into dashboard snapshot (${durationMs}ms)`);
+
+    return res.json({
+      success: true,
+      message: 'Successfully pulled latest data from Google Sheet into dashboard',
+      runId,
+      spreadsheetId,
+      spreadsheetUrl,
+      fileName,
+      recordsProcessed: totalRecords,
+      durationMs,
+      breakdown: {
+        sales: salesCount,
+        inventory: invCount,
+        purchaseOrders: poCount
+      },
+      lastSyncAt: completionBoundaryIso
+    });
+  } catch (err) {
+    console.error(`[PULL GOOGLE SHEETS ERROR] Tenant ${clientId}:`, err.message);
+    const durationMs = Date.now() - startTime;
+    let safeError = err.message || 'Failed to pull data from Google Sheet.';
+    let isGoogleAuthError = false;
+    if (/invalid_grant|No access, refresh token|Invalid Credentials|unauthorized_client/i.test(safeError)) {
+      safeError = 'Google Sheets authorization has expired. Please re-authorize Google.';
+      isGoogleAuthError = true;
+    }
+
+    try {
+      await db.query(
+        `INSERT INTO sync_runs (id, client_id, user_id, run_id, sync_type, status, error_message, duration_ms, created_at, completed_at)
+         VALUES (?, ?, ?, ?, 'google_sheet_pull', 'FAILED', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [runId, clientId, user?.id || 'system', runId, safeError, durationMs]
+      );
+    } catch (_) {}
+
+    return res.status(500).json({
+      success: false,
+      error: safeError,
+      message: safeError,
+      isGoogleAuthError
+    });
+  } finally {
+    lockService.releaseLock(clientId, runId);
+  }
+});
+
 module.exports = router;

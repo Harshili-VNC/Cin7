@@ -657,6 +657,67 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       console.error(`[DYNAMIC REPORTS] Notice: Failed to update dynamic reporting formulas: ${err.message}`);
     }
   }
+
+  /**
+   * Reads raw data worksheets from a Google Spreadsheet.
+   * Extracts sales, inventory, and purchase records, filtering out trailing empty rows and padding to schema columns.
+   * @param {string} spreadsheetId
+   * @returns {Promise<{ sales: { headers: string[], rows: any[][] }, inventory: { headers: string[], rows: any[][] }, purchase: { headers: string[], rows: any[][] }, kpiRows: any[][] }>}
+   */
+  async readSpreadsheetData(spreadsheetId) {
+    if (!spreadsheetId) {
+      throw new Error('Spreadsheet ID is required to read Google Sheet data.');
+    }
+    const { sheets } = await this.getGoogleClients();
+
+    const ranges = [
+      `'${SALES_SHEET}'!A7:Z`,
+      `'${INVENTORY_SHEET}'!A7:K`,
+      `'${PURCHASES_SHEET}'!A7:T`,
+      `'KPI Dashboard'!A1:F20`
+    ];
+
+    const response = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId,
+      ranges,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+      dateTimeRenderOption: 'FORMATTED_STRING'
+    });
+
+    const valueRanges = response.data.valueRanges || [];
+
+    const salesHeaders = ['Month', 'Order date', 'Order #', 'Invoice date', 'Document #', 'SKU', 'Product', 'Brand', 'Category', 'Family', 'Product tags', 'Customer', 'Invoice status', 'Unit', 'Shipment status', 'Customer tags', 'Sales representative', 'Sales Channel', 'Quantity', 'Invoice', 'Sale', 'COGS', 'Profit less journals', 'Journals', 'Profit', 'Profit %'];
+    const invHeaders = ['Location', 'SKU', 'Product', 'Unit', 'Quantity on hand', 'Allocated', 'On order', 'In transit', 'Unit cost', 'Stock on hand', 'Available'];
+    const poHeaders = ['Year', 'Month', 'Supplier', 'Expiry date', 'PO #', 'Invoice #', 'Brand', 'Category', 'Family', 'SKU', 'Product', 'Unit', 'Location', 'Batch #', 'Status', 'Quantity', 'Main cost', 'Additional cost', 'Journal cost', 'Tax'];
+
+    const cleanAndPadRows = (rawRows, targetLength) => {
+      if (!Array.isArray(rawRows)) return [];
+      const clean = [];
+      for (const row of rawRows) {
+        if (!Array.isArray(row) || row.length === 0) continue;
+        const hasContent = row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+        if (!hasContent) continue;
+        const padded = [...row];
+        while (padded.length < targetLength) {
+          padded.push('');
+        }
+        clean.push(padded);
+      }
+      return clean;
+    };
+
+    const salesRows = cleanAndPadRows(valueRanges[0]?.values, salesHeaders.length);
+    const invRows = cleanAndPadRows(valueRanges[1]?.values, invHeaders.length);
+    const poRows = cleanAndPadRows(valueRanges[2]?.values, poHeaders.length);
+    const kpiRows = valueRanges[3]?.values || [];
+
+    return {
+      sales: { headers: salesHeaders, rows: salesRows },
+      inventory: { headers: invHeaders, rows: invRows },
+      purchase: { headers: poHeaders, rows: poRows },
+      kpiRows
+    };
+  }
 }
 
 module.exports = GoogleSheetsAdapter;
