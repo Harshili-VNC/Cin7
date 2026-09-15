@@ -26,6 +26,7 @@ const billingRoutes = require('./routes/billingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 2121;
 
 // ── PRODUCTION FAIL-FAST SECURITY VALIDATION ──────────────────────────────────
