@@ -3143,6 +3143,7 @@ async function loadPreviousReports() {
         const totalRecords = group.reduce((sum, s) => sum + (s.recordCount || 0), 0);
         const safePeriod = escapeHtml(first.periodLabel || 'Last 365 Days');
         const anyFailed = group.some(s => s.status && s.status !== 'SUCCESS');
+        const sheetUrl = group.find(s => s.spreadsheetUrl)?.spreadsheetUrl || null;
 
         const typeBadges = group.map(s => {
           const badgeClass = s.reportType === 'sales' ? 'badge-sales' : (s.reportType === 'purchase' ? 'badge-purchase' : 'badge-inventory');
@@ -3167,8 +3168,13 @@ async function loadPreviousReports() {
             <td>
               <span class="badge ${anyFailed ? 'badge-warning' : 'badge-success'}">${anyFailed ? '⚠ Partial' : '✓ Synced'}</span>
             </td>
-            <td style="text-align: right; white-space: nowrap; color: var(--muted-foreground); font-size: 0.75rem;">
-              Click a badge to view
+            <td style="text-align: right; white-space: nowrap;">
+              ${sheetUrl ? `
+                <a href="${escapeHtml(sheetUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  Open Sheet
+                </a>
+              ` : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">Click a badge to view</span>`}
             </td>
           </tr>
         `;

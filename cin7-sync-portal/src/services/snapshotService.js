@@ -438,7 +438,11 @@ class SnapshotService {
     );
 
     const dbRes = await db.query(
-      `SELECT * FROM report_snapshots WHERE client_id = ? ORDER BY created_at DESC`,
+      `SELECT rs.*, sr.excel_version_id AS sheet_file_id
+       FROM report_snapshots rs
+       LEFT JOIN sync_runs sr ON sr.run_id = rs.sync_run_id AND sr.client_id = rs.client_id
+       WHERE rs.client_id = ?
+       ORDER BY rs.created_at DESC`,
       [safeClientId]
     );
 
@@ -447,6 +451,8 @@ class SnapshotService {
       try {
         totals = typeof r.totals_json === 'string' ? JSON.parse(r.totals_json) : (r.totals_json || {});
       } catch (e) {}
+
+      const isGoogleSheetId = r.sheet_file_id && !/^v\d/i.test(String(r.sheet_file_id));
 
       return {
         id: r.id,
@@ -459,7 +465,8 @@ class SnapshotService {
         syncRunId: r.sync_run_id,
         createdAt: r.created_at,
         totals,
-        isCurrent: activeSnapshotIds.has(r.id)
+        isCurrent: activeSnapshotIds.has(r.id),
+        spreadsheetUrl: isGoogleSheetId ? `https://docs.google.com/spreadsheets/d/${r.sheet_file_id}/edit` : null
       };
     });
 
