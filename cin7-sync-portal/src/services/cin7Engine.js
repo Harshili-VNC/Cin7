@@ -785,21 +785,21 @@ async function fetchProductMaster(clientId) {
   const creds = await getClientCin7Credentials(clientId);
   const map = new Map();
   try {
-    console.log('[CIN7 LIVE] Fetching Product master (Brand/Category/Family) from Cin7 Core API...');
+    console.log('[CIN7 LIVE] Fetching Product master (Brand/Category/Family) via /ref/productavailability...');
     let allProducts = [];
     let page = 1;
     let totalInApi = 0;
     let loggedSample = false;
 
     while (true) {
-      const res = await cin7ApiGet(`${CIN7_BASE_URL}/ref/product`, {
+      const res = await cin7ApiGet(`${CIN7_BASE_URL}/ref/productavailability`, {
         headers: cin7Headers(creds),
         params: { Page: page, Limit: 100 },
         timeout: 30000
       }, 'Product Master', 5);
 
       totalInApi = res.data?.Total || 0;
-      const products = res.data?.Products || res.data?.ProductList || [];
+      const products = res.data?.ProductAvailabilityList || [];
 
       if (!loggedSample && products.length) {
         console.log('[CIN7 LIVE] Sample Product master record (verify field names):', JSON.stringify(products[0]));
