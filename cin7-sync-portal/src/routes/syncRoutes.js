@@ -278,8 +278,8 @@ async function executeFullSyncBackground({
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
     // 2. Evaluate Incremental Sync Safety
-    const salesSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : snapshotService.isIncrementalSafe(clientId, 'sales', dateRange);
-    const poSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : snapshotService.isIncrementalSafe(clientId, 'purchase', dateRange);
+    const salesSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : await snapshotService.isIncrementalSafe(clientId, 'sales', dateRange);
+    const poSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : await snapshotService.isIncrementalSafe(clientId, 'purchase', dateRange);
 
     const useIncrementalSales = !isForceFull && salesSafety.safe;
     const useIncrementalPO = !isForceFull && poSafety.safe;
@@ -327,7 +327,7 @@ async function executeFullSyncBackground({
     // 4. Upsert / Merge & Rolling Window Filter for Sales
     let finalSalesRows = [];
     if (useIncrementalSales) {
-      const existingSales = snapshotService.getCurrentReportRows(clientId, 'sales');
+      const existingSales = await snapshotService.getCurrentReportRows(clientId, 'sales');
       const mergedSales = cin7Engine.mergeSalesData(existingSales.rows, fetchedSales.rows);
       finalSalesRows = cin7Engine.filterSalesByWindow(mergedSales, dateRange, { startDate, endDate });
       console.log(`[SALES UPSERT] Existing: ${existingSales.rows.length}, Delta fetched: ${fetchedSales.rows.length}, Merged & Rolling Filter (${dateRange}): ${finalSalesRows.length}`);
@@ -339,7 +339,7 @@ async function executeFullSyncBackground({
     // 5. Upsert / Merge & Rolling Window Filter for Purchase
     let finalPORows = [];
     if (useIncrementalPO) {
-      const existingPO = snapshotService.getCurrentReportRows(clientId, 'purchase');
+      const existingPO = await snapshotService.getCurrentReportRows(clientId, 'purchase');
       const mergedPO = cin7Engine.mergePurchaseData(existingPO.rows, fetchedPO.rows);
       finalPORows = cin7Engine.filterPurchaseByWindow(mergedPO, dateRange, { startDate, endDate });
       console.log(`[PURCHASE UPSERT] Existing: ${existingPO.rows.length}, Delta fetched: ${fetchedPO.rows.length}, Merged & Rolling Filter (${dateRange}): ${finalPORows.length}`);
@@ -484,19 +484,19 @@ async function executeFullSyncBackground({
     }
 
     // 11. Update Persistent Sync State with Completion Boundary Timestamp
-    snapshotService.updateSyncState(clientId, 'sales', {
+    await snapshotService.updateSyncState(clientId, 'sales', {
       reportWindow: dateRange,
       lastSuccessfulSync: completionBoundaryIso,
       lastSyncRunId: runId,
       recordCount: salesData.rows.length
     });
-    snapshotService.updateSyncState(clientId, 'purchase', {
+    await snapshotService.updateSyncState(clientId, 'purchase', {
       reportWindow: dateRange,
       lastSuccessfulSync: completionBoundaryIso,
       lastSyncRunId: runId,
       recordCount: poData.rows.length
     });
-    snapshotService.updateSyncState(clientId, 'inventory', {
+    await snapshotService.updateSyncState(clientId, 'inventory', {
       reportWindow: 'current',
       lastSuccessfulSync: completionBoundaryIso,
       lastSyncRunId: runId,

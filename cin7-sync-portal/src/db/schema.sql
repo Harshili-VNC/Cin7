@@ -144,8 +144,35 @@ CREATE TABLE IF NOT EXISTS report_snapshots (
     status VARCHAR(50) DEFAULT 'SUCCESS',
     sync_run_id VARCHAR(64),
     file_path TEXT,
+    data_json TEXT,
     totals_json TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE report_snapshots ADD COLUMN IF NOT EXISTS data_json TEXT;
+
+-- Active/current report state per client+type, replacing per-client disk JSON
+-- files so it survives redeploys on hosts with ephemeral filesystems (Render).
+CREATE TABLE IF NOT EXISTS current_reports (
+    client_id VARCHAR(64) NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    report_type VARCHAR(50) NOT NULL,
+    latest_snapshot_id VARCHAR(64),
+    data_json TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (client_id, report_type)
+);
+
+-- Incremental-sync safety state per client+type (replaces per-client disk
+-- sync-state JSON file). Tracks the last successful sync boundary so the
+-- next sync knows whether an incremental (UpdatedSince) fetch is safe.
+CREATE TABLE IF NOT EXISTS client_sync_state (
+    client_id VARCHAR(64) NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    report_type VARCHAR(50) NOT NULL,
+    report_window VARCHAR(20),
+    last_successful_sync TIMESTAMP,
+    last_sync_run_id VARCHAR(64),
+    record_count INT DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (client_id, report_type)
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -173,6 +200,8 @@ CREATE INDEX IF NOT EXISTS idx_sync_runs_created_at ON sync_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_logs_run_id ON sync_logs(sync_run_id);
 CREATE INDEX IF NOT EXISTS idx_report_snapshots_client_id ON report_snapshots(client_id);
 CREATE INDEX IF NOT EXISTS idx_report_snapshots_created_at ON report_snapshots(created_at);
+CREATE INDEX IF NOT EXISTS idx_current_reports_client_id ON current_reports(client_id);
+CREATE INDEX IF NOT EXISTS idx_client_sync_state_client_id ON client_sync_state(client_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_org_id ON audit_logs(organization_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 
@@ -284,6 +313,8 @@ DO $$ BEGIN
   ALTER TABLE sync_runs              ENABLE ROW LEVEL SECURITY;
   ALTER TABLE sync_logs              ENABLE ROW LEVEL SECURITY;
   ALTER TABLE report_snapshots       ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE current_reports        ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE client_sync_state      ENABLE ROW LEVEL SECURITY;
   ALTER TABLE audit_logs             ENABLE ROW LEVEL SECURITY;
   ALTER TABLE subscriptions          ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_order_cache       ENABLE ROW LEVEL SECURITY;
@@ -320,6 +351,14 @@ EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'sync_logs RLS: %', SQLERRM; END $$;
 DO $$ BEGIN DROP POLICY IF EXISTS report_snapshots_tenant ON report_snapshots;
   CREATE POLICY report_snapshots_tenant ON report_snapshots USING (client_id = current_setting('app.current_client_id', true));
 EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'report_snapshots RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS current_reports_tenant ON current_reports;
+  CREATE POLICY current_reports_tenant ON current_reports USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'current_reports RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS client_sync_state_tenant ON client_sync_state;
+  CREATE POLICY client_sync_state_tenant ON client_sync_state USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'client_sync_state RLS: %', SQLERRM; END $$;
 
 DO $$ BEGIN DROP POLICY IF EXISTS audit_logs_tenant ON audit_logs;
   CREATE POLICY audit_logs_tenant ON audit_logs USING (organization_id = current_setting('app.current_client_id', true));

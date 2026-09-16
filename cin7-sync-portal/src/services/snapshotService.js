@@ -1,22 +1,6 @@
-const fs = require('fs');
-const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
 const clientStorageService = require('./clientStorageService');
-
-function ensureDir(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
-}
-
-function atomicWriteJson(filePath, data) {
-  const dir = path.dirname(filePath);
-  ensureDir(dir);
-  const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 6)}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmpPath, filePath);
-}
 
 const REPORT_CONFIG = {
   sales: {
@@ -117,48 +101,60 @@ class SnapshotService {
     return clientStorageService.validateClientId(clientId);
   }
 
-  getSyncStateFilePath(clientId) {
+  /**
+   * Reads incremental-sync safety state for a client from the database
+   * (client_sync_state table), replacing the old per-client disk JSON file
+   * so it survives redeploys on hosts with ephemeral filesystems.
+   */
+  async getSyncState(clientId) {
     const safeClientId = this.getSafeClientId(clientId);
-    return clientStorageService.getClientSyncStatePath(safeClientId);
-  }
 
-  getSyncState(clientId) {
-    const safeClientId = this.getSafeClientId(clientId);
-    clientStorageService.safeMigrateLegacyClientData(safeClientId);
+    const dbRes = await db.query(
+      `SELECT * FROM client_sync_state WHERE client_id = ?`,
+      [safeClientId]
+    );
 
-    const filePath = this.getSyncStateFilePath(safeClientId);
-    if (fs.existsSync(filePath)) {
-      try {
-        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      } catch (e) {}
+    const reports = { sales: null, purchase: null, inventory: null };
+    for (const row of (dbRes.rows || [])) {
+      reports[row.report_type] = {
+        reportType: row.report_type,
+        reportWindow: row.report_window,
+        lastSuccessfulSync: row.last_successful_sync,
+        lastSyncRunId: row.last_sync_run_id,
+        recordCount: row.record_count || 0,
+        updatedAt: row.updated_at
+      };
     }
-    return {
-      clientId: safeClientId,
-      reports: {
-        sales: null,
-        purchase: null,
-        inventory: null
-      }
-    };
+
+    return { clientId: safeClientId, reports };
   }
 
-  updateSyncState(clientId, reportType, stateData) {
+  async updateSyncState(clientId, reportType, stateData) {
     const safeClientId = this.getSafeClientId(clientId);
-    const state = this.getSyncState(safeClientId);
     const config = this.getReportConfig(reportType);
+    const nowIso = new Date().toISOString();
 
-    if (!state.reports) state.reports = {};
-    state.reports[config.id] = {
-      reportType: config.id,
-      reportWindow: stateData.reportWindow || '30d',
-      lastSuccessfulSync: stateData.lastSuccessfulSync || new Date().toISOString(),
-      lastSyncRunId: stateData.lastSyncRunId || null,
-      recordCount: stateData.recordCount || 0,
-      updatedAt: new Date().toISOString()
-    };
+    await db.query(
+      `INSERT INTO client_sync_state (client_id, report_type, report_window, last_successful_sync, last_sync_run_id, record_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (client_id, report_type) DO UPDATE SET
+         report_window = EXCLUDED.report_window,
+         last_successful_sync = EXCLUDED.last_successful_sync,
+         last_sync_run_id = EXCLUDED.last_sync_run_id,
+         record_count = EXCLUDED.record_count,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        safeClientId,
+        config.id,
+        stateData.reportWindow || '30d',
+        stateData.lastSuccessfulSync || nowIso,
+        stateData.lastSyncRunId || null,
+        stateData.recordCount || 0,
+        nowIso
+      ]
+    );
 
-    atomicWriteJson(this.getSyncStateFilePath(safeClientId), state);
-    return state;
+    return this.getSyncState(safeClientId);
   }
 
   getWindowDays(windowCode) {
@@ -176,9 +172,9 @@ class SnapshotService {
   /**
    * Evaluates whether an incremental delta sync is safe for the requested client, report, and window.
    */
-  isIncrementalSafe(clientId, reportType, requestedWindow = '30d') {
+  async isIncrementalSafe(clientId, reportType, requestedWindow = '30d') {
     const config = this.getReportConfig(reportType);
-    const state = this.getSyncState(clientId);
+    const state = await this.getSyncState(clientId);
     const repState = state.reports?.[config.id];
 
     if (!repState || !repState.lastSuccessfulSync) {
@@ -216,23 +212,25 @@ class SnapshotService {
   }
 
   /**
-   * Retrieves all rows from the active current report file if present.
+   * Retrieves all rows from the active current report state if present.
    */
-  getCurrentReportRows(clientId, reportType) {
+  async getCurrentReportRows(clientId, reportType) {
     const safeClientId = this.getSafeClientId(clientId);
-    clientStorageService.safeMigrateLegacyClientData(safeClientId);
-
     const config = this.getReportConfig(reportType);
-    const currentFilePath = path.join(clientStorageService.getClientCurrentReportsDir(safeClientId), `${config.id}.json`);
 
-    if (fs.existsSync(currentFilePath)) {
+    const row = await db.getOne(
+      `SELECT * FROM current_reports WHERE client_id = ? AND report_type = ?`,
+      [safeClientId, config.id]
+    );
+
+    if (row) {
       try {
-        const payload = JSON.parse(fs.readFileSync(currentFilePath, 'utf8'));
+        const payload = JSON.parse(row.data_json);
         return {
           headers: payload.headers || [],
           rows: payload.rows || [],
           periodLabel: payload.periodLabel,
-          latestSnapshotId: payload.latestSnapshotId
+          latestSnapshotId: row.latest_snapshot_id
         };
       } catch (e) {}
     }
@@ -281,8 +279,6 @@ class SnapshotService {
     const totals = this.calculateTotals(reportKey, rows);
 
     const snapshotId = `snap-${reportKey}-${now.getTime()}-${uuidv4().substring(0, 6)}`;
-    const clientSnapshotDir = clientStorageService.getClientSnapshotsDir(safeClientId);
-    const snapshotFilePath = path.join(clientSnapshotDir, `${snapshotId}.json`);
 
     const snapshotPayload = {
       id: snapshotId,
@@ -299,22 +295,11 @@ class SnapshotService {
       createdAt: timestampIso
     };
 
-    // 1. Atomic write of immutable historical snapshot file in storage/clients/<clientId>/snapshots/
-    atomicWriteJson(snapshotFilePath, snapshotPayload);
+    const dataJson = JSON.stringify(snapshotPayload);
 
-    // 2. Atomic write of current active state in storage/clients/<clientId>/current_reports/
-    const currentDir = clientStorageService.getClientCurrentReportsDir(safeClientId);
-    const currentFilePath = path.join(currentDir, `${reportKey}.json`);
-    const currentPayload = {
-      ...snapshotPayload,
-      latestSnapshotId: snapshotId,
-      updatedAt: timestampIso
-    };
-    atomicWriteJson(currentFilePath, currentPayload);
-
-    // 3. Record snapshot in DB index scoped strictly by client_id
+    // 1. Record immutable historical snapshot in the database (survives redeploys).
     await db.query(
-      `INSERT INTO report_snapshots (id, client_id, report_type, report_name, period_label, record_count, status, sync_run_id, file_path, totals_json, created_at)
+      `INSERT INTO report_snapshots (id, client_id, report_type, report_name, period_label, record_count, status, sync_run_id, data_json, totals_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?)`,
       [
         snapshotId,
@@ -324,10 +309,21 @@ class SnapshotService {
         periodLabel || 'Last 30 days',
         rows.length,
         syncRunId || null,
-        snapshotFilePath,
+        dataJson,
         JSON.stringify(totals),
         timestampIso
       ]
+    );
+
+    // 2. Upsert current active state for this client+report type in the database.
+    await db.query(
+      `INSERT INTO current_reports (client_id, report_type, latest_snapshot_id, data_json, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (client_id, report_type) DO UPDATE SET
+         latest_snapshot_id = EXCLUDED.latest_snapshot_id,
+         data_json = EXCLUDED.data_json,
+         updated_at = EXCLUDED.updated_at`,
+      [safeClientId, reportKey, snapshotId, dataJson, timestampIso]
     );
 
     return {
@@ -344,22 +340,19 @@ class SnapshotService {
    */
   async getCurrentReports(clientId) {
     const safeClientId = this.getSafeClientId(clientId);
-    clientStorageService.safeMigrateLegacyClientData(safeClientId);
 
-    const currentDir = clientStorageService.getClientCurrentReportsDir(safeClientId);
-    const reports = {};
+    const dbRes = await db.query(
+      `SELECT * FROM current_reports WHERE client_id = ?`,
+      [safeClientId]
+    );
 
-    for (const reportKey of ['sales', 'purchase', 'inventory']) {
-      const currentFilePath = path.join(currentDir, `${reportKey}.json`);
-      if (fs.existsSync(currentFilePath)) {
-        try {
-          const raw = fs.readFileSync(currentFilePath, 'utf8');
-          reports[reportKey] = JSON.parse(raw);
-        } catch (e) {
-          reports[reportKey] = null;
-        }
-      } else {
-        reports[reportKey] = null;
+    const reports = { sales: null, purchase: null, inventory: null };
+    for (const row of (dbRes.rows || [])) {
+      try {
+        const payload = JSON.parse(row.data_json);
+        reports[row.report_type] = { ...payload, latestSnapshotId: row.latest_snapshot_id, updatedAt: row.updated_at };
+      } catch (e) {
+        reports[row.report_type] = null;
       }
     }
 
@@ -371,12 +364,14 @@ class SnapshotService {
    */
   async getCurrentReportData(clientId, reportType, { page = 1, pageSize = 25, search = '' } = {}) {
     const safeClientId = this.getSafeClientId(clientId);
-    clientStorageService.safeMigrateLegacyClientData(safeClientId);
-
     const config = this.getReportConfig(reportType);
-    const currentFilePath = path.join(clientStorageService.getClientCurrentReportsDir(safeClientId), `${config.id}.json`);
 
-    if (!fs.existsSync(currentFilePath)) {
+    const row = await db.getOne(
+      `SELECT * FROM current_reports WHERE client_id = ? AND report_type = ?`,
+      [safeClientId, config.id]
+    );
+
+    if (!row) {
       return {
         success: false,
         message: `No current ${config.name} report has been synchronized yet.`,
@@ -391,7 +386,9 @@ class SnapshotService {
       };
     }
 
-    const payload = JSON.parse(fs.readFileSync(currentFilePath, 'utf8'));
+    const payload = JSON.parse(row.data_json);
+    payload.latestSnapshotId = row.latest_snapshot_id;
+    payload.updatedAt = row.updated_at;
     let filteredRows = payload.rows || [];
 
     if (search && search.trim()) {
@@ -535,16 +532,17 @@ class SnapshotService {
    */
   async getSnapshotData(clientId, snapshotId, { page = 1, pageSize = 25, search = '' } = {}) {
     const safeClientId = this.getSafeClientId(clientId);
-    clientStorageService.safeMigrateLegacyClientData(safeClientId);
 
-    const safeSnapshotId = path.basename(snapshotId);
-    const snapshotPath = path.join(clientStorageService.getClientSnapshotsDir(safeClientId), `${safeSnapshotId}.json`);
+    const row = await db.getOne(
+      `SELECT * FROM report_snapshots WHERE id = ? AND client_id = ?`,
+      [snapshotId, safeClientId]
+    );
 
-    if (!fs.existsSync(snapshotPath)) {
+    if (!row) {
       throw new Error(`Snapshot ${snapshotId} was not found on server.`);
     }
 
-    const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    const snapshot = JSON.parse(row.data_json);
     if (snapshot.clientId && snapshot.clientId !== safeClientId) {
       throw new Error(`Unauthorized snapshot access.`);
     }
@@ -587,17 +585,15 @@ class SnapshotService {
    */
   async reconcileSnapshots(clientId, snapshotIdA, snapshotIdB) {
     const safeClientId = this.getSafeClientId(clientId);
-    clientStorageService.safeMigrateLegacyClientData(safeClientId);
 
-    const snapDir = clientStorageService.getClientSnapshotsDir(safeClientId);
-    const pathA = path.join(snapDir, `${path.basename(snapshotIdA)}.json`);
-    const pathB = path.join(snapDir, `${path.basename(snapshotIdB)}.json`);
+    const rowA = await db.getOne(`SELECT * FROM report_snapshots WHERE id = ? AND client_id = ?`, [snapshotIdA, safeClientId]);
+    const rowB = await db.getOne(`SELECT * FROM report_snapshots WHERE id = ? AND client_id = ?`, [snapshotIdB, safeClientId]);
 
-    if (!fs.existsSync(pathA)) throw new Error(`Snapshot A (${snapshotIdA}) not found.`);
-    if (!fs.existsSync(pathB)) throw new Error(`Snapshot B (${snapshotIdB}) not found.`);
+    if (!rowA) throw new Error(`Snapshot A (${snapshotIdA}) not found.`);
+    if (!rowB) throw new Error(`Snapshot B (${snapshotIdB}) not found.`);
 
-    const snapA = JSON.parse(fs.readFileSync(pathA, 'utf8'));
-    const snapB = JSON.parse(fs.readFileSync(pathB, 'utf8'));
+    const snapA = JSON.parse(rowA.data_json);
+    const snapB = JSON.parse(rowB.data_json);
 
     if (snapA.clientId !== safeClientId || snapB.clientId !== safeClientId) {
       throw new Error(`Unauthorized reconciliation request across tenant boundaries.`);
@@ -865,13 +861,11 @@ class SnapshotService {
    */
   async exportSnapshotCsv(clientId, snapshotId) {
     const safeClientId = this.getSafeClientId(clientId);
-    clientStorageService.safeMigrateLegacyClientData(safeClientId);
 
-    const snapshotPath = path.join(clientStorageService.getClientSnapshotsDir(safeClientId), `${path.basename(snapshotId)}.json`);
+    const row = await db.getOne(`SELECT * FROM report_snapshots WHERE id = ? AND client_id = ?`, [snapshotId, safeClientId]);
+    if (!row) throw new Error('Snapshot not found.');
 
-    if (!fs.existsSync(snapshotPath)) throw new Error('Snapshot file not found.');
-
-    const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    const snapshot = JSON.parse(row.data_json);
     if (snapshot.clientId && snapshot.clientId !== safeClientId) {
       throw new Error('Unauthorized export request.');
     }
