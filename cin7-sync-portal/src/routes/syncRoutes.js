@@ -132,6 +132,84 @@ router.get('/status', enforceTenantIsolation, async (req, res) => {
 });
 
 /**
+ * POST /api/sync/temp-fix-formulas
+ * TEMPORARY one-off admin utility: strips the Family="Finished Goods" filter out of
+ * KPI Dashboard (and related tabs) SUMIFS/COUNTIFS formulas on the master template and
+ * a given spreadsheet, since that field is not currently populated by the Cin7 sync.
+ * Remove this route once no longer needed.
+ */
+router.post('/temp-fix-formulas', requireAuth, async (req, res) => {
+  try {
+    const targetIds = Array.isArray(req.body?.spreadsheetIds) && req.body.spreadsheetIds.length
+      ? req.body.spreadsheetIds
+      : ['1Qnx6RdCgI7krHtZru10J6r11ZpIkubCSR1jzUbs5G9Q'];
+
+    const GoogleSheetsAdapter = require('../services/googleSheetsAdapter');
+    const adapter = new GoogleSheetsAdapter(req.tenantId, req.user || req.session?.user || null);
+    const { sheets } = await adapter.getGoogleClients();
+
+    const FAMILY_FILTER_RE = /,\s*'Sales Transactions Raw Data'!J:J\s*,\s*"Finished Goods"/g;
+    const results = {};
+
+    for (const spreadsheetId of targetIds) {
+      const changed = [];
+      const meta = await sheets.spreadsheets.get({ spreadsheetId, includeGridData: false });
+      const sheetNames = meta.data.sheets.map(s => s.properties.title);
+
+      const dataRes = await sheets.spreadsheets.get({
+        spreadsheetId,
+        includeGridData: true,
+        ranges: sheetNames.map(n => `'${n}'`)
+      });
+
+      const requests = [];
+      for (const sheet of dataRes.data.sheets) {
+        const sheetId = sheet.properties.sheetId;
+        const sheetName = sheet.properties.title;
+        for (const grid of (sheet.data || [])) {
+          const startRow = grid.startRow || 0;
+          const startCol = grid.startColumn || 0;
+          (grid.rowData || []).forEach((row, rIdx) => {
+            (row.values || []).forEach((cell, cIdx) => {
+              const formula = cell.userEnteredValue && cell.userEnteredValue.formulaValue;
+              if (formula && FAMILY_FILTER_RE.test(formula)) {
+                const newFormula = formula.replace(FAMILY_FILTER_RE, '');
+                requests.push({
+                  updateCells: {
+                    range: {
+                      sheetId,
+                      startRowIndex: startRow + rIdx,
+                      endRowIndex: startRow + rIdx + 1,
+                      startColumnIndex: startCol + cIdx,
+                      endColumnIndex: startCol + cIdx + 1
+                    },
+                    rows: [{ values: [{ userEnteredValue: { formulaValue: newFormula } }] }],
+                    fields: 'userEnteredValue.formulaValue'
+                  }
+                });
+                changed.push({ sheet: sheetName, row: startRow + rIdx + 1, col: startCol + cIdx + 1, from: formula, to: newFormula });
+              }
+            });
+          });
+        }
+      }
+
+      for (let i = 0; i < requests.length; i += 100) {
+        const chunk = requests.slice(i, i + 100);
+        await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: chunk } });
+      }
+
+      results[spreadsheetId] = { changedCount: changed.length, changed };
+    }
+
+    res.json({ success: true, results });
+  } catch (err) {
+    console.error('[TEMP FIX FORMULAS ERROR]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/sync/cancel
  * Cancels an in-progress background sync job and releases the tenant mutex lock.
  */
