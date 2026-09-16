@@ -3121,8 +3121,18 @@ async function loadPreviousReports() {
     }
 
     if (tbody) {
-      tbody.innerHTML = snapshots.map(s => {
-        const dateStr = new Date(s.createdAt).toLocaleString(undefined, {
+      // Group snapshots from the same sync run (Sales/Inventory/Purchase are written
+      // together in one sync) into a single row instead of one row per dataset type.
+      const groups = new Map();
+      snapshots.forEach(s => {
+        const key = s.syncRunId || s.createdAt;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(s);
+      });
+
+      tbody.innerHTML = [...groups.values()].map(group => {
+        const first = group[0];
+        const dateStr = new Date(first.createdAt).toLocaleString(undefined, {
           month: 'short',
           day: 'numeric',
           year: 'numeric',
@@ -3130,31 +3140,35 @@ async function loadPreviousReports() {
           minute: '2-digit'
         });
 
-        const badgeClass = s.reportType === 'sales' ? 'badge-sales' : (s.reportType === 'purchase' ? 'badge-purchase' : 'badge-inventory');
-        const safeId = escapeHtml(s.id);
-        const safeType = escapeHtml(s.reportType);
-        const safeName = escapeHtml(s.reportName);
-        const safePeriod = escapeHtml(s.periodLabel || 'Last 365 Days');
+        const totalRecords = group.reduce((sum, s) => sum + (s.recordCount || 0), 0);
+        const safePeriod = escapeHtml(first.periodLabel || 'Last 365 Days');
+        const anyFailed = group.some(s => s.status && s.status !== 'SUCCESS');
+
+        const typeBadges = group.map(s => {
+          const badgeClass = s.reportType === 'sales' ? 'badge-sales' : (s.reportType === 'purchase' ? 'badge-purchase' : 'badge-inventory');
+          const safeId = escapeHtml(s.id);
+          const safeType = escapeHtml(s.reportType);
+          return `
+            <span class="report-type-badge ${badgeClass}" style="cursor: pointer;" onclick="viewSnapshot('${safeId}')" title="View ${safeType}">${safeType}</span>
+          `;
+        }).join('');
 
         return `
           <tr>
             <td style="font-weight: 600; white-space: nowrap;">${dateStr}</td>
             <td>
-              <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <span class="report-type-badge ${badgeClass}">${safeType}</span>
-                <span style="font-weight: 600;">${safeName}</span>
+              <div style="display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap;">
+                ${typeBadges}
+                <span style="font-weight: 600;">${group.length > 1 ? 'Full Sync' : escapeHtml(first.reportName)}</span>
               </div>
             </td>
             <td><span style="color: var(--muted-foreground);">${safePeriod}</span></td>
-            <td style="text-align: right; font-weight: 700; font-family: var(--font-mono);">${(s.recordCount || 0).toLocaleString()}</td>
+            <td style="text-align: right; font-weight: 700; font-family: var(--font-mono);">${totalRecords.toLocaleString()}</td>
             <td>
-              <span class="badge badge-success">✓ Synced</span>
+              <span class="badge ${anyFailed ? 'badge-warning' : 'badge-success'}">${anyFailed ? '⚠ Partial' : '✓ Synced'}</span>
             </td>
-            <td style="text-align: right; white-space: nowrap;">
-              <button class="btn btn-outline btn-sm" onclick="viewSnapshot('${safeId}')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                View
-              </button>
+            <td style="text-align: right; white-space: nowrap; color: var(--muted-foreground); font-size: 0.75rem;">
+              Click a badge to view
             </td>
           </tr>
         `;
