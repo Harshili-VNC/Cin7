@@ -175,6 +175,15 @@ CREATE TABLE IF NOT EXISTS client_sync_state (
     PRIMARY KEY (client_id, report_type)
 );
 
+-- Google OAuth tokens (encrypted) per client/tenant, replacing the local
+-- token.json file which lived on Render's ephemeral disk and was wiped on
+-- every redeploy, forcing repeated "Authorize Google" re-prompts.
+CREATE TABLE IF NOT EXISTS client_google_tokens (
+    client_id VARCHAR(64) PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+    encrypted_tokens TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id VARCHAR(64) PRIMARY KEY,
     organization_id VARCHAR(64) NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -202,6 +211,7 @@ CREATE INDEX IF NOT EXISTS idx_report_snapshots_client_id ON report_snapshots(cl
 CREATE INDEX IF NOT EXISTS idx_report_snapshots_created_at ON report_snapshots(created_at);
 CREATE INDEX IF NOT EXISTS idx_current_reports_client_id ON current_reports(client_id);
 CREATE INDEX IF NOT EXISTS idx_client_sync_state_client_id ON client_sync_state(client_id);
+CREATE INDEX IF NOT EXISTS idx_client_google_tokens_client_id ON client_google_tokens(client_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_org_id ON audit_logs(organization_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 
@@ -315,6 +325,7 @@ DO $$ BEGIN
   ALTER TABLE report_snapshots       ENABLE ROW LEVEL SECURITY;
   ALTER TABLE current_reports        ENABLE ROW LEVEL SECURITY;
   ALTER TABLE client_sync_state      ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE client_google_tokens   ENABLE ROW LEVEL SECURITY;
   ALTER TABLE audit_logs             ENABLE ROW LEVEL SECURITY;
   ALTER TABLE subscriptions          ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_order_cache       ENABLE ROW LEVEL SECURITY;
@@ -359,6 +370,10 @@ EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'current_reports RLS: %', SQLERRM; END $
 DO $$ BEGIN DROP POLICY IF EXISTS client_sync_state_tenant ON client_sync_state;
   CREATE POLICY client_sync_state_tenant ON client_sync_state USING (client_id = current_setting('app.current_client_id', true));
 EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'client_sync_state RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS client_google_tokens_tenant ON client_google_tokens;
+  CREATE POLICY client_google_tokens_tenant ON client_google_tokens USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'client_google_tokens RLS: %', SQLERRM; END $$;
 
 DO $$ BEGIN DROP POLICY IF EXISTS audit_logs_tenant ON audit_logs;
   CREATE POLICY audit_logs_tenant ON audit_logs USING (organization_id = current_setting('app.current_client_id', true));

@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const cryptoService = require('../services/cryptoService');
+const googleTokenStore = require('../services/googleTokenStore');
 const clientStorageService = require('../services/clientStorageService');
 const subscriptionService = require('../services/subscriptionService');
 const { authLimiter, registerLimiter, sensitiveOpLimiter } = require('../middleware/rateLimitMiddleware');
@@ -179,7 +180,15 @@ router.get('/google/callback', async (req, res) => {
     const { tokens } = await oauth2Client.getToken(req.query.code);
     oauth2Client.setCredentials(tokens);
 
+    // Set once the tenant's client_id is resolved below; the 'tokens' event can fire
+    // later (on auto-refresh), by which point this closure variable will be populated.
+    let boundClientId = null;
+
     oauth2Client.on('tokens', (refreshedTokens) => {
+      if (boundClientId) {
+        googleTokenStore.mergeAndSaveClientGoogleTokens(boundClientId, refreshedTokens)
+          .catch(e => console.warn('[GOOGLE AUTH] DB token refresh save error:', e.message));
+      }
       try {
         const credPathCandidate1 = path.resolve(__dirname, '../../', process.env.GOOGLE_CREDENTIALS_PATH || '../cin7-sheets/oauth-credentials.json');
         const credPathCandidate2 = path.resolve(__dirname, '../../../cin7-sheets/oauth-credentials.json');
@@ -249,7 +258,15 @@ router.get('/google/callback', async (req, res) => {
     }
 
     if (!user) throw new Error('Unable to create or load the Google user account.');
-    
+
+    // Persist tokens to the database, scoped to the tenant, so they survive
+    // redeploys. Pending users (no client_id yet) fall back to the session-
+    // carried token until they finish workspace setup (see /setup-workspace).
+    boundClientId = user.client_id || null;
+    if (boundClientId) {
+      await googleTokenStore.saveClientGoogleTokens(boundClientId, tokens);
+    }
+
     const sessionUserData = sessionUserFromGoogleProfile(user, profile);
     // Store only the encrypted token reference in session — never plaintext OAuth tokens
     sessionUserData.googleTokensEncrypted = cryptoService.encrypt(JSON.stringify(tokens));
@@ -398,6 +415,20 @@ router.post('/setup-workspace', async (req, res) => {
       await subscriptionService.createTrialSubscription(clientId, 'PROFESSIONAL', 14);
 
       client = await db.getOne('SELECT * FROM clients WHERE id = ?', [clientId]);
+    }
+
+    // If this user signed in via Google before a client_id existed, their tokens were
+    // only held in the session; persist them to the now-known tenant so they survive
+    // redeploys and future background syncs can use them.
+    if (sessionUser.googleTokensEncrypted) {
+      try {
+        const decrypted = cryptoService.decrypt(sessionUser.googleTokensEncrypted);
+        if (decrypted) {
+          await googleTokenStore.saveClientGoogleTokens(clientId, JSON.parse(decrypted));
+        }
+      } catch (e) {
+        console.warn('[AUTH] Notice persisting Google tokens on workspace setup:', e.message);
+      }
     }
 
     const cleanFullName = (fullName && typeof fullName === 'string' && fullName.trim()) ? fullName.trim() : (sessionUser.full_name || userEmail.split('@')[0]);

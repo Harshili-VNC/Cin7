@@ -6,6 +6,7 @@ const { google } = require('googleapis');
 const { v4: uuidv4 } = require('uuid');
 const clientStorageService = require('./clientStorageService');
 const cryptoService = require('./cryptoService');
+const googleTokenStore = require('./googleTokenStore');
 
 const SALES_SHEET = 'Sales Transactions Raw Data';
 const INVENTORY_SHEET = 'Inventory On Hand Raw Data';
@@ -31,14 +32,18 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       return { drive: this.drive, sheets: this.sheets };
     }
 
-    // Try oauth token from user account first if present
-    let userTokens = null;
-    if (this.userOAuthAccount && this.userOAuthAccount.googleTokensEncrypted) {
+    // 1. Prefer the database — durable, tenant-scoped, survives redeploys
+    //    (unlike the local token.json file on Render's ephemeral disk).
+    let userTokens = await googleTokenStore.getClientGoogleTokens(this.clientId);
+
+    // 2. Fall back to the token carried on the session for this request
+    //    (covers a brand-new Google user who hasn't picked a client_id yet).
+    if (!userTokens && this.userOAuthAccount && this.userOAuthAccount.googleTokensEncrypted) {
       try {
         const decrypted = cryptoService.decrypt(this.userOAuthAccount.googleTokensEncrypted);
         if (decrypted) userTokens = JSON.parse(decrypted);
       } catch (_) {}
-    } else if (this.userOAuthAccount && this.userOAuthAccount.access_token) {
+    } else if (!userTokens && this.userOAuthAccount && this.userOAuthAccount.access_token) {
       userTokens = {
         access_token: this.userOAuthAccount.access_token,
         refresh_token: this.userOAuthAccount.refresh_token
@@ -51,6 +56,10 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         process.env.GOOGLE_CLIENT_SECRET
       );
       oauth2Client.setCredentials(userTokens);
+      oauth2Client.on('tokens', (refreshedTokens) => {
+        googleTokenStore.mergeAndSaveClientGoogleTokens(this.clientId, refreshedTokens)
+          .catch(e => console.warn('[GOOGLE SHEETS] DB token refresh save error:', e.message));
+      });
       this.authClient = oauth2Client;
     } else {
       // Look for credentials file
@@ -87,9 +96,15 @@ class GoogleSheetsAdapter extends DestinationAdapter {
 
         if (token) {
           oauth2Client.setCredentials(token);
+          // Self-heal: this legacy file only exists on this same ephemeral disk
+          // instance right now, so also copy it into the durable DB store.
+          googleTokenStore.saveClientGoogleTokens(this.clientId, token)
+            .catch(e => console.warn('[GOOGLE SHEETS] DB token backfill error:', e.message));
         }
 
         oauth2Client.on('tokens', (refreshedTokens) => {
+          googleTokenStore.mergeAndSaveClientGoogleTokens(this.clientId, refreshedTokens)
+            .catch(e => console.warn('[GOOGLE SHEETS] DB token refresh save error:', e.message));
           try {
             let current = {};
             if (fs.existsSync(tokenPath)) {
