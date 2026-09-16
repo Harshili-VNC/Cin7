@@ -312,12 +312,12 @@ async function executeFullSyncBackground({
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('FETCHING', 1, 5, 58, 'Fetching Inventory stock from Cin7...');
+    updateProgress('ENRICHING', 0, 0, 58, 'Fetching Inventory stock from Cin7...');
     const invData = await cin7Engine.fetchInventory(clientId);
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('FETCHING', 1, 5, 64, 'Fetching Purchase Orders from Cin7...');
+    updateProgress('ENRICHING', 0, 0, 64, 'Fetching Purchase Orders from Cin7...');
     const fetchedPO = await cin7Engine.fetchPurchaseOrders(clientId, { updatedSince: poUpdatedSince });
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
