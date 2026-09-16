@@ -486,7 +486,7 @@ function toNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function mapSaleLineToRow(sale, line) {
+function mapSaleLineToRow(sale, line, productMap = null) {
   const dateValue = sale.OrderDate || sale.InvoiceDate;
   const date = dateValue ? new Date(dateValue) : new Date();
   const year = date.getFullYear() || 2026;
@@ -498,6 +498,7 @@ function mapSaleLineToRow(sale, line) {
   const margin = revenue > 0 ? Number((profit / revenue).toFixed(4)) : 0;
   const sku = String(line.SKU || '').trim();
   const sourceChannel = sale.SourceChannel || sale.SaleChannel || '';
+  const productInfo = productMap ? (productMap.get(sku) || {}) : {};
 
   return [
     year,
@@ -507,9 +508,9 @@ function mapSaleLineToRow(sale, line) {
     sale.InvoiceNumber || '',
     sku,
     sku,
-    line.Brand || '',
-    line.Category || '',
-    line.Family || '',
+    line.Brand || productInfo.brand || '',
+    line.Category || productInfo.category || '',
+    line.Family || productInfo.family || '',
     sale.Type || 'Commercial',
     sale.Customer || '',
     sale.Status || sale.CombinedInvoiceStatus || '',
@@ -767,6 +768,70 @@ const SALES_HEADERS = [
   'COGS', 'Profit less journals', 'Journals', 'Profit', 'Profit'
 ];
 
+// In-memory per-client cache of the SKU -> {brand, category, family} product master map.
+// Rebuilt once per sync run rather than per-SKU lookup.
+const productMasterCache = new Map();
+
+/**
+ * Fetches Cin7's Product master list and builds a SKU -> {brand, category, family} map.
+ * Category/Brand/Family live on the product master record, not on Sale/Purchase order
+ * lines, so this is required to populate those columns in the synced sheets.
+ *
+ * NOTE: Cin7 Core's exact field name for "Family" is not confirmed against live docs —
+ * this tries several common candidates and logs the raw shape of the first record so
+ * the correct key can be verified/adjusted from real API output if needed.
+ */
+async function fetchProductMaster(clientId) {
+  const creds = await getClientCin7Credentials(clientId);
+  const map = new Map();
+  try {
+    console.log('[CIN7 LIVE] Fetching Product master (Brand/Category/Family) from Cin7 Core API...');
+    let allProducts = [];
+    let page = 1;
+    let totalInApi = 0;
+    let loggedSample = false;
+
+    while (true) {
+      const res = await cin7ApiGet(`${CIN7_BASE_URL}/ref/product`, {
+        headers: cin7Headers(creds),
+        params: { Page: page, Limit: 100 },
+        timeout: 30000
+      }, 'Product Master', 5);
+
+      totalInApi = res.data?.Total || 0;
+      const products = res.data?.Products || res.data?.ProductList || [];
+
+      if (!loggedSample && products.length) {
+        console.log('[CIN7 LIVE] Sample Product master record (verify field names):', JSON.stringify(products[0]));
+        loggedSample = true;
+      }
+
+      console.log(`Product Master: records fetched from page ${page}: ${products.length} (Total in Cin7: ${totalInApi})`);
+      allProducts = allProducts.concat(products);
+
+      if (products.length === 0 || allProducts.length >= totalInApi) {
+        break;
+      }
+      page++;
+    }
+
+    for (const p of allProducts) {
+      const sku = String(p.SKU || '').trim();
+      if (!sku) continue;
+      map.set(sku, {
+        brand: p.Brand || '',
+        category: p.Category || '',
+        family: p.Family || p.ProductFamily || p.Group || p.CategoryGroup || ''
+      });
+    }
+
+    console.log(`[CIN7 LIVE] Product master map built: ${map.size} SKUs.`);
+  } catch (err) {
+    console.warn('[CIN7 LIVE] Product master fetch failed (non-fatal, Brand/Category/Family will be blank):', err.message);
+  }
+  return map;
+}
+
 /**
  * Fetches real Sales orders from Cin7 Core API without silent fallback to demo data.
  */
@@ -827,10 +892,12 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
     const detailedSales = await fetchSaleDetailsConcurrently(allSales, creds, clientId, onProgress, isCancelled);
     const enrichDuration = ((Date.now() - enrichStartMs) / 1000).toFixed(2);
 
+    const productMap = await fetchProductMaster(clientId);
+
     const rows = detailedSales.flatMap(({ sale, lines }) =>
       lines
         .filter(line => String(line.SKU || '').trim())
-        .map(line => mapSaleLineToRow(sale, line))
+        .map(line => mapSaleLineToRow(sale, line, productMap))
     );
 
     const totalDuration = ((Date.now() - startMs) / 1000).toFixed(2);
