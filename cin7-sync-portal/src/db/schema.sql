@@ -314,6 +314,25 @@ CREATE INDEX IF NOT EXISTS idx_cin7_purchase_orders_client ON cin7_purchase_orde
 -- All policies read current_setting('app.current_client_id', true) which the
 -- application sets per-transaction via SET LOCAL before running tenant queries.
 -- The Supabase service-role key bypasses RLS entirely (Supabase default).
+--
+-- IMPORTANT CAVEAT: by default, Postgres exempts a table's OWNER from its own RLS
+-- policies (and always exempts superusers/BYPASSRLS roles, no matter what).
+-- Since this schema is applied by the same role the app connects with (the
+-- `postgres` role from DATABASE_URL / SUPABASE_DB_URL), that role owns every
+-- table above and would silently bypass all policies unless FORCE ROW LEVEL
+-- SECURITY is set. FORCE is only applied below to the 5 raw Cin7 data tables
+-- (cin7_order_cache/sales_orders/order_lines/inventory/purchase_orders) because
+-- every query against them already goes through db.queryWithTenant(), which
+-- sets app.current_client_id before querying — confirmed via full repo search.
+-- The other tenant tables (clients, users, sync_runs, report_snapshots, etc.)
+-- are intentionally NOT forced: the platform admin dashboard (src/routes/adminRoutes.js)
+-- legitimately reads across all clients on those tables via plain db.query() with no
+-- client_id filter, and forcing RLS there without also setting the session variable
+-- would return empty results and break that dashboard.
+-- Verify whether FORCE actually restricts your connection by running, against the
+-- live database: SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;
+-- If rolsuper or rolbypassrls is true, FORCE ROW LEVEL SECURITY has no effect and a
+-- separate, non-superuser Postgres role would be needed for a real DB-level backstop.
 
 DO $$ BEGIN
   ALTER TABLE clients                ENABLE ROW LEVEL SECURITY;
@@ -333,6 +352,12 @@ DO $$ BEGIN
   ALTER TABLE cin7_order_lines       ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_inventory         ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_purchase_orders   ENABLE ROW LEVEL SECURITY;
+
+  ALTER TABLE cin7_order_cache       FORCE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_sales_orders      FORCE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_order_lines       FORCE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_inventory         FORCE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_purchase_orders   FORCE ROW LEVEL SECURITY;
 EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'RLS enable: %', SQLERRM; END $$;
 
 DO $$ BEGIN DROP POLICY IF EXISTS clients_tenant ON clients;

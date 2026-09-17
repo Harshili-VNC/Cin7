@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
-const { requireAuth, requireActiveSubscription, requireCanSync } = require('../middleware/authMiddleware');
+const { requireAuth, requireActiveSubscription, requireCanSync, requireSuperAdmin } = require('../middleware/authMiddleware');
 const { enforceTenantIsolation } = require('../middleware/tenantMiddleware');
 const { syncLimiter } = require('../middleware/rateLimitMiddleware');
 const cin7Engine = require('../services/cin7Engine');
@@ -137,12 +137,32 @@ router.get('/status', enforceTenantIsolation, async (req, res) => {
  * KPI Dashboard (and related tabs) SUMIFS/COUNTIFS formulas on the master template and
  * a given spreadsheet, since that field is not currently populated by the Cin7 sync.
  * Remove this route once no longer needed.
+ *
+ * SUPER_ADMIN only: this utility can rewrite formulas on any client's live spreadsheet,
+ * so it must not be reachable by a regular (single-tenant) authenticated user. The target
+ * spreadsheetIds are also restricted to the shared master template plus IDs already on
+ * record as a provisioned client destination — arbitrary/unknown IDs are rejected so the
+ * endpoint can't be pointed at a spreadsheet outside the platform's own tenants.
  */
-router.post('/temp-fix-formulas', requireAuth, async (req, res) => {
+router.post('/temp-fix-formulas', requireAuth, requireSuperAdmin, async (req, res) => {
   try {
-    const targetIds = Array.isArray(req.body?.spreadsheetIds) && req.body.spreadsheetIds.length
+    const MASTER_TEMPLATE_ID = process.env.GoogleMasterTemp || '1Qnx6RdCgI7krHtZru10J6r11ZpIkubCSR1jzUbs5G9Q';
+    const requestedIds = Array.isArray(req.body?.spreadsheetIds) && req.body.spreadsheetIds.length
       ? req.body.spreadsheetIds
-      : ['1Qnx6RdCgI7krHtZru10J6r11ZpIkubCSR1jzUbs5G9Q'];
+      : [MASTER_TEMPLATE_ID];
+
+    const knownDestRes = await db.query("SELECT DISTINCT file_id FROM destination_files WHERE provider = 'google'");
+    const knownIds = new Set((knownDestRes.rows || []).map(r => r.file_id));
+    knownIds.add(MASTER_TEMPLATE_ID);
+
+    const targetIds = requestedIds.filter(id => knownIds.has(id));
+    const rejectedIds = requestedIds.filter(id => !knownIds.has(id));
+    if (rejectedIds.length) {
+      console.warn('[TEMP FIX FORMULAS] Rejected unknown spreadsheetId(s) not on record for any tenant:', rejectedIds);
+    }
+    if (!targetIds.length) {
+      return res.status(400).json({ success: false, error: 'No valid spreadsheetIds. Each ID must be the master template or a spreadsheet already provisioned for a client.', rejectedIds });
+    }
 
     const GoogleSheetsAdapter = require('../services/googleSheetsAdapter');
     const adapter = new GoogleSheetsAdapter(req.tenantId, req.user || req.session?.user || null);
