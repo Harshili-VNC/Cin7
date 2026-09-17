@@ -12,6 +12,7 @@ const SALES_SHEET = 'Sales Transactions Raw Data';
 const INVENTORY_SHEET = 'Inventory On Hand Raw Data';
 const PURCHASES_SHEET = 'Purchase Transactions Raw data';
 const LOG_SHEET = 'Sync Log';
+const COVER_SHEET = '📋 Cover & Index';
 
 class GoogleSheetsAdapter extends DestinationAdapter {
   constructor(clientId, userOAuthAccount) {
@@ -214,6 +215,17 @@ class GoogleSheetsAdapter extends DestinationAdapter {
 
     console.log(`Generated NEW Spreadsheet ID: ${fileId}`);
     console.log(`Generated NEW Spreadsheet URL: ${fileUrl}`);
+
+    // Write the resolved client company name into the Cover & Index landing page.
+    // KPI Dashboard!A1, Sales Dashboard!A1 and Cost Inputs!A1 reference this cell via
+    // formula, so setting it once here is enough for the client's real name to show
+    // everywhere instead of the master template's placeholder text.
+    try {
+      await this.injectSheetData(fileId, COVER_SHEET, 'A2', [[String(clientName).trim()]]);
+      console.log(`[GOOGLE SHEETS] Wrote company name "${clientName}" into '${COVER_SHEET}'!A2`);
+    } catch (nameErr) {
+      console.warn(`[GOOGLE SHEETS] Could not write company name into '${COVER_SHEET}'!A2:`, nameErr.message);
+    }
 
     // 4. Granting Access: Anyone with link + explicit user email
     try {
