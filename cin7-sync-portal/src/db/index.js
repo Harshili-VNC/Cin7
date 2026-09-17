@@ -1183,11 +1183,43 @@ class PostgresDatabaseAdapter {
 
 class SupabaseDatabaseAdapter {
   constructor() {
-    const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
-    this.pool = new pg.Pool({
-      connectionString,
+    // Root/owner credential — the same one used since before app_client/app_admin existed.
+    // DDL (schema.sql: CREATE TABLE, ALTER TABLE ... ROW LEVEL SECURITY, CREATE POLICY) can
+    // only be run by the table owner, so this connection is reserved for initSchema() below
+    // regardless of whether DATABASE_URL_ADMIN/DATABASE_URL_TENANT are configured.
+    const rootConnectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+
+    // DATABASE_URL_ADMIN / DATABASE_URL_TENANT are optional. Until they're set (e.g. on first
+    // deploy of this change), both fall back to the root credential and behavior is unchanged.
+    const adminConnectionString = process.env.DATABASE_URL_ADMIN || rootConnectionString;
+    const tenantConnectionString = process.env.DATABASE_URL_TENANT || rootConnectionString;
+
+    this.schemaPool = new pg.Pool({
+      connectionString: rootConnectionString,
       ssl: { rejectUnauthorized: false }
     });
+
+    // General app queries (auth, billing, reports, admin dashboard, etc.) — ideally the
+    // scoped app_admin role (BYPASSRLS, no ownership) rather than the project's root role.
+    this.pool = new pg.Pool({
+      connectionString: adminConnectionString,
+      ssl: { rejectUnauthorized: false }
+    });
+
+    // Tenant-scoped queries only (queryWithTenant, used by cin7Engine.js for the 5 raw Cin7
+    // tables) — ideally the least-privilege app_client role, which FORCE ROW LEVEL SECURITY
+    // actually restricts.
+    this.tenantPool = new pg.Pool({
+      connectionString: tenantConnectionString,
+      ssl: { rejectUnauthorized: false }
+    });
+
+    console.log(process.env.DATABASE_URL_ADMIN
+      ? '[SupabaseAdapter] General queries: using dedicated app_admin role.'
+      : '[SupabaseAdapter] General queries: DATABASE_URL_ADMIN not set — still using the shared root credential.');
+    console.log(process.env.DATABASE_URL_TENANT
+      ? '[SupabaseAdapter] Tenant-scoped queries: using dedicated app_client role (RLS-enforced).'
+      : '[SupabaseAdapter] Tenant-scoped queries: DATABASE_URL_TENANT not set — queryWithTenant() still uses the shared root credential (RLS has no effect for that role).');
 
     // Initialize Supabase JS client (for auth/storage/realtime — future use)
     if (supabaseJs && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -1209,7 +1241,9 @@ class SupabaseDatabaseAdapter {
       const schemaPath = path.join(__dirname, 'schema.sql');
       if (fs.existsSync(schemaPath)) {
         const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-        await this.pool.query(schemaSql);
+        // Always the root/owner connection: app_admin only has row-level DML grants, not the
+        // ownership needed to ALTER TABLE / CREATE POLICY / enable-or-force RLS.
+        await this.schemaPool.query(schemaSql);
         console.log('[SupabaseAdapter] Schema initialized successfully.');
       }
       await this.seedSuperAdmin();
@@ -1274,7 +1308,14 @@ class SupabaseDatabaseAdapter {
   }
 
   async queryWithTenant(sql, params = [], clientId) {
-    const client = await this.pool.connect();
+    // clientId is interpolated directly into SQL below (SET LOCAL doesn't accept bind
+    // parameters), so it's re-validated here against the same allow-list every caller is
+    // already expected to apply (clientStorageService.validateClientId), as a second layer
+    // rather than trusting each call site.
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(String(clientId || ''))) {
+      throw new Error('[SupabaseAdapter] queryWithTenant: invalid or missing clientId.');
+    }
+    const client = await this.tenantPool.connect();
     try {
       await client.query('BEGIN');
       await client.query(`SET LOCAL app.current_client_id = '${clientId}'`);
