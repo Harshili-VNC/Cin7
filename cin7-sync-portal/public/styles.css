@@ -3144,12 +3144,6 @@ input:checked + .slider:before {
    SUPER ADMIN PORTAL & BILLING STYLES
    ========================================================================== */
 
-.admin-wrapper {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
 .admin-hero-card {
   background: #ffffff;
   border: 1px solid var(--border);
