@@ -11,7 +11,10 @@ const { v4: uuidv4 } = require('uuid');
 class BillingProviderService {
   constructor() {
     this.providerName = process.env.BILLING_PROVIDER || 'neutral';
-    this.webhookSecret = process.env.BILLING_WEBHOOK_SECRET || 'vnc_mock_billing_secret_2026';
+    if (!process.env.BILLING_WEBHOOK_SECRET) {
+      console.warn('[billingProviderService] WARNING: BILLING_WEBHOOK_SECRET not set — generating an ephemeral random secret for this process. Set BILLING_WEBHOOK_SECRET before wiring in a real payment provider.');
+    }
+    this.webhookSecret = process.env.BILLING_WEBHOOK_SECRET || crypto.randomBytes(32).toString('hex');
   }
 
   /**

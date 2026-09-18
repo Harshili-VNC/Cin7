@@ -14,10 +14,37 @@ const PURCHASES_SHEET = 'Purchase Transactions Raw data';
 const LOG_SHEET = 'Sync Log';
 const COVER_SHEET = '📋 Cover & Index';
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/**
+ * Returns `count` calendar months ending at (and including) the month containing
+ * refDate, oldest first. Used to drive the "Sales Trend Analysis" tab's rolling
+ * month columns from the sync's actual reference date instead of a hardcoded year.
+ */
+function getTrailingMonths(refDate, count) {
+  const anchor = new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), 1));
+  const months = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const monthDate = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - i, 1));
+    months.push({
+      year: monthDate.getUTCFullYear(),
+      monthName: MONTH_NAMES[monthDate.getUTCMonth()],
+      isoDate: monthDate.toISOString().split('T')[0]
+    });
+  }
+  return months;
+}
+
 class GoogleSheetsAdapter extends DestinationAdapter {
   constructor(clientId, userOAuthAccount) {
     super(clientId, userOAuthAccount);
-    this.clientId = clientStorageService.validateClientId(clientId || 'client-vnc-master');
+    if (!clientId) {
+      // Never silently fall back to a real tenant here — a caller that forgot to
+      // resolve its own clientId must fail loudly, not read/write the master
+      // tenant's Google Sheets storage and OAuth tokens instead.
+      throw new Error('GoogleSheetsAdapter requires an explicit clientId.');
+    }
+    this.clientId = clientStorageService.validateClientId(clientId);
     this.storageDir = clientStorageService.getClientGoogleSheetsDir(this.clientId);
     this.user = userOAuthAccount;
     this.userOAuthAccount = userOAuthAccount;
@@ -227,21 +254,11 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       console.warn(`[GOOGLE SHEETS] Could not write company name into '${COVER_SHEET}'!A2:`, nameErr.message);
     }
 
-    // 4. Granting Access: Anyone with link + explicit user email
-    try {
-      console.log(`[GOOGLE SHEETS] Granting anyone-with-link access to ${fileId}`);
-      await drive.permissions.create({
-        fileId: fileId,
-        requestBody: {
-          role: 'reader',
-          type: 'anyone'
-        }
-      });
-      console.log(`[GOOGLE SHEETS] Anyone-with-link access granted successfully`);
-    } catch (anyoneErr) {
-      console.warn(`[GOOGLE SHEETS] Anyone permission notice: ${anyoneErr.message}`);
-    }
-
+    // 4. Granting Access: explicit user email only. Deliberately NOT granting
+    //    "anyone with the link" access — every raw sales/inventory/PO workbook this
+    //    creates would otherwise be readable by anyone on the internet who obtains the
+    //    file ID, which also lets any tenant's own Google credentials read another
+    //    tenant's sheet if the ID leaks (see /api/sync/pull-sheets tenant scoping).
     const targetViewerEmail = (this.user && this.user.email) || clientEmail || null;
     if (targetViewerEmail) {
       try {
@@ -496,8 +513,10 @@ class GoogleSheetsAdapter extends DestinationAdapter {
   /**
    * Dynamically adapts the cloned template's reporting formulas to match the client's actual Cin7 products & channels.
    * This ensures the client sees real calculated revenue, COGS, margins, and stock levels rather than $0.
+   * @param {{dateRange?: string, startDate?: string, endDate?: string}} syncWindow the sync's selected filter
+   *   range (as chosen when the sync was triggered) — drives which 10 trailing months "Sales Trend Analysis" covers.
    */
-  async updateClonedReportFormulas(spreadsheetId, salesData, invData) {
+  async updateClonedReportFormulas(spreadsheetId, salesData, invData, syncWindow = {}) {
     try {
       console.log(`[DYNAMIC REPORTS] Adapting cloned reporting sheets in ${spreadsheetId} to live Cin7 catalog...`);
       const { sheets } = await this.getGoogleClients();
@@ -660,6 +679,56 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         ]]
       });
 
+      // Reference date driving every dynamic year/month formula below (Monthly Order
+      // Activity Summary and Sales Trend Analysis) — the sync's own custom end date if
+      // one was selected, otherwise the moment this sync is running. Nothing past this
+      // point should ever hardcode a year or month literal.
+      const trendRefDate = (syncWindow.dateRange === 'custom' && syncWindow.endDate)
+        ? new Date(syncWindow.endDate)
+        : new Date();
+
+      // Fixes a corrupted formula found in the master template: a mangled external-workbook
+      // reference ('[1]Sales I18Transactions Raw Data') that produced #VALUE! for every
+      // client's "Unshipped / Pending" row and broke the TOTAL row beneath it.
+      batchData.push({
+        range: "'Weekly Order Tracker'!B14",
+        values: [[`=COUNTIFS('Sales Transactions Raw Data'!P:P,"<>Shipped",'Sales Transactions Raw Data'!P:P,"<>")`]]
+      });
+
+      // "Monthly Order Activity Summary" (rows 29-34) — same treatment as Sales Trend
+      // Analysis: fully regenerated every sync from the sync's own reference date so no
+      // year/month is ever hardcoded. Column A gets the real month date; columns B-H
+      // derive their month/year criteria from that same row's own date cell.
+      const activityMonths = getTrailingMonths(trendRefDate, 6);
+      const activityRows = [29, 30, 31, 32, 33, 34];
+
+      activityRows.forEach((row, idx) => {
+        const dateCell = `$A${row}`;
+        batchData.push({ range: `'Weekly Order Tracker'!A${row}`, values: [[activityMonths[idx].isoDate]] });
+        batchData.push({
+          range: `'Weekly Order Tracker'!B${row}`,
+          values: [[`=COUNTIFS('Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}))`]]
+        });
+        batchData.push({
+          range: `'Weekly Order Tracker'!C${row}`,
+          values: [[`=COUNTIFS('Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}),'Sales Transactions Raw Data'!N:N,"Invoiced")+COUNTIFS('Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}),'Sales Transactions Raw Data'!N:N,"Invoiced / credited")`]]
+        });
+        batchData.push({
+          range: `'Weekly Order Tracker'!E${row}:F${row}`,
+          values: [[
+            `=COUNTIFS('Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}),'Sales Transactions Raw Data'!P:P,"Shipped")`,
+            `=COUNTIFS('Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}),'Sales Transactions Raw Data'!P:P,"<>Shipped",'Sales Transactions Raw Data'!P:P,"<>")`
+          ]]
+        });
+        batchData.push({
+          range: `'Weekly Order Tracker'!G${row}:H${row}`,
+          values: [[
+            `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}))`,
+            `=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}))`
+          ]]
+        });
+      });
+
       // F. "Sales Dashboard" Chart Data 3 (Top Products)
       topProducts.forEach((p, i) => {
         const rowNum = 26 + i;
@@ -669,6 +738,71 @@ class GoogleSheetsAdapter extends DestinationAdapter {
           values: [[`=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]]
         });
       });
+
+      // G. "Sales Trend Analysis" — fully regenerated on every sync from the same
+      // trendRefDate above, instead of a hardcoded year baked into the template. Fixes
+      // both the stale-year bug and the scrambled per-column formulas found in the master
+      // template (some columns referenced the wrong raw-data column or the wrong channel).
+      const trendMonths = getTrailingMonths(trendRefDate, 10);
+      const monthCols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'];
+
+      // Header row: real dates driving every formula below via TEXT(col$3,"mmmm") / YEAR(col$3)
+      batchData.push({ range: "'Sales Trend Analysis'!B3:K3", values: [trendMonths.map(m => m.isoDate)] });
+
+      const trendChannels = [
+        { row: 4, channel: 'amazon' },
+        { row: 5, channel: 'amazon-us' },
+        { row: 6, channel: 'Shopify web' },
+        { row: 7, channel: 'Shopify POS' },
+        { row: 8, channel: 'Shopify admin' },
+        { row: 9, channel: 'subscription_contract' },
+        { row: 10, channel: 'subscription_contract_checkout_one' },
+        { row: 11, channel: '296827748353' },
+        { row: 12, channel: 'faire' },
+        { row: 13, channel: 'tiktok' },
+        { row: 14, channel: '4901177' },
+        { row: 15, channel: '3890849' },
+        { row: 16, channel: '2329312' }
+      ];
+
+      trendChannels.forEach(({ row, channel }) => {
+        const rowFormulas = monthCols.map(col =>
+          `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!S:S,"${channel}",'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+        );
+        batchData.push({ range: `'Sales Trend Analysis'!B${row}:K${row}`, values: [rowFormulas] });
+      });
+
+      // TOTAL REVENUE (row 17): summed directly from raw data, independent of the channel
+      // breakdown above — so it stays correct even for channel values the taxonomy above
+      // doesn't recognize, rather than under-counting like SUM(channel rows) would.
+      const totalRevenueFormulas = monthCols.map(col =>
+        `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+      );
+      batchData.push({ range: "'Sales Trend Analysis'!B17:K17", values: [totalRevenueFormulas] });
+
+      // COGS (row 19)
+      const cogsFormulas = monthCols.map(col =>
+        `=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+      );
+      batchData.push({ range: "'Sales Trend Analysis'!B19:K19", values: [cogsFormulas] });
+
+      // GROSS PROFIT — rows 18 and 20 are both labeled as gross profit in the template;
+      // keep both in sync rather than leaving one to a broken legacy formula.
+      const grossProfitFormulas = monthCols.map(col => `=${col}17-${col}19`);
+      batchData.push({ range: "'Sales Trend Analysis'!B18:K18", values: [grossProfitFormulas] });
+      batchData.push({ range: "'Sales Trend Analysis'!B20:K20", values: [grossProfitFormulas] });
+
+      // Gross Margin % (row 21)
+      const marginFormulas = monthCols.map(col => `=IF(${col}17=0,"-",${col}18/${col}17)`);
+      batchData.push({ range: "'Sales Trend Analysis'!B21:K21", values: [marginFormulas] });
+
+      // MoM Revenue Growth (row 22) — first column has no prior month to compare against
+      const momFormulas = monthCols.map((col, idx) => {
+        if (idx === 0) return '-';
+        const prevCol = monthCols[idx - 1];
+        return `=IF(${prevCol}17=0,"-",${col}17/${prevCol}17-1)`;
+      });
+      batchData.push({ range: "'Sales Trend Analysis'!B22:K22", values: [momFormulas] });
 
       // Execute batch update
       await sheets.spreadsheets.values.batchUpdate({
@@ -744,6 +878,79 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       purchase: { headers: poHeaders, rows: poRows },
       kpiRows
     };
+  }
+
+  /**
+   * Reads every tab of a live Google Sheet exactly as it appears in Sheets (tab names,
+   * order, and formatted cell values) so an in-app preview can never drift from the
+   * real spreadsheet. Unlike readSpreadsheetData (which knows fixed headers for the 3
+   * raw-data tabs) this is fully generic and works for any tab in the workbook.
+   * @param {string} spreadsheetId
+   * @returns {Promise<{ sheets: { name: string, rows: any[][] }[] }>}
+   */
+  async readWorkbookPreview(spreadsheetId) {
+    if (!spreadsheetId) {
+      throw new Error('Spreadsheet ID is required to preview Google Sheet data.');
+    }
+    const { sheets } = await this.getGoogleClients();
+
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(title,index,gridProperties(rowCount,columnCount)))'
+    });
+
+    const sheetProps = (meta.data.sheets || [])
+      .map(s => s.properties)
+      .sort((a, b) => a.index - b.index);
+
+    if (sheetProps.length === 0) {
+      return { sheets: [] };
+    }
+
+    const MAX_ROWS = 500;
+    const MAX_COLS = 30;
+    const colLetter = (n) => {
+      let s = '';
+      while (n > 0) {
+        const rem = (n - 1) % 26;
+        s = String.fromCharCode(65 + rem) + s;
+        n = Math.floor((n - 1) / 26);
+      }
+      return s || 'A';
+    };
+
+    const ranges = sheetProps.map(p => {
+      const rowCount = Math.min(p.gridProperties?.rowCount || MAX_ROWS, MAX_ROWS);
+      const colCount = Math.min(p.gridProperties?.columnCount || MAX_COLS, MAX_COLS);
+      return `'${p.title}'!A1:${colLetter(colCount)}${rowCount}`;
+    });
+
+    const response = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId,
+      ranges,
+      valueRenderOption: 'FORMATTED_VALUE'
+    });
+
+    const valueRanges = response.data.valueRanges || [];
+
+    const trimTrailingEmptyRows = (rawRows) => {
+      if (!Array.isArray(rawRows)) return [];
+      let end = rawRows.length;
+      while (end > 0) {
+        const row = rawRows[end - 1];
+        const hasContent = Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+        if (hasContent) break;
+        end--;
+      }
+      return rawRows.slice(0, end);
+    };
+
+    const previewSheets = sheetProps.map((p, idx) => ({
+      name: p.title,
+      rows: trimTrailingEmptyRows(valueRanges[idx]?.values)
+    }));
+
+    return { sheets: previewSheets };
   }
 }
 

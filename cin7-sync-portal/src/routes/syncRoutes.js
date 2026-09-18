@@ -408,7 +408,7 @@ async function executeFullSyncBackground({
 
       // Update dynamic report formulas
       updateProgress('CALCULATING', 4, 5, 90, 'Updating dynamic dashboard and KPI formulas...');
-      await adapter.updateClonedReportFormulas(newSpreadsheetId, salesData, invData);
+      await adapter.updateClonedReportFormulas(newSpreadsheetId, salesData, invData, { dateRange, startDate, endDate });
 
       await adapter.updateSyncLog({
         syncType: 'google_sheets',
@@ -1086,21 +1086,22 @@ router.post('/pull-sheets', requireAuth, enforceTenantIsolation, requireCanSync,
   }
 
   try {
-    // 1. Resolve spreadsheet ID (from body or destination_files DB)
-    let spreadsheetId = req.body?.spreadsheetId;
+    // 1. Resolve spreadsheet ID strictly from this tenant's own destination_files row.
+    //    A client-supplied spreadsheetId is never trusted here: every generated sheet is
+    //    shared "anyone with the link", so honoring an arbitrary ID would let one tenant
+    //    pull another tenant's live Cin7 data into their own dashboard.
+    let spreadsheetId = null;
     let spreadsheetUrl = null;
     let fileName = null;
 
-    if (!spreadsheetId) {
-      const dest = await db.getOne(
-        "SELECT file_id, file_name, file_url FROM destination_files WHERE client_id = ? AND provider = 'google' ORDER BY created_at DESC LIMIT 1",
-        [clientId]
-      );
-      if (dest) {
-        spreadsheetId = dest.file_id;
-        spreadsheetUrl = dest.file_url;
-        fileName = dest.file_name;
-      }
+    const dest = await db.getOne(
+      "SELECT file_id, file_name, file_url FROM destination_files WHERE client_id = ? AND provider = 'google' ORDER BY created_at DESC LIMIT 1",
+      [clientId]
+    );
+    if (dest) {
+      spreadsheetId = dest.file_id;
+      spreadsheetUrl = dest.file_url;
+      fileName = dest.file_name;
     }
 
     if (!spreadsheetId) {

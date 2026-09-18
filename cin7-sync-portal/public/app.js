@@ -2440,298 +2440,47 @@ async function clearOrderDetailCache() {
 
 // ── 6. WORKBOOK VIEWER & DOWNLOAD ───────────────────────────────────────────
 
-function openWorkbookViewer() {
+async function openWorkbookViewer() {
   const modal = document.getElementById('workbook-viewer-modal');
   const tabsBar = document.getElementById('viewer-tabs-bar');
   const tableContainer = document.getElementById('viewer-table-container');
 
   if (modal) modal.classList.remove('hidden');
-
-  if (tabsBar) {
-    tabsBar.innerHTML = state.workbookSheets.map((s, idx) => `
-      <button class="sheet-tab-btn ${idx === 0 ? 'active' : ''}" onclick="selectViewerSheet('${escapeHtml(s)}', this)">
-        ${escapeHtml(s)}
-      </button>
-    `).join('');
+  if (tabsBar) tabsBar.innerHTML = '';
+  if (tableContainer) {
+    tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Loading live data from your synced Google Sheet…</div>`;
   }
 
-  selectViewerSheet(state.workbookSheets[0]);
+  try {
+    const res = await fetch('/api/integrations/google-sheets/preview');
+    const data = await res.json();
+
+    if (!data.success || !Array.isArray(data.sheets) || data.sheets.length === 0) {
+      if (tableContainer) {
+        tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">${escapeHtml(data.message || 'No synced Google Sheet found yet. Run a sync first.')}</div>`;
+      }
+      return;
+    }
+
+    state.workbookPreviewSheets = data.sheets;
+    state.workbookSheets = data.sheets.map(s => s.name);
+
+    if (tabsBar) {
+      tabsBar.innerHTML = state.workbookSheets.map((s, idx) => `
+        <button class="sheet-tab-btn ${idx === 0 ? 'active' : ''}" onclick="selectViewerSheet('${escapeHtml(s)}', this)">
+          ${escapeHtml(s)}
+        </button>
+      `).join('');
+    }
+
+    selectViewerSheet(state.workbookSheets[0]);
+  } catch (err) {
+    console.error('Error loading live workbook preview:', err);
+    if (tableContainer) {
+      tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Failed to load live Google Sheet data. Please try again.</div>`;
+    }
+  }
 }
-
-const WORKBOOK_SHEETS_CONFIG = {
-  '📋 Cover & Index': {
-    title: 'Model Directory & Operational Manifest',
-    columns: [
-      { label: 'Sheet Tab Name' },
-      { label: 'Category' },
-      { label: 'Primary Purpose / Feeds' },
-      { label: 'Frequency' },
-      { label: 'Status', align: 'center' }
-    ],
-    rows: [
-      ['KPI Dashboard', 'Executive Summary', 'High-level Revenue, Gross Margin, and Working Capital metrics', 'Real-Time', '<span class="badge badge-success">Active ✓</span>'],
-      ['Weekly Order Tracker', 'Operations', 'Open orders, backlog tracking, and fulfillment risk flags', 'Weekly', '<span class="badge badge-success">Active ✓</span>'],
-      ['Sales Trend Analysis', 'Financial Planning', '12-Month sales trajectory across Amazon, Shopify, Wholesale', 'Monthly', '<span class="badge badge-success">Active ✓</span>'],
-      ['Product Margin Analysis', 'Margin Control', 'SKU-level gross profit contribution and landed cost variance', 'Real-Time', '<span class="badge badge-success">Active ✓</span>'],
-      ['COGS & Profitability by Channel', 'Unit Economics', 'Product margin breakdown across sales channels', 'Real-Time', '<span class="badge badge-success">Active ✓</span>'],
-      ['Inventory & MOS Analysis', 'Supply Chain', 'Months of Supply (MOS) and stockout risk warnings', 'Daily', '<span class="badge badge-success">Active ✓</span>'],
-      ['Inventory Movements', 'Warehouse Audit', 'Stock flow reconciliation (Opening + Inbound − Sales = Ending)', 'Weekly', '<span class="badge badge-success">Active ✓</span>'],
-      ['Profitability Dashboard', 'P&L Modeling', 'Net contribution margin after COGS, advertising, and fulfillment', 'Monthly', '<span class="badge badge-success">Active ✓</span>'],
-      ['Sales Dashboard', 'Revenue Analytics', 'Commercial sales metrics, average order value, channel mix', 'Real-Time', '<span class="badge badge-success">Active ✓</span>'],
-      ['Sales Transactions Raw Data', 'Cin7 Actuals', 'Complete transaction ledger with pricing and discounts', 'Live Sync', '<span class="badge badge-success">Live ⚡</span>'],
-      ['Inventory On Hand Raw Data', 'Cin7 Actuals', 'Warehouse-level stock, allocated inventory, unit valuation', 'Live Sync', '<span class="badge badge-success">Live ⚡</span>'],
-      ['Purchase Transactions Raw data', 'Cin7 Actuals', 'PO tracker with landed cost inputs and vendor details', 'Live Sync', '<span class="badge badge-success">Live ⚡</span>'],
-      ['Cost Inputs', 'Financial Modeling', 'Monthly operating expenses, ad spend, and overhead adjustments', 'Monthly', '<span class="badge badge-success">Configured ✓</span>']
-    ]
-  },
-  'KPI Dashboard': {
-    title: 'Executive Controller KPI Summary & Key Metrics',
-    columns: [
-      { label: 'KPI Metric' },
-      { label: 'Current Period', align: 'right', mono: true },
-      { label: 'Previous Period', align: 'right', mono: true },
-      { label: 'Target / Benchmark', align: 'right', mono: true },
-      { label: 'Variance', align: 'right' },
-      { label: 'Status', align: 'center' }
-    ],
-    rows: [
-      ['Gross Sales Revenue', '$250,934.35', '$238,400.00', '$240,000.00', '<span class="delta-tag delta-pos">+5.3%</span>', '<span class="badge badge-success">Exceeding</span>'],
-      ['Cost of Goods Sold (COGS)', '$74,890.00', '$72,100.00', '$75,000.00', '<span class="delta-tag delta-pos">-0.1%</span>', '<span class="badge badge-success">On Budget</span>'],
-      ['Gross Margin %', '70.1%', '69.8%', '68.5%', '<span class="delta-tag delta-pos">+1.6%</span>', '<span class="badge badge-success">Healthy</span>'],
-      ['Total Units Dispatched', '3,076', '2,920', '3,000', '<span class="delta-tag delta-pos">+2.5%</span>', '<span class="badge badge-success">On Track</span>'],
-      ['Average Order Value (AOV)', '$667.38', '$642.10', '$650.00', '<span class="delta-tag delta-pos">+2.7%</span>', '<span class="badge badge-success">Optimal</span>'],
-      ['Total Inventory Valuation', '$189,450.00', '$195,200.00', '< $200k', '<span class="delta-tag delta-pos">-2.9%</span>', '<span class="badge badge-success">Balanced</span>'],
-      ['Months of Supply (MOS)', '2.8 Months', '3.1 Months', '2.5 - 4.0 Mo', '<span class="delta-tag delta-pos">Optimal</span>', '<span class="badge badge-success">Balanced</span>']
-    ]
-  },
-  'Weekly Order Tracker': {
-    title: 'Weekly Open Items, Order Backlog & Fulfillment Risk Flags',
-    columns: [
-      { label: 'Order #' },
-      { label: 'Order Date' },
-      { label: 'Customer / Channel' },
-      { label: 'Fulfillment Status', align: 'center' },
-      { label: 'Invoice Status', align: 'center' },
-      { label: 'Order Value', align: 'right', mono: true },
-      { label: 'Action / Risk Flag', align: 'center' }
-    ],
-    rows: [
-      ['SO-00310', '2026-08-24', 'ABC-Test (USD) · Wholesale', '<span class="badge badge-warning">NOT SHIPPED</span>', '<span class="badge badge-warning">ORDERED</span>', '$5,000.00', '<span class="delta-tag delta-neg">🔴 Pending Fulfillment</span>'],
-      ['SO-00054', '2026-08-20', 'IR Fashion Hub Inc. · Shopify', '<span class="badge badge-success">SHIPPED</span>', '<span class="badge badge-success">INVOICED</span>', '$2,450.00', '<span class="delta-tag delta-pos">🟢 Cleared</span>'],
-      ['SO-00052', '2026-08-18', 'Global Retailers Ltd · Amazon', '<span class="badge badge-success">SHIPPED</span>', '<span class="badge badge-success">PAID</span>', '$1,820.00', '<span class="delta-tag delta-pos">🟢 Cleared</span>'],
-      ['SO-00049', '2026-08-15', 'Metro Distribution · Wholesale', '<span class="badge badge-warning">PARTIAL</span>', '<span class="badge badge-success">INVOICED</span>', '$6,400.00', '<span class="delta-tag delta-neg">🟡 Backorder Review</span>'],
-      ['SO-00045', '2026-08-11', 'Direct Online Buyer · Shopify POS', '<span class="badge badge-success">SHIPPED</span>', '<span class="badge badge-success">PAID</span>', '$390.00', '<span class="delta-tag delta-pos">🟢 Cleared</span>']
-    ]
-  },
-  'Sales Trend Analysis': {
-    title: 'Monthly Revenue Trajectory by Sales Channel',
-    columns: [
-      { label: 'Sales Channel' },
-      { label: 'Q1 Total', align: 'right', mono: true },
-      { label: 'Q2 Total', align: 'right', mono: true },
-      { label: 'Q3 Total', align: 'right', mono: true },
-      { label: 'Q4 Projected', align: 'right', mono: true },
-      { label: 'Full Year ($)', align: 'right', mono: true },
-      { label: 'YoY Growth', align: 'right' }
-    ],
-    rows: [
-      ['Amazon FBA (Seller Central)', '$142,500.00', '$168,200.00', '$184,900.00', '$195,000.00', '$690,600.00', '<span class="delta-tag delta-pos">+18.4% ↗</span>'],
-      ['Shopify Direct Online Store', '$89,400.00', '$95,100.00', '$104,200.00', '$112,000.00', '$400,700.00', '<span class="delta-tag delta-pos">+14.2% ↗</span>'],
-      ['Wholesale B2B Distribution', '$115,000.00', '$120,400.00', '$128,600.00', '$135,000.00', '$499,000.00', '<span class="delta-tag delta-pos">+9.8% ↗</span>'],
-      ['Specialty Retail Partnerships', '$45,200.00', '$48,600.00', '$51,000.00', '$55,000.00', '$199,800.00', '<span class="delta-tag delta-pos">+7.5% ↗</span>'],
-      ['Combined Total (All Channels)', '$392,100.00', '$432,300.00', '$468,700.00', '$497,000.00', '$1,790,100.00', '<span class="delta-tag delta-pos">+13.8% ↗</span>']
-    ]
-  },
-  'Product Margin Analysis': {
-    title: 'SKU-Level Profitability & Landed Margin Analysis',
-    columns: [
-      { label: 'SKU Code' },
-      { label: 'Product Description' },
-      { label: 'Units Sold', align: 'right', mono: true },
-      { label: 'Total Revenue', align: 'right', mono: true },
-      { label: 'Total COGS', align: 'right', mono: true },
-      { label: 'Gross Profit', align: 'right', mono: true },
-      { label: 'Gross Margin %', align: 'right' }
-    ],
-    rows: [
-      ['VS-C1-BOX', 'Packaging Boxes No. 1', '1,250', '$25,000.00', '$6,250.00', '$18,750.00', '<span class="delta-tag delta-pos">75.0%</span>'],
-      ['VS-C3-POLY', 'Reinforced Polybags (100pk)', '980', '$29,400.00', '$8,820.00', '$20,580.00', '<span class="delta-tag delta-pos">70.0%</span>'],
-      ['4FBP152-BP', 'Blue Waffle Wrap FBP152', '840', '$42,000.00', '$15,540.00', '$26,460.00', '<span class="delta-tag delta-pos">63.0%</span>'],
-      ['TC-001-CH', 'Executive Test Chair - 001', '112', '$56,000.00', '$19,600.00', '$36,400.00', '<span class="delta-tag delta-pos">65.0%</span>'],
-      ['AC-009-LBL', 'Barcode Thermal Labels', '2,400', '$19,200.00', '$4,800.00', '$14,400.00', '<span class="delta-tag delta-pos">75.0%</span>']
-    ]
-  },
-  'COGS & Profitability by Channel': {
-    title: 'Channel Unit Economics & Landed Cost Breakdown',
-    columns: [
-      { label: 'Channel Name' },
-      { label: 'Gross Revenue', align: 'right', mono: true },
-      { label: 'Product COGS', align: 'right', mono: true },
-      { label: 'Fulfillment & Freight', align: 'right', mono: true },
-      { label: 'Gross Profit', align: 'right', mono: true },
-      { label: 'Gross Margin %', align: 'right' }
-    ],
-    rows: [
-      ['Amazon Seller Central', '$184,900.00', '$49,923.00', '$18,490.00', '$116,487.00', '<span class="delta-tag delta-pos">63.0%</span>'],
-      ['Shopify Online Store', '$104,200.00', '$26,050.00', '$8,336.00', '$69,814.00', '<span class="delta-tag delta-pos">67.0%</span>'],
-      ['B2B Wholesale Portal', '$128,600.00', '$41,152.00', '$6,430.00', '$81,018.00', '<span class="delta-tag delta-pos">63.0%</span>'],
-      ['Retail Distribution', '$51,000.00', '$17,340.00', '$3,060.00', '$30,600.00', '<span class="delta-tag delta-pos">60.0%</span>']
-    ]
-  },
-  'Inventory & MOS Analysis': {
-    title: 'Months of Supply (MOS) & Stock Cover Warning Alerts',
-    columns: [
-      { label: 'SKU Code' },
-      { label: 'Product Name' },
-      { label: 'Warehouse Location' },
-      { label: 'On Hand Qty', align: 'right', mono: true },
-      { label: 'Monthly Sales', align: 'right', mono: true },
-      { label: 'MOS (Months)', align: 'right', mono: true },
-      { label: 'Stock Health Alert', align: 'center' }
-    ],
-    rows: [
-      ['4FBP152-BP', 'Blue Waffle Wrap FBP152', 'Main Warehouse', '288', '85', '3.4 Mo', '<span class="badge badge-success">🟢 Optimal Stock</span>'],
-      ['VS-C1-BOX', 'Packaging Boxes No. 1', 'Main Warehouse', '1,200', '420', '2.9 Mo', '<span class="badge badge-success">🟢 Optimal Stock</span>'],
-      ['TC-001-CH', 'Executive Test Chair - 001', 'West Coast DC', '14', '28', '0.5 Mo', '<span class="badge badge-danger">🔴 Reorder Critical</span>'],
-      ['VS-C3-POLY', 'Reinforced Polybags', 'Main Warehouse', '1,850', '290', '6.4 Mo', '<span class="badge badge-outline">🔵 Excess Stock</span>'],
-      ['AC-009-LBL', 'Barcode Thermal Labels', 'East Coast DC', '950', '600', '1.6 Mo', '<span class="badge badge-warning">🟡 Low Stock Alert</span>']
-    ]
-  },
-  'Inventory Movements': {
-    title: 'Monthly Stock Flow Audit (Opening + Inbound − Sales = Ending)',
-    columns: [
-      { label: 'SKU Code' },
-      { label: 'Product Name' },
-      { label: 'Opening Balance', align: 'right', mono: true },
-      { label: 'Purchases / Inbound (+)', align: 'right', mono: true },
-      { label: 'Units Sold (-)', align: 'right', mono: true },
-      { label: 'Adjustments', align: 'right', mono: true },
-      { label: 'Ending Balance', align: 'right', mono: true }
-    ],
-    rows: [
-      ['4FBP152-BP', 'Blue Waffle Wrap FBP152', '350', '100', '-162', '0', '288'],
-      ['VS-C1-BOX', 'Packaging Boxes No. 1', '1,500', '500', '-800', '0', '1,200'],
-      ['VS-C3-POLY', 'Reinforced Polybags', '1,200', '1,000', '-350', '0', '1,850'],
-      ['TC-001-CH', 'Executive Test Chair - 001', '45', '0', '-31', '0', '14'],
-      ['AC-009-LBL', 'Barcode Thermal Labels', '1,800', '0', '-850', '0', '950']
-    ]
-  },
-  'Profitability Dashboard': {
-    title: 'P&L Contribution by Sales Channel (Gross Margin to Net)',
-    columns: [
-      { label: 'P&L Line Item' },
-      { label: 'Amazon FBA ($)', align: 'right', mono: true },
-      { label: 'Shopify ($)', align: 'right', mono: true },
-      { label: 'Wholesale ($)', align: 'right', mono: true },
-      { label: 'Retail ($)', align: 'right', mono: true },
-      { label: 'Total Business ($)', align: 'right', mono: true }
-    ],
-    rows: [
-      ['Gross Sales Revenue', '$184,900.00', '$104,200.00', '$128,600.00', '$51,000.00', '$468,700.00'],
-      ['Cost of Goods Sold (COGS)', '-$49,923.00', '-$26,050.00', '-$41,152.00', '-$17,340.00', '-$134,465.00'],
-      ['Gross Profit Margin', '$134,977.00', '$78,150.00', '$87,448.00', '$33,660.00', '$334,235.00'],
-      ['Ad Spend & Performance', '-$27,735.00', '-$18,756.00', '-$3,858.00', '-$2,550.00', '-$52,899.00'],
-      ['Platform & Merchant Fees', '-$27,735.00', '-$3,647.00', '-$1,286.00', '-$1,020.00', '-$33,688.00'],
-      ['Net Contribution Margin', '$79,507.00', '$55,747.00', '$82,304.00', '$30,090.00', '$247,648.00']
-    ]
-  },
-  'Sales Dashboard': {
-    title: 'Commercial Sales Overview & Channel Mix',
-    columns: [
-      { label: 'Sales Dimension' },
-      { label: 'Total Revenue', align: 'right', mono: true },
-      { label: 'Channel Share', align: 'right', mono: true },
-      { label: 'Top Selling SKU' },
-      { label: 'Order Volume', align: 'right', mono: true },
-      { label: 'Trend', align: 'right' }
-    ],
-    rows: [
-      ['Online Marketplace (Amazon)', '$184,900.00', '39.4%', '4FBP152-BP', '1,420 Orders', '<span class="delta-tag delta-pos">+18.4% ↗</span>'],
-      ['Direct-to-Consumer (Shopify)', '$104,200.00', '22.2%', 'VS-C3-POLY', '840 Orders', '<span class="delta-tag delta-pos">+14.2% ↗</span>'],
-      ['B2B Enterprise Wholesale', '$128,600.00', '27.4%', 'TC-001-CH', '19 Accounts', '<span class="delta-tag delta-pos">+9.8% ↗</span>'],
-      ['Specialty Retail Accounts', '$51,000.00', '10.9%', 'VS-C1-BOX', '12 Chains', '<span class="delta-tag delta-pos">+7.5% ↗</span>']
-    ]
-  },
-  'Sales Transactions Raw Data': {
-    title: 'Live Synced Cin7 Sales Transactions Ledger',
-    columns: [
-      { label: 'Order #' },
-      { label: 'Date' },
-      { label: 'SKU' },
-      { label: 'Product Description' },
-      { label: 'Customer' },
-      { label: 'Qty', align: 'right', mono: true },
-      { label: 'Revenue ($)', align: 'right', mono: true },
-      { label: 'COGS ($)', align: 'right', mono: true },
-      { label: 'Profit ($)', align: 'right', mono: true }
-    ],
-    rows: [
-      ['SO-00310', '2026-08-24', 'Test Chair - 001', 'Test Chair - 001', 'ABC-Test (USD)', '1', '$5,000.00', '$310.00', '$4,690.00'],
-      ['SO-00054', '2024-09-25', 'VS - C1 - Boxes', 'VS - C1 - Packaging Boxes', 'IR Fashion Hub Inc.', '10', '$200.00', '$50.00', '$150.00'],
-      ['SO-00054', '2024-09-25', 'VS - C3 - Polybags', 'VS - C3 - Polybags', 'IR Fashion Hub Inc.', '10', '$300.00', '$20.00', '$280.00'],
-      ['SO-00052', '2024-08-18', '4FBP152-BP-B', 'Blue Waffle Wrap FBP152', 'Global Retailers Ltd', '5', '$175.00', '$45.00', '$130.00'],
-      ['SO-00049', '2024-08-15', 'VS - C1 - Boxes', 'VS - C1 - Packaging Boxes', 'Metro Distribution', '25', '$500.00', '$125.00', '$375.00']
-    ]
-  },
-  'Inventory On Hand Raw Data': {
-    title: 'Live Synced Cin7 Stock Availability Ledger',
-    columns: [
-      { label: 'Location' },
-      { label: 'SKU' },
-      { label: 'Product Description' },
-      { label: 'Unit' },
-      { label: 'On Hand', align: 'right', mono: true },
-      { label: 'Allocated', align: 'right', mono: true },
-      { label: 'Available', align: 'right', mono: true },
-      { label: 'Unit Cost ($)', align: 'right', mono: true }
-    ],
-    rows: [
-      ['Main Warehouse', '4FBP152-BP-B', 'Blue Waffle Wrap No. FBP152-BP-B', 'Case', '288', '12', '276', '$18.50'],
-      ['Main Warehouse', 'VS - C1 - Boxes', 'VS - C1 - Packaging Boxes', 'Pack', '1,200', '150', '1,050', '$5.00'],
-      ['Main Warehouse', 'VS - C3 - Polybags', 'VS - C3 - Polybags', 'Pack', '1,850', '200', '1,650', '$2.00'],
-      ['West Coast DC', 'Test Chair - 001', 'Test Chair - 001', 'each', '14', '2', '12', '$310.00'],
-      ['East Coast DC', 'AC-009-LBL', 'Barcode Thermal Labels', 'Roll', '950', '50', '900', '$2.00']
-    ]
-  },
-  'Purchase Transactions Raw data': {
-    title: 'Live Synced Cin7 Purchase Order Ledger',
-    columns: [
-      { label: 'PO #' },
-      { label: 'Order Date' },
-      { label: 'Supplier' },
-      { label: 'SKU' },
-      { label: 'Location' },
-      { label: 'Status', align: 'center' },
-      { label: 'Quantity', align: 'right', mono: true },
-      { label: 'Cost ($)', align: 'right', mono: true }
-    ],
-    rows: [
-      ['PO-00197', '2026-08-11', 'Agilitas Sports Private Limited', 'PO-00197', 'Main Warehouse', '<span class="badge badge-warning">DRAFT</span>', '100', '$0.00'],
-      ['PO-00002', '2022-07-07', 'PQR Packaging Services', 'PO-00002', 'Main Warehouse', '<span class="badge badge-outline">VOIDED</span>', '100', '$0.00'],
-      ['PO-00004', '2023-07-22', 'PQR Packaging Services', 'PO-00004', 'Main Warehouse', '<span class="badge badge-outline">VOIDED</span>', '100', '$0.00'],
-      ['PO-00012', '2024-02-28', 'PQR Packaging Services', 'PO-00012', 'Main Warehouse', '<span class="badge badge-outline">VOIDED</span>', '100', '$0.00'],
-      ['PO-00082', '2026-02-23', 'VNC Test Supplier', 'PO-00082', 'Main Warehouse', '<span class="badge badge-outline">VOIDED</span>', '100', '$0.00']
-    ]
-  },
-  'Cost Inputs': {
-    title: 'Monthly Operating Costs, Ad Spend & Landed Overhead Inputs',
-    columns: [
-      { label: 'Cost Category' },
-      { label: 'Subcategory / Vendor' },
-      { label: 'Monthly Budget ($)', align: 'right', mono: true },
-      { label: 'Actual Incurred ($)', align: 'right', mono: true },
-      { label: 'Variance ($)', align: 'right' },
-      { label: 'Allocation Method' }
-    ],
-    rows: [
-      ['Advertising & Performance', 'Amazon PPC / Sponsored Products', '$25,000.00', '$27,735.00', '<span class="delta-tag delta-neg">-$2,735.00</span>', 'Direct Channel Attribution'],
-      ['Advertising & Performance', 'Meta & Google Ads (Shopify)', '$18,000.00', '$18,756.00', '<span class="delta-tag delta-neg">-$756.00</span>', 'Direct Channel Attribution'],
-      ['Freight & Logistics', 'Inbound Freight & Drayage', '$12,500.00', '$11,800.00', '<span class="delta-tag delta-pos">+$700.00</span>', 'Allocated by Landed Weight'],
-      ['Warehousing & Fulfillment', '3PL Storage & Pick/Pack', '$14,000.00', '$13,450.00', '<span class="delta-tag delta-pos">+$550.00</span>', 'Volume / Unit Count'],
-      ['Software & Subscriptions', 'Cin7 Core ERP & Connectors', '$1,200.00', '$1,200.00', '<span class="delta-tag delta-zero">$0.00</span>', 'Fixed Administrative Cost']
-    ]
-  }
-};
 
 function selectViewerSheet(sheetName, btnElement) {
   if (btnElement) {
@@ -2743,25 +2492,26 @@ function selectViewerSheet(sheetName, btnElement) {
   const tableContainer = document.getElementById('viewer-table-container');
   if (!tableContainer) return;
 
-  const cfg = WORKBOOK_SHEETS_CONFIG[sheetName] || {
-    title: 'Worksheet Data Preview',
-    columns: [{ label: 'Record' }, { label: 'Description' }, { label: 'Value' }],
-    rows: [['1', 'Data Record 1', 'Active']]
-  };
+  const sheet = (state.workbookPreviewSheets || []).find(s => s.name === sheetName);
+  const rows = sheet ? sheet.rows : [];
 
-  const headerCells = cfg.columns.map(col => {
-    const align = col.align ? `text-align: ${col.align};` : 'text-align: left;';
-    const width = col.width ? `width: ${col.width};` : '';
-    return `<th style="padding: 0.625rem 0.875rem; color: var(--muted-foreground); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em; ${align} ${width}">${escapeHtml(col.label)}</th>`;
-  }).join('');
+  if (rows.length === 0) {
+    tableContainer.innerHTML = `
+      <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; background: var(--card);">
+        '${escapeHtml(sheetName)}' has no data yet in the live Google Sheet.
+      </div>
+    `;
+    return;
+  }
 
-  const bodyRows = cfg.rows.map(row => {
-    const cells = row.map((cell, idx) => {
-      const col = cfg.columns[idx] || {};
-      const align = col.align ? `text-align: ${col.align};` : 'text-align: left;';
-      const mono = col.mono ? 'font-family: var(--font-mono);' : '';
-      return `<td style="padding: 0.625rem 0.875rem; ${align} ${mono}">${cell}</td>`;
-    }).join('');
+  const [headerRow, ...bodyRowsData] = rows;
+
+  const headerCells = headerRow.map(cell => `
+    <th style="padding: 0.625rem 0.875rem; color: var(--muted-foreground); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em; text-align: left; white-space: nowrap;">${escapeHtml(cell)}</th>
+  `).join('');
+
+  const bodyRows = bodyRowsData.map(row => {
+    const cells = row.map(cell => `<td style="padding: 0.625rem 0.875rem; white-space: nowrap;">${escapeHtml(cell)}</td>`).join('');
     return `<tr style="border-bottom: 1px solid var(--border); transition: background 0.15s ease;">${cells}</tr>`;
   }).join('');
 
@@ -2770,11 +2520,11 @@ function selectViewerSheet(sheetName, btnElement) {
       <div style="background: var(--secondary); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
         <div>
           <span style="font-weight: 700; font-size: 0.875rem; color: var(--foreground);">${escapeHtml(sheetName)}</span>
-          <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">— ${escapeHtml(cfg.title)}</span>
+          <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">— live from your synced Google Sheet</span>
         </div>
-        <span class="badge badge-outline" style="font-size: 0.6875rem;">${cfg.rows.length} rows previewed</span>
+        <span class="badge badge-outline" style="font-size: 0.6875rem;">${bodyRowsData.length} rows previewed</span>
       </div>
-      <div style="overflow-x: auto;">
+      <div style="overflow-x: auto; max-height: 480px; overflow-y: auto;">
         <table style="width: 100%; border-collapse: collapse; font-size: 0.8125rem;">
           <thead>
             <tr style="background: var(--muted); border-bottom: 1px solid var(--border);">

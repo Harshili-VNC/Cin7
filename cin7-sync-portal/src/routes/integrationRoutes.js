@@ -260,4 +260,33 @@ router.post('/google-sheets/test', requireCanSync, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/integrations/google-sheets/preview
+ * Reads every tab of the org's live, synced Google Sheet directly from the Sheets API
+ * (real tab names, order, and formatted values) so the in-app workbook preview always
+ * matches what's actually in the spreadsheet.
+ */
+router.get('/google-sheets/preview', async (req, res) => {
+  const orgId = req.organizationId;
+  try {
+    const dest = await db.getOne(
+      "SELECT * FROM destination_files WHERE client_id = ? AND provider = 'google' ORDER BY created_at DESC",
+      [orgId]
+    );
+
+    if (!dest || !dest.file_id) {
+      return res.status(404).json({ success: false, message: 'No synced Google Sheet found for this organization yet.' });
+    }
+
+    const GoogleSheetsAdapter = require('../services/googleSheetsAdapter');
+    const adapter = new GoogleSheetsAdapter(orgId, req.user);
+    const preview = await adapter.readWorkbookPreview(dest.file_id);
+
+    res.json({ success: true, sheetUrl: dest.file_url, sheets: preview.sheets });
+  } catch (err) {
+    console.error('Error reading Google Sheets preview:', err.message);
+    res.status(500).json({ success: false, message: `Failed to load live Google Sheet preview: ${err.message}` });
+  }
+});
+
 module.exports = router;

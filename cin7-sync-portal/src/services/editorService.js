@@ -7,8 +7,8 @@ if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
   throw new Error('[editorService] FATAL: SESSION_SECRET environment variable must be set in production.');
 }
 const SECRET_KEY = process.env.SESSION_SECRET || (() => {
-  console.warn('[editorService] WARNING: SESSION_SECRET not set — using insecure default. Set SESSION_SECRET before deploying.');
-  return 'vnc_cin7_portal_session_secret_2026_key';
+  console.warn('[editorService] WARNING: SESSION_SECRET not set — generating an ephemeral random secret for this process. Set SESSION_SECRET before deploying.');
+  return crypto.randomBytes(32).toString('hex');
 })();
 const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 Minutes
 

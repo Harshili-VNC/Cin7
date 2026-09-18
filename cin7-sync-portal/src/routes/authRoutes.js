@@ -340,6 +340,14 @@ router.get('/available-clients', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
+    // Only expose the cross-tenant workspace roster to users still mid-onboarding
+    // (no client_id yet) or platform admins — an already-assigned user has no
+    // legitimate need to see every other tenant's company name and phone number.
+    const platformRole = (req.session.user.platform_role || req.session.user.platformRole || '').toUpperCase();
+    if (req.session.user.client_id && platformRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Forbidden.' });
+    }
+
     const rows = await db.getAll("SELECT id, company_name, phone_number, status, current_version FROM clients WHERE status = 'ACTIVE'");
     const clients = (rows || []).map(c => ({
       id: c.id,

@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
@@ -30,8 +31,9 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 2121;
 
 // ── PRODUCTION FAIL-FAST SECURITY VALIDATION ──────────────────────────────────
+// Sentinel used only to detect a copy-pasted sample secret left in .env — the
+// actual runtime fallback below is a fresh random value, never this literal.
 const DEFAULT_DEV_SESSION_SECRET = 'vnc_cin7_portal_session_secret_2026_key';
-const SESSION_SECRET = process.env.SESSION_SECRET || DEFAULT_DEV_SESSION_SECRET;
 
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === DEFAULT_DEV_SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
@@ -39,6 +41,11 @@ if (process.env.NODE_ENV === 'production') {
     throw new Error('FATAL: SESSION_SECRET must be configured with at least 32 characters in production.');
   }
 }
+
+if (!process.env.SESSION_SECRET) {
+  console.warn('[server] WARNING: SESSION_SECRET not set — generating an ephemeral random secret for this process (sessions will not survive a restart). Set SESSION_SECRET before deploying.');
+}
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
 // ── SECURITY HEADERS MIDDLEWARE ───────────────────────────────────────────────
 app.use((req, res, next) => {
