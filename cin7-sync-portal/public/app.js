@@ -3747,13 +3747,20 @@ async function loadAdminDashboard() {
     const tbody = document.getElementById('admin-dashboard-recent-syncs');
     if (tbody) {
       if (!recentSyncs || recentSyncs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">No sync runs recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">No sync runs recorded yet.</td></tr>`;
       } else {
         tbody.innerHTML = recentSyncs.map(s => {
           const statusBadge = s.status === 'SUCCESS' || s.status === 'COMPLETED' ? 'badge-success' : (s.status === 'FAILED' ? 'badge-destructive' : 'badge-warning');
           const statusLabel = s.status === 'SUCCESS' || s.status === 'COMPLETED' ? 'Completed' : (s.status === 'FAILED' ? 'Failed' : 'In Progress');
           const safeOrg = escapeHtml(s.organizationName || s.companyName || 'Unknown Client');
           const syncLabel = { 'GOOGLE_SHEETS': 'Google Sheets Export', 'FULL': 'Full Sync', 'INCREMENTAL': 'Incremental Sync', 'INVENTORY': 'Inventory Sync' }[s.syncType] || escapeHtml(s.syncType || 'Sync');
+          const sheetCell = s.sheetUrl
+            ? `<a href="${escapeHtml(s.sheetUrl)}" target="_blank" rel="noopener noreferrer" title="Open this run's Google Sheet"
+                  style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; color: var(--vnc-blue); border: 1px solid var(--border); border-radius: var(--radius-sm); text-decoration: none; background: transparent;">
+                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                 Sheet
+               </a>`
+            : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">—</span>`;
 
           return `
             <tr>
@@ -3764,6 +3771,7 @@ async function loadAdminDashboard() {
               <td style="color: var(--muted-foreground);">${s.durationMs ? `${(s.durationMs / 1000).toFixed(1)}s` : '—'}</td>
               <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
               <td style="font-size: 0.75rem; color: var(--muted-foreground);">${s.completedAt ? new Date(s.completedAt).toLocaleTimeString() : 'In Progress'}</td>
+              <td>${sheetCell}</td>
             </tr>
           `;
         }).join('');

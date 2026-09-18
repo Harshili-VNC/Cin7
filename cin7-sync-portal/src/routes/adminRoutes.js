@@ -91,17 +91,22 @@ router.get('/dashboard', async (req, res) => {
       });
     }
 
-    const recentSyncs = allSyncRuns.slice(0, 5).map(r => ({
-      id: r.id,
-      runId: r.run_id || r.id,
-      organizationName: clientsMap[r.client_id] || r.client_id,
-      syncType: (r.sync_type || 'all').toUpperCase(),
-      status: (r.status || 'RUNNING').toUpperCase(),
-      recordsProcessed: r.records_processed || 0,
-      durationMs: r.duration_ms || 0,
-      startedAt: r.started_at,
-      completedAt: r.completed_at
-    }));
+    const recentSyncs = allSyncRuns.slice(0, 5).map(r => {
+      const syncType = (r.sync_type || 'all').toLowerCase();
+      const isGoogleSheet = (syncType === 'google_sheets' || syncType === 'google_sheet_pull') && r.excel_version_id;
+      return {
+        id: r.id,
+        runId: r.run_id || r.id,
+        organizationName: clientsMap[r.client_id] || r.client_id,
+        syncType: syncType.toUpperCase(),
+        status: (r.status || 'RUNNING').toUpperCase(),
+        recordsProcessed: r.records_processed || 0,
+        durationMs: r.duration_ms || 0,
+        startedAt: r.started_at,
+        completedAt: r.completed_at,
+        sheetUrl: isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${r.excel_version_id}/edit` : null
+      };
+    });
 
     res.json({
       success: true,
