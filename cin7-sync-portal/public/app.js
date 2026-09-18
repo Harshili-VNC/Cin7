@@ -4345,16 +4345,22 @@ async function loadAdminSync(page = 1) {
     const tbody = document.getElementById('admin-sync-table-body');
     if (tbody) {
       if (runs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No sync runs recorded.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No sync runs recorded.</td></tr>`;
       } else {
         tbody.innerHTML = runs.map(r => {
           const safeOrg = escapeHtml(r.companyName || r.organizationName || 'Unknown Client');
-          const syncLabel = { 'GOOGLE_SHEETS': 'Google Sheets Export', 'FULL': 'Full Sync', 'INCREMENTAL': 'Incremental Sync', 'INVENTORY': 'Inventory Sync', 'REPORT': 'Report Sync' }[r.syncType] || escapeHtml(r.syncType || 'Sync');
+          const syncLabel = { 'GOOGLE_SHEETS': 'Google Sheets Export', 'FULL': 'Full Sync', 'INCREMENTAL': 'Incremental Sync', 'INVENTORY': 'Inventory Sync', 'REPORT': 'Report Sync', 'GOOGLE_SHEET_PULL': 'Google Sheets Pull' }[r.syncType] || escapeHtml(r.syncType || 'Sync');
           const isOk = r.status === 'SUCCESS' || r.status === 'COMPLETED';
           const isRunning = r.status === 'RUNNING' || r.status === 'IN_PROGRESS';
           const statusLabel = isOk ? 'Completed' : (isRunning ? 'In Progress' : 'Failed');
           const statusCls = isOk ? 'badge-success' : (isRunning ? 'badge-warning' : 'badge-destructive');
           const safeErr = escapeHtml(r.errorMessage || r.error || 'None');
+          const sheetCell = r.sheetUrl
+            ? `<a href="${escapeHtml(r.sheetUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-xs" title="Open this run's Google Sheet">
+                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                 View Sheet
+               </a>`
+            : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">—</span>`;
 
           return `
             <tr>
@@ -4366,6 +4372,7 @@ async function loadAdminSync(page = 1) {
               <td style="font-size: 0.75rem; color: var(--muted-foreground);">${r.startedAt ? new Date(r.startedAt).toLocaleString() : '—'}</td>
               <td style="font-size: 0.75rem; color: var(--muted-foreground);">${r.completedAt ? new Date(r.completedAt).toLocaleString() : 'In Progress'}</td>
               <td style="font-size: 0.75rem; color: ${r.errorMessage || r.error ? 'var(--destructive)' : 'var(--muted-foreground)'};">${safeErr}</td>
+              <td>${sheetCell}</td>
             </tr>
           `;
         }).join('');

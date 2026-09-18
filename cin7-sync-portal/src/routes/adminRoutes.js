@@ -843,19 +843,24 @@ router.get('/sync', async (req, res) => {
       return acc;
     }, {});
 
-    let mapped = runs.map(r => ({
-      id: r.id,
-      runId: r.run_id || r.id,
-      organizationId: r.client_id,
-      companyName: clientsMap[r.client_id] || r.client_id,
-      syncType: (r.sync_type || 'all').toUpperCase(),
-      status: (r.status || 'RUNNING').toUpperCase(),
-      recordsProcessed: r.records_processed || 0,
-      durationMs: r.duration_ms || 0,
-      errorMessage: r.error_message || null,
-      startedAt: r.started_at,
-      completedAt: r.completed_at
-    }));
+    let mapped = runs.map(r => {
+      const syncType = (r.sync_type || 'all').toLowerCase();
+      const isGoogleSheet = (syncType === 'google_sheets' || syncType === 'google_sheet_pull') && r.excel_version_id;
+      return {
+        id: r.id,
+        runId: r.run_id || r.id,
+        organizationId: r.client_id,
+        companyName: clientsMap[r.client_id] || r.client_id,
+        syncType: syncType.toUpperCase(),
+        status: (r.status || 'RUNNING').toUpperCase(),
+        recordsProcessed: r.records_processed || 0,
+        durationMs: r.duration_ms || 0,
+        errorMessage: r.error_message || null,
+        startedAt: r.started_at,
+        completedAt: r.completed_at,
+        sheetUrl: isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${r.excel_version_id}/edit` : null
+      };
+    });
 
     if (organizationId && organizationId !== 'all') {
       mapped = mapped.filter(r => r.organizationId === organizationId);
