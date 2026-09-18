@@ -1718,15 +1718,17 @@ async function loadSettingsData() {
 
         if (acctEl) acctEl.value = c.accountId || '';
         if (keyEl) keyEl.value = c.apiKeyMasked || '••••••••••••••••••••';
-        if (badgeEl) {
+        const overviewBadgeEl = document.getElementById('settings-cin7-status-badge-overview');
+        [badgeEl, overviewBadgeEl].forEach(el => {
+          if (!el) return;
           if (c.connected) {
-            badgeEl.className = 'badge badge-success';
-            badgeEl.innerText = 'Connected ✓';
+            el.className = 'badge badge-success';
+            el.innerText = 'Connected ✓';
           } else {
-            badgeEl.className = 'badge badge-warning';
-            badgeEl.innerText = 'Action needed';
+            el.className = 'badge badge-warning';
+            el.innerText = 'Action needed';
           }
-        }
+        });
       }
     }
 
@@ -1744,10 +1746,12 @@ async function loadSettingsData() {
         if (s.spreadsheetUrl) {
           settingsState.activeGoogleSheetUrl = s.spreadsheetUrl;
         }
-        if (badgeEl) {
-          badgeEl.className = s.connected ? 'badge badge-success' : 'badge badge-warning';
-          badgeEl.innerText = s.connected ? 'Connected ✓' : 'Not Connected';
-        }
+        const overviewSheetsBadgeEl = document.getElementById('settings-sheets-status-badge-overview');
+        [badgeEl, overviewSheetsBadgeEl].forEach(el => {
+          if (!el) return;
+          el.className = s.connected ? 'badge badge-success' : 'badge badge-warning';
+          el.innerText = s.connected ? 'Connected ✓' : 'Not Connected';
+        });
         if (statusEl) {
           statusEl.innerText = s.templateStatus || 'Up to date ✓';
         }
@@ -1768,10 +1772,12 @@ async function loadSettingsData() {
         if (dailyToggle) dailyToggle.checked = Boolean(stg.dailySyncEnabled);
         if (timeInput) timeInput.value = stg.dailySyncTime || '02:00';
         if (incrToggle) incrToggle.checked = Boolean(stg.incrementalSync);
-        if (syncBadge) {
-          syncBadge.className = stg.dailySyncEnabled ? 'badge badge-success' : 'badge badge-secondary';
-          syncBadge.innerText = stg.dailySyncEnabled ? 'Active ✓' : 'Paused';
-        }
+        const overviewSyncBadge = document.getElementById('settings-sync-status-badge-overview');
+        [syncBadge, overviewSyncBadge].forEach(el => {
+          if (!el) return;
+          el.className = stg.dailySyncEnabled ? 'badge badge-success' : 'badge badge-secondary';
+          el.innerText = stg.dailySyncEnabled ? 'Active ✓' : 'Paused';
+        });
       }
     }
 
@@ -2001,50 +2007,22 @@ function switchSettingsTab(tabName) {
   const tabContents = document.querySelectorAll('.settings-tab-content');
   tabContents.forEach(el => el.classList.add('hidden'));
 
-  // Dedicated Views
-  if (['overview', 'profile', 'billing', 'team', 'security', 'advanced', 'notifications'].includes(tabName)) {
-    const targetEl = document.getElementById(`settings-tab-${tabName}`);
-    if (targetEl) targetEl.classList.remove('hidden');
-    if (tabName === 'team') loadTeamMembers();
-    if (tabName === 'billing') loadBillingData();
-    if (tabName === 'notifications') {
-      fetch('/api/notifications').then(r => r.json()).then(d => {
-        if (d && d.notifications) {
-          const n = d.notifications;
-          if (document.getElementById('notif-daily-summary')) document.getElementById('notif-daily-summary').checked = Boolean(n.dailySummary);
-          if (document.getElementById('notif-sync-completed')) document.getElementById('notif-sync-completed').checked = Boolean(n.syncCompleted);
-          if (document.getElementById('notif-sync-failed')) document.getElementById('notif-sync-failed').checked = Boolean(n.syncFailed);
-          if (document.getElementById('notif-critical-errors')) document.getElementById('notif-critical-errors').checked = Boolean(n.criticalErrors);
-          if (document.getElementById('notif-weekly-reports')) document.getElementById('notif-weekly-reports').checked = Boolean(n.weeklyReports);
-        }
-      }).catch(console.error);
-    }
-  } else {
-    // Subsection navigation (Organization, CIN7, Sheets, Automation, Notifications)
-    const overviewEl = document.getElementById('settings-tab-overview');
-    if (overviewEl) overviewEl.classList.remove('hidden');
-
-    const cardMap = {
-      'organization': 'card-organization',
-      'billing': 'card-billing',
-      'cin7': 'card-cin7',
-      'sheets': 'card-google-sheets',
-      'automation': 'card-sync-automation',
-      'notifications': 'card-notifications'
-    };
-
-    const cardId = cardMap[tabName];
-    if (cardId) {
-      const cardEl = document.getElementById(cardId);
-      if (cardEl) {
-        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        cardEl.style.transition = 'box-shadow 0.3s ease';
-        cardEl.style.boxShadow = '0 0 0 2px var(--vnc-main), var(--shadow-lift)';
-        setTimeout(() => {
-          cardEl.style.boxShadow = '';
-        }, 1200);
+  // Every nav item now has its own dedicated content area — show only that one.
+  const targetEl = document.getElementById(`settings-tab-${tabName}`);
+  if (targetEl) targetEl.classList.remove('hidden');
+  if (tabName === 'team') loadTeamMembers();
+  if (tabName === 'billing') loadBillingData();
+  if (tabName === 'notifications') {
+    fetch('/api/notifications').then(r => r.json()).then(d => {
+      if (d && d.notifications) {
+        const n = d.notifications;
+        if (document.getElementById('notif-daily-summary')) document.getElementById('notif-daily-summary').checked = Boolean(n.dailySummary);
+        if (document.getElementById('notif-sync-completed')) document.getElementById('notif-sync-completed').checked = Boolean(n.syncCompleted);
+        if (document.getElementById('notif-sync-failed')) document.getElementById('notif-sync-failed').checked = Boolean(n.syncFailed);
+        if (document.getElementById('notif-critical-errors')) document.getElementById('notif-critical-errors').checked = Boolean(n.criticalErrors);
+        if (document.getElementById('notif-weekly-reports')) document.getElementById('notif-weekly-reports').checked = Boolean(n.weeklyReports);
       }
-    }
+    }).catch(console.error);
   }
 }
 

@@ -1225,7 +1225,7 @@
             <div id="settings-tab-overview" class="settings-tab-content">
               <div class="settings-2col-grid">
                 
-                <!-- ROW 1: CARD 1 — ORGANIZATION -->
+                <!-- ROW 1: CARD 1 — ORGANIZATION (teaser; full form lives in its own tab) -->
                 <div class="settings-card" id="card-organization">
                   <div class="settings-card-header">
                     <div class="settings-card-title-group">
@@ -1237,34 +1237,14 @@
                         <p style="font-size: 0.75rem; color: var(--muted-foreground);">Company profile & tenant details</p>
                       </div>
                     </div>
-                    <span class="badge badge-success" id="settings-org-status-badge">Active</span>
+                    <span class="badge badge-success">Active</span>
                   </div>
                   <div class="settings-card-body">
-                    <div class="form-group" style="margin-top: 0;">
-                      <label class="form-label" for="settings-company-name">Company Name</label>
-                      <input class="form-input" id="settings-company-name" placeholder="Company Name" oninput="markSettingsDirty()">
-                    </div>
-                    <div class="settings-grid-2">
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label" for="settings-timezone">Timezone</label>
-                        <select class="form-input" id="settings-timezone" onchange="markSettingsDirty()">
-                          <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
-                          <option value="UTC">UTC (+0:00)</option>
-                          <option value="America/New_York">America/New_York (EST)</option>
-                          <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
-                          <option value="Europe/London">Europe/London (GMT/BST)</option>
-                          <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
-                        </select>
-                      </div>
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label">Organization ID</label>
-                        <input class="form-input" id="settings-org-id" placeholder="Organization ID" disabled style="background: var(--secondary); color: var(--muted-foreground);">
-                      </div>
-                    </div>
+                    <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Company name, timezone, and tenant details.</p>
                   </div>
                   <div class="settings-card-footer">
-                    <span style="font-size: 0.6875rem; color: var(--muted-foreground);" id="settings-org-created-text"></span>
-                    <button type="button" class="btn btn-outline btn-xs" onclick="saveOrganizationSettings()">Save Organization</button>
+                    <span></span>
+                    <button type="button" class="btn btn-primary btn-xs" onclick="switchSettingsTab('organization')">Manage Organization</button>
                   </div>
                 </div>
 
@@ -1305,7 +1285,7 @@
                   </div>
                 </div>
 
-                <!-- ROW 2: CARD 3 — GOOGLE SHEETS -->
+                <!-- ROW 2: CARD 3 — GOOGLE SHEETS (teaser; full form lives in its own tab) -->
                 <div class="settings-card" id="card-google-sheets">
                   <div class="settings-card-header">
                     <div class="settings-card-title-group">
@@ -1317,38 +1297,18 @@
                         <p style="font-size: 0.75rem; color: var(--muted-foreground);">Master financial model destination</p>
                       </div>
                     </div>
-                    <span class="badge" id="settings-sheets-status-badge">Configured ✓</span>
+                    <span class="badge" id="settings-sheets-status-badge-overview">Configured ✓</span>
                   </div>
                   <div class="settings-card-body">
-                    <div class="form-group" style="margin-top: 0;">
-                      <label class="form-label" for="settings-sheets-template-id">Master Template ID</label>
-                      <input class="form-input" id="settings-sheets-template-id" placeholder="System Managed Master Template" oninput="markSettingsDirty()">
-                    </div>
-                    <div class="settings-grid-2">
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label">Template Status</label>
-                        <div style="display: flex; align-items: center; gap: 0.375rem; padding: 0.5rem 0.75rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.8125rem; font-weight: 600; color: #10b981;">
-                          <span>✓</span>
-                          <span id="settings-sheets-template-status">Configured ✓</span>
-                        </div>
-                      </div>
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label">Workspace Folder</label>
-                        <input class="form-input" value="Automated Organization Storage" disabled style="background: var(--secondary); color: var(--muted-foreground); font-size: 0.8125rem;">
-                      </div>
-                    </div>
+                    <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Template status and Google authorization.</p>
                   </div>
                   <div class="settings-card-footer">
-                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                      <a href="/api/auth/google/connect" class="btn btn-secondary btn-xs" id="btn-auth-google-sheet" title="Authorize Google Drive & Sheets in Browser">🔗 Authorize Google</a>
-                      <button type="button" class="btn btn-outline btn-xs" onclick="testGoogleSheetsConnection()">Test Connection</button>
-                      <button type="button" class="btn btn-ghost btn-xs" id="btn-open-google-sheet" onclick="openActiveGoogleSheet()">Open Template ↗</button>
-                    </div>
-                    <button type="button" class="btn btn-primary btn-xs" onclick="saveGoogleSheetsSettings()">Save</button>
+                    <span></span>
+                    <button type="button" class="btn btn-primary btn-xs" onclick="switchSettingsTab('sheets')">Manage Google Sheets</button>
                   </div>
                 </div>
 
-                <!-- ROW 2: CARD 4 — CIN7 CORE ERP -->
+                <!-- ROW 2: CARD 4 — CIN7 CORE ERP (teaser; full form lives in its own tab) -->
                 <div class="settings-card" id="card-cin7">
                   <div class="settings-card-header">
                     <div class="settings-card-title-group">
@@ -1360,36 +1320,18 @@
                         <p style="font-size: 0.75rem; color: var(--muted-foreground);">Live ERP connection & credentials</p>
                       </div>
                     </div>
-                    <span class="badge" id="settings-cin7-status-badge">Ready</span>
+                    <span class="badge" id="settings-cin7-status-badge-overview">Ready</span>
                   </div>
                   <div class="settings-card-body">
-                    <div class="settings-grid-2">
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label" for="settings-cin7-account">Account ID</label>
-                        <input class="form-input" id="settings-cin7-account" placeholder="Enter Cin7 Account ID" oninput="markSettingsDirty()">
-                      </div>
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label" for="settings-cin7-key">API Application Key</label>
-                        <div style="display: flex; gap: 0.5rem;">
-                          <input class="form-input" type="text" id="settings-cin7-key" placeholder="••••••••••••••••••••" disabled style="letter-spacing: 0.1em; background: var(--secondary); font-family: var(--font-mono);">
-                          <button type="button" class="btn btn-outline btn-sm" onclick="openReplaceCin7Modal()" title="Replace API Key">Replace</button>
-                        </div>
-                      </div>
-                    </div>
-                    <p style="font-size: 0.6875rem; color: var(--muted-foreground);">
-                      🔒 Application Key is encrypted server-side with AES-256-GCM. Never exposed in plain text.
-                    </p>
+                    <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Account ID, API key, and connection test.</p>
                   </div>
                   <div class="settings-card-footer">
-                    <button type="button" class="btn btn-outline btn-xs" onclick="testCin7Connection()">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                      Test Connection
-                    </button>
-                    <button type="button" class="btn btn-primary btn-xs" onclick="openReplaceCin7Modal()">Save Credentials</button>
+                    <span></span>
+                    <button type="button" class="btn btn-primary btn-xs" onclick="switchSettingsTab('cin7')">Manage CIN7 Integration</button>
                   </div>
                 </div>
 
-                <!-- ROW 3: CARD 5 — SYNC & AUTOMATION -->
+                <!-- ROW 3: CARD 5 — SYNC & AUTOMATION (teaser; full form lives in its own tab) -->
                 <div class="settings-card" id="card-sync-automation">
                   <div class="settings-card-header">
                     <div class="settings-card-title-group">
@@ -1401,63 +1343,14 @@
                         <p style="font-size: 0.75rem; color: var(--muted-foreground);">Daily schedules & delta sync logic</p>
                       </div>
                     </div>
-                    <span class="badge badge-success" id="settings-sync-status-badge">Active ✓</span>
+                    <span class="badge badge-success" id="settings-sync-status-badge-overview">Active ✓</span>
                   </div>
                   <div class="settings-card-body">
-                    <div class="toggle-row">
-                      <div>
-                        <p style="font-size: 0.8125rem; font-weight: 700;">Automatic Daily Sync</p>
-                        <p style="font-size: 0.6875rem; color: var(--muted-foreground);">Runs every day at scheduled time</p>
-                      </div>
-                      <label class="switch">
-                        <input type="checkbox" id="settings-daily-sync-toggle" checked onchange="markSettingsDirty()">
-                        <span class="slider"></span>
-                      </label>
-                    </div>
-
-                    <div class="settings-grid-2">
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label" for="settings-sync-time">Schedule Time</label>
-                        <input class="form-input" type="time" id="settings-sync-time" value="02:00" onchange="markSettingsDirty()">
-                      </div>
-                      <div class="form-group" style="margin-top: 0;">
-                        <label class="form-label">Incremental Sync</label>
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 0.25rem;">
-                          <span style="font-size: 0.75rem; color: var(--muted-foreground);">Delta only</span>
-                          <label class="switch">
-                            <input type="checkbox" id="settings-incremental-sync-toggle" checked onchange="markSettingsDirty()">
-                            <span class="slider"></span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                    <p style="font-size: 0.6875rem; color: var(--muted-foreground); background: var(--secondary); padding: 0.375rem 0.625rem; border-radius: var(--radius-sm);">
-                      ℹ️ "Only records changed since the last successful sync are processed."
-                    </p>
-
-                    <!-- Real backend live operational metrics -->
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.75rem;">
-                      <div>
-                        <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Last Sync</div>
-                        <div style="font-size: 0.75rem; font-weight: 700;" id="stats-last-sync-text">Today, 08:12 AM</div>
-                      </div>
-                      <div>
-                        <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Next Sync</div>
-                        <div style="font-size: 0.75rem; font-weight: 700;" id="stats-next-sync-text">Tomorrow, 02:00 AM</div>
-                      </div>
-                      <div>
-                        <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Avg Duration</div>
-                        <div style="font-size: 0.75rem; font-weight: 700;" id="stats-avg-duration-text">2m 14s</div>
-                      </div>
-                      <div>
-                        <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Records</div>
-                        <div style="font-size: 0.75rem; font-weight: 700;" id="stats-records-processed-text">12,842</div>
-                      </div>
-                    </div>
+                    <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Schedule, incremental sync, and live run stats.</p>
                   </div>
                   <div class="settings-card-footer">
-                    <span style="font-size: 0.6875rem; color: var(--muted-foreground);">15-min safety overlap active</span>
-                    <button type="button" class="btn btn-primary btn-xs" onclick="saveSyncSettings()">Save Preferences</button>
+                    <span></span>
+                    <button type="button" class="btn btn-primary btn-xs" onclick="switchSettingsTab('automation')">Manage Sync & Automation</button>
                   </div>
                 </div>
 
@@ -1486,6 +1379,213 @@
                   </div>
                 </div>
 
+              </div>
+            </div>
+
+            <!-- DEDICATED TAB: ORGANIZATION -->
+            <div id="settings-tab-organization" class="settings-tab-content hidden">
+              <div class="settings-card" style="margin-bottom: 1.5rem;">
+                <div class="settings-card-header">
+                  <div class="settings-card-title-group">
+                    <div class="settings-card-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                    </div>
+                    <div>
+                      <h3 style="font-size: 0.9375rem; font-weight: 700;">Organization</h3>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Company profile & tenant details</p>
+                    </div>
+                  </div>
+                  <span class="badge badge-success" id="settings-org-status-badge">Active</span>
+                </div>
+                <div class="settings-card-body">
+                  <div class="form-group" style="margin-top: 0;">
+                    <label class="form-label" for="settings-company-name">Company Name</label>
+                    <input class="form-input" id="settings-company-name" placeholder="Company Name" oninput="markSettingsDirty()">
+                  </div>
+                  <div class="settings-grid-2">
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label" for="settings-timezone">Timezone</label>
+                      <select class="form-input" id="settings-timezone" onchange="markSettingsDirty()">
+                        <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
+                        <option value="UTC">UTC (+0:00)</option>
+                        <option value="America/New_York">America/New_York (EST)</option>
+                        <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                        <option value="Europe/London">Europe/London (GMT/BST)</option>
+                        <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
+                      </select>
+                    </div>
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label">Organization ID</label>
+                      <input class="form-input" id="settings-org-id" placeholder="Organization ID" disabled style="background: var(--secondary); color: var(--muted-foreground);">
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-card-footer">
+                  <span style="font-size: 0.6875rem; color: var(--muted-foreground);" id="settings-org-created-text"></span>
+                  <button type="button" class="btn btn-outline btn-xs" onclick="saveOrganizationSettings()">Save Organization</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- DEDICATED TAB: GOOGLE SHEETS -->
+            <div id="settings-tab-sheets" class="settings-tab-content hidden">
+              <div class="settings-card" style="margin-bottom: 1.5rem;">
+                <div class="settings-card-header">
+                  <div class="settings-card-title-group">
+                    <div class="settings-card-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                    </div>
+                    <div>
+                      <h3 style="font-size: 0.9375rem; font-weight: 700;">Google Sheets</h3>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Master financial model destination</p>
+                    </div>
+                  </div>
+                  <span class="badge" id="settings-sheets-status-badge">Configured ✓</span>
+                </div>
+                <div class="settings-card-body">
+                  <div class="form-group" style="margin-top: 0;">
+                    <label class="form-label" for="settings-sheets-template-id">Master Template ID</label>
+                    <input class="form-input" id="settings-sheets-template-id" placeholder="System Managed Master Template" oninput="markSettingsDirty()">
+                  </div>
+                  <div class="settings-grid-2">
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label">Template Status</label>
+                      <div style="display: flex; align-items: center; gap: 0.375rem; padding: 0.5rem 0.75rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.8125rem; font-weight: 600; color: #10b981;">
+                        <span>✓</span>
+                        <span id="settings-sheets-template-status">Configured ✓</span>
+                      </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label">Workspace Folder</label>
+                      <input class="form-input" value="Automated Organization Storage" disabled style="background: var(--secondary); color: var(--muted-foreground); font-size: 0.8125rem;">
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-card-footer">
+                  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <a href="/api/auth/google/connect" class="btn btn-secondary btn-xs" id="btn-auth-google-sheet" title="Authorize Google Drive & Sheets in Browser">🔗 Authorize Google</a>
+                    <button type="button" class="btn btn-outline btn-xs" onclick="testGoogleSheetsConnection()">Test Connection</button>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-open-google-sheet" onclick="openActiveGoogleSheet()">Open Template ↗</button>
+                  </div>
+                  <button type="button" class="btn btn-primary btn-xs" onclick="saveGoogleSheetsSettings()">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- DEDICATED TAB: CIN7 CORE ERP -->
+            <div id="settings-tab-cin7" class="settings-tab-content hidden">
+              <div class="settings-card" style="margin-bottom: 1.5rem;">
+                <div class="settings-card-header">
+                  <div class="settings-card-title-group">
+                    <div class="settings-card-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                    </div>
+                    <div>
+                      <h3 style="font-size: 0.9375rem; font-weight: 700;">CIN7 Core ERP</h3>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Live ERP connection & credentials</p>
+                    </div>
+                  </div>
+                  <span class="badge" id="settings-cin7-status-badge">Ready</span>
+                </div>
+                <div class="settings-card-body">
+                  <div class="settings-grid-2">
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label" for="settings-cin7-account">Account ID</label>
+                      <input class="form-input" id="settings-cin7-account" placeholder="Enter Cin7 Account ID" oninput="markSettingsDirty()">
+                    </div>
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label" for="settings-cin7-key">API Application Key</label>
+                      <div style="display: flex; gap: 0.5rem;">
+                        <input class="form-input" type="text" id="settings-cin7-key" placeholder="••••••••••••••••••••" disabled style="letter-spacing: 0.1em; background: var(--secondary); font-family: var(--font-mono);">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="openReplaceCin7Modal()" title="Replace API Key">Replace</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p style="font-size: 0.6875rem; color: var(--muted-foreground);">
+                    🔒 Application Key is encrypted server-side with AES-256-GCM. Never exposed in plain text.
+                  </p>
+                </div>
+                <div class="settings-card-footer">
+                  <button type="button" class="btn btn-outline btn-xs" onclick="testCin7Connection()">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Test Connection
+                  </button>
+                  <button type="button" class="btn btn-primary btn-xs" onclick="openReplaceCin7Modal()">Save Credentials</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- DEDICATED TAB: SYNC & AUTOMATION -->
+            <div id="settings-tab-automation" class="settings-tab-content hidden">
+              <div class="settings-card" style="margin-bottom: 1.5rem;">
+                <div class="settings-card-header">
+                  <div class="settings-card-title-group">
+                    <div class="settings-card-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="m9 16 2 2 4-4"/></svg>
+                    </div>
+                    <div>
+                      <h3 style="font-size: 0.9375rem; font-weight: 700;">Sync & Automation</h3>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Daily schedules & delta sync logic</p>
+                    </div>
+                  </div>
+                  <span class="badge badge-success" id="settings-sync-status-badge">Active ✓</span>
+                </div>
+                <div class="settings-card-body">
+                  <div class="toggle-row">
+                    <div>
+                      <p style="font-size: 0.8125rem; font-weight: 700;">Automatic Daily Sync</p>
+                      <p style="font-size: 0.6875rem; color: var(--muted-foreground);">Runs every day at scheduled time</p>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settings-daily-sync-toggle" checked onchange="markSettingsDirty()">
+                      <span class="slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="settings-grid-2">
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label" for="settings-sync-time">Schedule Time</label>
+                      <input class="form-input" type="time" id="settings-sync-time" value="02:00" onchange="markSettingsDirty()">
+                    </div>
+                    <div class="form-group" style="margin-top: 0;">
+                      <label class="form-label">Incremental Sync</label>
+                      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 0.25rem;">
+                        <span style="font-size: 0.75rem; color: var(--muted-foreground);">Delta only</span>
+                        <label class="switch">
+                          <input type="checkbox" id="settings-incremental-sync-toggle" checked onchange="markSettingsDirty()">
+                          <span class="slider"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  <p style="font-size: 0.6875rem; color: var(--muted-foreground); background: var(--secondary); padding: 0.375rem 0.625rem; border-radius: var(--radius-sm);">
+                    ℹ️ "Only records changed since the last successful sync are processed."
+                  </p>
+
+                  <!-- Real backend live operational metrics -->
+                  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.75rem;">
+                    <div>
+                      <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Last Sync</div>
+                      <div style="font-size: 0.75rem; font-weight: 700;" id="stats-last-sync-text">Today, 08:12 AM</div>
+                    </div>
+                    <div>
+                      <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Next Sync</div>
+                      <div style="font-size: 0.75rem; font-weight: 700;" id="stats-next-sync-text">Tomorrow, 02:00 AM</div>
+                    </div>
+                    <div>
+                      <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Avg Duration</div>
+                      <div style="font-size: 0.75rem; font-weight: 700;" id="stats-avg-duration-text">2m 14s</div>
+                    </div>
+                    <div>
+                      <div style="font-size: 0.625rem; color: var(--muted-foreground); text-transform: uppercase;">Records</div>
+                      <div style="font-size: 0.75rem; font-weight: 700;" id="stats-records-processed-text">12,842</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-card-footer">
+                  <span style="font-size: 0.6875rem; color: var(--muted-foreground);">15-min safety overlap active</span>
+                  <button type="button" class="btn btn-primary btn-xs" onclick="saveSyncSettings()">Save Preferences</button>
+                </div>
               </div>
             </div>
 
