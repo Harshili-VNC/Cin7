@@ -3758,6 +3758,7 @@ async function loadAdminDashboard() {
           return `
             <tr>
               <td style="font-weight: 700;">${safeOrg}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground); font-family: var(--font-mono);">${escapeHtml(s.runId || s.id || '—')}</td>
               <td><span class="badge badge-secondary">${syncLabel}</span></td>
               <td style="font-weight: 600;">${Number(s.recordsProcessed || 0).toLocaleString()}</td>
               <td style="color: var(--muted-foreground);">${s.durationMs ? `${(s.durationMs / 1000).toFixed(1)}s` : '—'}</td>

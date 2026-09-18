@@ -19,6 +19,7 @@ router.get('/dashboard', async (req, res) => {
   try {
     const clientsRes = await db.query('SELECT * FROM clients');
     const allClients = clientsRes.rows || [];
+    const clientsMap = allClients.reduce((acc, c) => { acc[c.id] = c.company_name; return acc; }, {});
 
     const usersRes = await db.query('SELECT * FROM users');
     const allUsers = usersRes.rows || [];
@@ -90,8 +91,21 @@ router.get('/dashboard', async (req, res) => {
       });
     }
 
+    const recentSyncs = allSyncRuns.slice(0, 5).map(r => ({
+      id: r.id,
+      runId: r.run_id || r.id,
+      organizationName: clientsMap[r.client_id] || r.client_id,
+      syncType: (r.sync_type || 'all').toUpperCase(),
+      status: (r.status || 'RUNNING').toUpperCase(),
+      recordsProcessed: r.records_processed || 0,
+      durationMs: r.duration_ms || 0,
+      startedAt: r.started_at,
+      completedAt: r.completed_at
+    }));
+
     res.json({
       success: true,
+      recentSyncs,
       kpis: {
         totalOrganizations,
         activeOrganizations,
