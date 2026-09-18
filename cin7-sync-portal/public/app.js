@@ -3713,7 +3713,7 @@ async function loadAdminDashboard() {
     document.getElementById('admin-kpi-active-subs').innerText = summary.activeOrganizations || summary.activeSubscriptions || 0;
     document.getElementById('admin-kpi-subs-status').innerText = `${summary.pastDueOrganizations || summary.pastDueSubscriptions || 0} Past Due · ${summary.expiredOrganizations || summary.expiredSubscriptions || 0} Expired`;
 
-    document.getElementById('admin-kpi-monthly-syncs').innerText = (summary.syncSuccessful || summary.syncsThisMonth || 0).toLocaleString();
+    document.getElementById('admin-kpi-monthly-syncs').innerText = (summary.syncsThisMonth ?? summary.syncSuccessful ?? 0).toLocaleString();
 
     document.getElementById('admin-kpi-cin7-conns').innerText = summary.cin7Connected || 0;
     document.getElementById('admin-kpi-cin7-errors').innerText = `${summary.cin7Errors || 0} Error${summary.cin7Errors === 1 ? '' : 's'}`;

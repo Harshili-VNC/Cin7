@@ -45,12 +45,18 @@ router.get('/dashboard', async (req, res) => {
     const activeUsers = allUsers.filter(u => (u.status || 'ACTIVE').toUpperCase() === 'ACTIVE').length;
 
     // Sync metrics
+    // NOTE: r.started_at comes back from the DB as a native Date object, so these
+    // boundaries must stay Date objects too — comparing a Date against an ISO
+    // *string* with >= silently evaluates wrong (string gets coerced to NaN),
+    // which previously made "today"/"this month" filters never match anything.
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    const todaySyncs = allSyncRuns.filter(r => r.started_at && r.started_at >= startOfToday);
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const todaySyncs = allSyncRuns.filter(r => r.started_at && new Date(r.started_at) >= startOfToday);
     const syncRunning = allSyncRuns.filter(r => r.status === 'RUNNING').length;
     const syncSuccessful = allSyncRuns.filter(r => r.status === 'COMPLETED').length;
     const syncFailed = allSyncRuns.filter(r => r.status === 'FAILED').length;
+    const syncsThisMonth = allSyncRuns.filter(r => r.status === 'COMPLETED' && r.started_at && new Date(r.started_at) >= startOfMonth).length;
 
     // Integrations
     const cin7Connected = allCin7.filter(c => c.status === 'CONNECTED').length;
@@ -82,7 +88,7 @@ router.get('/dashboard', async (req, res) => {
       });
     }
 
-    const recentFailedSyncs = allSyncRuns.filter(r => r.status === 'FAILED' && r.started_at >= startOfToday).length;
+    const recentFailedSyncs = allSyncRuns.filter(r => r.status === 'FAILED' && r.started_at && new Date(r.started_at) >= startOfToday).length;
     if (recentFailedSyncs > 0) {
       attentionItems.push({
         type: 'WARNING',
@@ -121,6 +127,7 @@ router.get('/dashboard', async (req, res) => {
         syncRunning,
         syncSuccessful,
         syncFailed,
+        syncsThisMonth,
         cin7Connected,
         cin7Errors,
         sheetsConnected,
