@@ -2394,6 +2394,7 @@
                 </div>
 
                 <div class="admin-filter-bar">
+                  <input type="text" class="form-input" id="admin-sync-search" placeholder="Search company..." style="max-width: 200px;" oninput="debouncedLoadAdminSync()">
                   <select class="form-input" id="admin-sync-status-filter" style="max-width: 150px;" onchange="loadAdminSync(1)">
                     <option value="">All Statuses</option>
                     <option value="SUCCESS">Success</option>
@@ -2406,6 +2407,14 @@
                     <option value="INCREMENTAL">INCREMENTAL</option>
                     <option value="INVENTORY">INVENTORY</option>
                     <option value="REPORT">REPORT</option>
+                  </select>
+                  <select class="form-input" id="admin-sync-date-filter" style="max-width: 150px;" onchange="loadAdminSync(1)">
+                    <option value="">All Time</option>
+                    <option value="today">Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="7d">Last 7 Days</option>
+                    <option value="30d">Last 30 Days</option>
+                    <option value="month">This Month</option>
                   </select>
                 </div>
 

@@ -4328,11 +4328,19 @@ async function loadAdminSheets() {
 
 // ── 9. Sync Runs Monitoring ─────────────────────────────────────────────────
 
+let adminSyncSearchDebounceTimer = null;
+function debouncedLoadAdminSync() {
+  clearTimeout(adminSyncSearchDebounceTimer);
+  adminSyncSearchDebounceTimer = setTimeout(() => loadAdminSync(1), 300);
+}
+
 async function loadAdminSync(page = 1) {
   adminState.syncs.page = page;
   const status = document.getElementById('admin-sync-status-filter')?.value || '';
   const syncType = document.getElementById('admin-sync-type-filter')?.value || '';
-  const params = new URLSearchParams({ page, limit: adminState.syncs.limit, status, syncType });
+  const dateRange = document.getElementById('admin-sync-date-filter')?.value || '';
+  const company = document.getElementById('admin-sync-search')?.value.trim() || '';
+  const params = new URLSearchParams({ page, limit: adminState.syncs.limit, status, syncType, dateRange, company });
 
   try {
     const res = await fetch(`/api/admin/sync?${params.toString()}`);

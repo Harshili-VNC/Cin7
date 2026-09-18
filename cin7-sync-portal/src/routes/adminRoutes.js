@@ -831,7 +831,7 @@ router.get('/google-sheets', async (req, res) => {
  * Operational sync execution logs across all customer organizations.
  */
 router.get('/sync', async (req, res) => {
-  const { organizationId, status, syncType, page = 1, limit = 20 } = req.query;
+  const { organizationId, status, syncType, company, dateRange, page = 1, limit = 20 } = req.query;
 
   try {
     const syncRunsRes = await db.query('SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 500');
@@ -872,6 +872,40 @@ router.get('/sync', async (req, res) => {
 
     if (syncType && syncType !== 'all') {
       mapped = mapped.filter(r => r.syncType.toLowerCase() === syncType.toLowerCase());
+    }
+
+    if (company && company.trim()) {
+      const q = company.trim().toLowerCase();
+      mapped = mapped.filter(r => (r.companyName || '').toLowerCase().includes(q));
+    }
+
+    if (dateRange) {
+      const now = new Date();
+      let startBound = null;
+      let endBound = null;
+      if (dateRange === 'today') {
+        startBound = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        endBound = new Date(startBound.getTime() + 24 * 60 * 60 * 1000);
+      } else if (dateRange === 'yesterday') {
+        endBound = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startBound = new Date(endBound.getTime() - 24 * 60 * 60 * 1000);
+      } else if (dateRange === '7d') {
+        startBound = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (dateRange === '30d') {
+        startBound = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      } else if (dateRange === 'month') {
+        startBound = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+
+      if (startBound) {
+        mapped = mapped.filter(r => {
+          if (!r.startedAt) return false;
+          const d = new Date(r.startedAt);
+          if (d < startBound) return false;
+          if (endBound && d >= endBound) return false;
+          return true;
+        });
+      }
     }
 
     const total = mapped.length;
