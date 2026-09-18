@@ -1652,7 +1652,7 @@ async function handlePullFromGoogleSheets() {
 
 let settingsState = {
   isDirty: false,
-  activeTab: 'overview',
+  activeTab: 'profile',
   teamMembers: [],
   googleSheetUrl: null,
   activeGoogleSheetUrl: null
