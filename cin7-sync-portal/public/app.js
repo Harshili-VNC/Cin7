@@ -3726,7 +3726,7 @@ async function loadAdminDashboard() {
     if (alertBox) {
       if (attentionAlerts && attentionAlerts.length > 0) {
         alertBox.innerHTML = attentionAlerts.map(a => `
-          <div style="background: ${a.type === 'critical' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(241, 144, 49, 0.08)'}; border: 1px solid ${a.type === 'critical' ? '#ef4444' : '#f19031'}; border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
+          <div style="background: ${a.type === 'critical' ? '#fef2f2' : '#fff7ed'}; border: 1px solid ${a.type === 'critical' ? '#ef4444' : '#f19031'}; border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 0.625rem;">
               <span>${a.type === 'critical' ? '🚨' : '⚠️'}</span>
               <span style="font-size: 0.8125rem; font-weight: 600; color: var(--foreground);">${escapeHtml(a.message)}</span>
@@ -3736,7 +3736,7 @@ async function loadAdminDashboard() {
         `).join('');
       } else {
         alertBox.innerHTML = `
-          <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid #10b981; border-radius: var(--radius-sm); padding: 0.625rem 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: #047857; font-weight: 600;">
+          <div style="background: #ecfdf5; border: 1px solid #10b981; border-radius: var(--radius-sm); padding: 0.625rem 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: #047857; font-weight: 600;">
             <span>✓</span> All tenant integrations, schedules and subscriptions operating normally.
           </div>
         `;
