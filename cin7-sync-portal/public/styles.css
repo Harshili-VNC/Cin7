@@ -1827,7 +1827,7 @@ body:has(#auth-landing-view:not(.hidden)) {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -2042,15 +2042,10 @@ body:has(#auth-landing-view:not(.hidden)) {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: box-shadow 0.2s ease;
-}
-
-.settings-card:hover {
-  box-shadow: var(--shadow-hover);
 }
 
 .settings-card-header {
