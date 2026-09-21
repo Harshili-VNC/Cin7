@@ -1827,7 +1827,7 @@ body:has(#auth-landing-view:not(.hidden)) {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -2042,15 +2042,10 @@ body:has(#auth-landing-view:not(.hidden)) {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: box-shadow 0.2s ease;
-}
-
-.settings-card:hover {
-  box-shadow: var(--shadow-hover);
 }
 
 .settings-card-header {
@@ -3144,12 +3139,6 @@ input:checked + .slider:before {
    SUPER ADMIN PORTAL & BILLING STYLES
    ========================================================================== */
 
-.admin-wrapper {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
 .admin-hero-card {
   background: #ffffff;
   border: 1px solid var(--border);
@@ -3198,11 +3187,13 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  background: #ffffff;
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.625rem;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-card);
+  position: sticky;
+  top: 5.5rem;
 }
 
 .admin-nav-item {
@@ -3216,21 +3207,37 @@ input:checked + .slider:before {
   color: var(--muted-foreground);
   background: transparent;
   border: none;
+  border-left: 3px solid transparent;
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   width: 100%;
 }
 
+.admin-nav-item svg {
+  flex-shrink: 0;
+  stroke: var(--muted-foreground);
+  transition: stroke 0.15s ease;
+}
+
 .admin-nav-item:hover {
-  background: var(--secondary);
+  background: rgba(0, 70, 130, 0.05);
   color: var(--vnc-main);
 }
 
+.admin-nav-item:hover svg {
+  stroke: var(--vnc-main);
+}
+
 .admin-nav-item.active {
-  background: rgba(122, 78, 171, 0.12);
-  color: #7a4eab;
+  background: #ebf3fb;
+  color: #004682;
+  border-left: 3px solid #004682;
   font-weight: 700;
+}
+
+.admin-nav-item.active svg {
+  stroke: #004682;
 }
 
 .admin-content-area {

@@ -746,7 +746,8 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       const trendMonths = getTrailingMonths(trendRefDate, 10);
       const monthCols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'];
 
-      // Cover & Index "Data Period / Generated" line — dynamic based on sync period & current date
+      // Cover & Index "Data Period / Generated" line — dynamic based on sync period & current date.
+      // Derived from syncWindow settings (custom/presets) or the trailing-months window, plus real sync timestamp.
       const firstMonth = trendMonths[0];
       const lastMonth = trendMonths[trendMonths.length - 1];
       let dataPeriod = '';
@@ -769,7 +770,6 @@ class GoogleSheetsAdapter extends DestinationAdapter {
           ? `${firstMonth.monthName} – ${lastMonth.monthName} ${firstMonth.year}`
           : `${firstMonth.monthName} ${firstMonth.year} – ${lastMonth.monthName} ${lastMonth.year}`;
       }
-
       batchData.push({
         range: `'${COVER_SHEET}'!A5`,
         values: [[`Data Period: ${dataPeriod}  |  Generated: ${trendRefDate.toDateString()}`]]

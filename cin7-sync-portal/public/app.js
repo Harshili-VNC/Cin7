@@ -172,7 +172,16 @@ function updateUIHeader() {
     // RBAC UI permissions
     const adminElements = document.querySelectorAll('.admin-only');
     const managerPlusElements = document.querySelectorAll('.manager-only');
+    // Visible to everyone (status stays readable) but only editable by ADMIN/SUPER_ADMIN,
+    // e.g. Cin7 Account ID and the Google Sheets Master Template ID.
+    const adminEditableInputs = document.querySelectorAll('.admin-editable');
     const syncButtons = document.querySelectorAll('#btn-sync-now, #btn-sync-sales, #btn-sync-inventory, #btn-sync-purchases, #btn-pull-sheets, #btn-pull-sheets-card');
+    const isAdmin = platformRole === 'SUPER_ADMIN' || role === 'ADMIN';
+
+    adminEditableInputs.forEach(el => {
+      el.disabled = !isAdmin;
+      el.title = isAdmin ? '' : 'Only organization admins can change this';
+    });
 
     if (role === 'VIEWER' && platformRole !== 'SUPER_ADMIN') {
       adminElements.forEach(el => el.style.display = 'none');
@@ -208,6 +217,17 @@ function updateUIHeader() {
 }
 
 function navigateTo(viewId) {
+  // Defense-in-depth: the backend already rejects every /api/admin/* call for
+  // non-super-admins, but don't even show the Admin Portal shell (nav labels,
+  // layout) to a client who navigates here directly (e.g. via console/URL).
+  if (viewId === 'admin') {
+    const platformRole = (state.user?.platformRole || state.user?.platform_role || 'USER').toUpperCase();
+    if (platformRole !== 'SUPER_ADMIN') {
+      showToast('You do not have access to the Admin Portal.', 'error');
+      viewId = 'dashboard';
+    }
+  }
+
   const views = ['auth-landing', 'client-select', 'onboarding', 'dashboard', 'reports', 'settings', 'admin-portal', 'support', 'privacy-policy', 'terms-conditions'];
   views.forEach(v => {
     const el = document.getElementById(`${v}-view`);
@@ -1652,7 +1672,7 @@ async function handlePullFromGoogleSheets() {
 
 let settingsState = {
   isDirty: false,
-  activeTab: 'overview',
+  activeTab: 'profile',
   teamMembers: [],
   googleSheetUrl: null,
   activeGoogleSheetUrl: null
@@ -1718,15 +1738,17 @@ async function loadSettingsData() {
 
         if (acctEl) acctEl.value = c.accountId || '';
         if (keyEl) keyEl.value = c.apiKeyMasked || '••••••••••••••••••••';
-        if (badgeEl) {
+        const overviewBadgeEl = document.getElementById('settings-cin7-status-badge-overview');
+        [badgeEl, overviewBadgeEl].forEach(el => {
+          if (!el) return;
           if (c.connected) {
-            badgeEl.className = 'badge badge-success';
-            badgeEl.innerText = 'Connected ✓';
+            el.className = 'badge badge-success';
+            el.innerText = 'Connected ✓';
           } else {
-            badgeEl.className = 'badge badge-warning';
-            badgeEl.innerText = 'Action needed';
+            el.className = 'badge badge-warning';
+            el.innerText = 'Action needed';
           }
-        }
+        });
       }
     }
 
@@ -1744,10 +1766,12 @@ async function loadSettingsData() {
         if (s.spreadsheetUrl) {
           settingsState.activeGoogleSheetUrl = s.spreadsheetUrl;
         }
-        if (badgeEl) {
-          badgeEl.className = s.connected ? 'badge badge-success' : 'badge badge-warning';
-          badgeEl.innerText = s.connected ? 'Connected ✓' : 'Not Connected';
-        }
+        const overviewSheetsBadgeEl = document.getElementById('settings-sheets-status-badge-overview');
+        [badgeEl, overviewSheetsBadgeEl].forEach(el => {
+          if (!el) return;
+          el.className = s.connected ? 'badge badge-success' : 'badge badge-warning';
+          el.innerText = s.connected ? 'Connected ✓' : 'Not Connected';
+        });
         if (statusEl) {
           statusEl.innerText = s.templateStatus || 'Up to date ✓';
         }
@@ -1768,10 +1792,12 @@ async function loadSettingsData() {
         if (dailyToggle) dailyToggle.checked = Boolean(stg.dailySyncEnabled);
         if (timeInput) timeInput.value = stg.dailySyncTime || '02:00';
         if (incrToggle) incrToggle.checked = Boolean(stg.incrementalSync);
-        if (syncBadge) {
-          syncBadge.className = stg.dailySyncEnabled ? 'badge badge-success' : 'badge badge-secondary';
-          syncBadge.innerText = stg.dailySyncEnabled ? 'Active ✓' : 'Paused';
-        }
+        const overviewSyncBadge = document.getElementById('settings-sync-status-badge-overview');
+        [syncBadge, overviewSyncBadge].forEach(el => {
+          if (!el) return;
+          el.className = stg.dailySyncEnabled ? 'badge badge-success' : 'badge badge-secondary';
+          el.innerText = stg.dailySyncEnabled ? 'Active ✓' : 'Paused';
+        });
       }
     }
 
@@ -2001,50 +2027,22 @@ function switchSettingsTab(tabName) {
   const tabContents = document.querySelectorAll('.settings-tab-content');
   tabContents.forEach(el => el.classList.add('hidden'));
 
-  // Dedicated Views
-  if (['overview', 'profile', 'billing', 'team', 'security', 'advanced', 'notifications'].includes(tabName)) {
-    const targetEl = document.getElementById(`settings-tab-${tabName}`);
-    if (targetEl) targetEl.classList.remove('hidden');
-    if (tabName === 'team') loadTeamMembers();
-    if (tabName === 'billing') loadBillingData();
-    if (tabName === 'notifications') {
-      fetch('/api/notifications').then(r => r.json()).then(d => {
-        if (d && d.notifications) {
-          const n = d.notifications;
-          if (document.getElementById('notif-daily-summary')) document.getElementById('notif-daily-summary').checked = Boolean(n.dailySummary);
-          if (document.getElementById('notif-sync-completed')) document.getElementById('notif-sync-completed').checked = Boolean(n.syncCompleted);
-          if (document.getElementById('notif-sync-failed')) document.getElementById('notif-sync-failed').checked = Boolean(n.syncFailed);
-          if (document.getElementById('notif-critical-errors')) document.getElementById('notif-critical-errors').checked = Boolean(n.criticalErrors);
-          if (document.getElementById('notif-weekly-reports')) document.getElementById('notif-weekly-reports').checked = Boolean(n.weeklyReports);
-        }
-      }).catch(console.error);
-    }
-  } else {
-    // Subsection navigation (Organization, CIN7, Sheets, Automation, Notifications)
-    const overviewEl = document.getElementById('settings-tab-overview');
-    if (overviewEl) overviewEl.classList.remove('hidden');
-
-    const cardMap = {
-      'organization': 'card-organization',
-      'billing': 'card-billing',
-      'cin7': 'card-cin7',
-      'sheets': 'card-google-sheets',
-      'automation': 'card-sync-automation',
-      'notifications': 'card-notifications'
-    };
-
-    const cardId = cardMap[tabName];
-    if (cardId) {
-      const cardEl = document.getElementById(cardId);
-      if (cardEl) {
-        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        cardEl.style.transition = 'box-shadow 0.3s ease';
-        cardEl.style.boxShadow = '0 0 0 2px var(--vnc-main), var(--shadow-lift)';
-        setTimeout(() => {
-          cardEl.style.boxShadow = '';
-        }, 1200);
+  // Every nav item now has its own dedicated content area — show only that one.
+  const targetEl = document.getElementById(`settings-tab-${tabName}`);
+  if (targetEl) targetEl.classList.remove('hidden');
+  if (tabName === 'team') loadTeamMembers();
+  if (tabName === 'billing') loadBillingData();
+  if (tabName === 'notifications') {
+    fetch('/api/notifications').then(r => r.json()).then(d => {
+      if (d && d.notifications) {
+        const n = d.notifications;
+        if (document.getElementById('notif-daily-summary')) document.getElementById('notif-daily-summary').checked = Boolean(n.dailySummary);
+        if (document.getElementById('notif-sync-completed')) document.getElementById('notif-sync-completed').checked = Boolean(n.syncCompleted);
+        if (document.getElementById('notif-sync-failed')) document.getElementById('notif-sync-failed').checked = Boolean(n.syncFailed);
+        if (document.getElementById('notif-critical-errors')) document.getElementById('notif-critical-errors').checked = Boolean(n.criticalErrors);
+        if (document.getElementById('notif-weekly-reports')) document.getElementById('notif-weekly-reports').checked = Boolean(n.weeklyReports);
       }
-    }
+    }).catch(console.error);
   }
 }
 
@@ -3665,41 +3663,43 @@ async function loadBillingData() {
       ovBadge.className = `badge ${currentStatus === 'ACTIVE' ? 'badge-success' : 'badge-warning'}`;
     }
 
+    const usersCurrent = usage.users?.current ?? 0;
+    const syncsCurrent = usage.syncs?.current ?? 0;
+
     const ovUsers = document.getElementById('overview-billing-users');
-    if (ovUsers) ovUsers.innerText = `${usage.users?.current || usage.users || 1} / ${limits.max_users || '10'}`;
+    if (ovUsers) ovUsers.innerText = `${usersCurrent || 1} / ${limits.max_users || '10'}`;
 
     const ovSyncs = document.getElementById('overview-billing-syncs');
-    const currentSyncCount = usage.syncsThisMonth ?? usage.syncs_this_month ?? 0;
-    if (ovSyncs) ovSyncs.innerText = `${currentSyncCount} / ${limits.max_syncs_per_month || '500'}`;
+    if (ovSyncs) ovSyncs.innerText = `${syncsCurrent} / ${limits.max_syncs_per_month || '500'}`;
 
     // 3. Update Progress Bars & Metrics in Dedicated Tab
     const seatsFraction = document.getElementById('billing-seats-fraction');
-    if (seatsFraction) seatsFraction.innerText = `${usage.users} / ${limits.max_users || '∞'}`;
+    if (seatsFraction) seatsFraction.innerText = `${usersCurrent} / ${limits.max_users || '∞'}`;
 
     const seatsBar = document.getElementById('billing-seats-bar');
     if (seatsBar && limits.max_users) {
-      const pct = Math.min(100, Math.round((usage.users / limits.max_users) * 100));
+      const pct = Math.min(100, Math.round((usersCurrent / limits.max_users) * 100));
       seatsBar.style.width = `${pct}%`;
     }
 
     const seatsNote = document.getElementById('billing-seats-note');
     if (seatsNote && limits.max_users) {
-      const remaining = Math.max(0, limits.max_users - usage.users);
+      const remaining = Math.max(0, limits.max_users - usersCurrent);
       seatsNote.innerText = `${remaining} seat${remaining === 1 ? '' : 's'} available`;
     }
 
     const syncsFraction = document.getElementById('billing-syncs-fraction');
-    if (syncsFraction) syncsFraction.innerText = `${usage.syncs_this_month} / ${limits.max_syncs_per_month || '∞'}`;
+    if (syncsFraction) syncsFraction.innerText = `${syncsCurrent} / ${limits.max_syncs_per_month || '∞'}`;
 
     const syncsBar = document.getElementById('billing-syncs-bar');
     if (syncsBar && limits.max_syncs_per_month) {
-      const pct = Math.min(100, Math.round((usage.syncs_this_month / limits.max_syncs_per_month) * 100));
+      const pct = Math.min(100, Math.round((syncsCurrent / limits.max_syncs_per_month) * 100));
       syncsBar.style.width = `${pct}%`;
     }
 
     const syncsNote = document.getElementById('billing-syncs-note');
     if (syncsNote && limits.max_syncs_per_month) {
-      const remaining = Math.max(0, limits.max_syncs_per_month - usage.syncs_this_month);
+      const remaining = Math.max(0, limits.max_syncs_per_month - syncsCurrent);
       syncsNote.innerText = `${remaining} sync${remaining === 1 ? '' : 's'} remaining this month`;
     }
 
@@ -3881,7 +3881,7 @@ async function loadAdminDashboard() {
     document.getElementById('admin-kpi-active-subs').innerText = summary.activeOrganizations || summary.activeSubscriptions || 0;
     document.getElementById('admin-kpi-subs-status').innerText = `${summary.pastDueOrganizations || summary.pastDueSubscriptions || 0} Past Due · ${summary.expiredOrganizations || summary.expiredSubscriptions || 0} Expired`;
 
-    document.getElementById('admin-kpi-monthly-syncs').innerText = (summary.syncSuccessful || summary.syncsThisMonth || 0).toLocaleString();
+    document.getElementById('admin-kpi-monthly-syncs').innerText = (summary.syncsThisMonth ?? summary.syncSuccessful ?? 0).toLocaleString();
 
     document.getElementById('admin-kpi-cin7-conns').innerText = summary.cin7Connected || 0;
     document.getElementById('admin-kpi-cin7-errors').innerText = `${summary.cin7Errors || 0} Error${summary.cin7Errors === 1 ? '' : 's'}`;
@@ -3894,7 +3894,7 @@ async function loadAdminDashboard() {
     if (alertBox) {
       if (attentionAlerts && attentionAlerts.length > 0) {
         alertBox.innerHTML = attentionAlerts.map(a => `
-          <div style="background: ${a.type === 'critical' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(241, 144, 49, 0.08)'}; border: 1px solid ${a.type === 'critical' ? '#ef4444' : '#f19031'}; border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
+          <div style="background: ${a.type === 'critical' ? '#fef2f2' : '#fff7ed'}; border: 1px solid ${a.type === 'critical' ? '#ef4444' : '#f19031'}; border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 0.625rem;">
               <span>${a.type === 'critical' ? '🚨' : '⚠️'}</span>
               <span style="font-size: 0.8125rem; font-weight: 600; color: var(--foreground);">${escapeHtml(a.message)}</span>
@@ -3904,7 +3904,7 @@ async function loadAdminDashboard() {
         `).join('');
       } else {
         alertBox.innerHTML = `
-          <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid #10b981; border-radius: var(--radius-sm); padding: 0.625rem 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: #047857; font-weight: 600;">
+          <div style="background: #ecfdf5; border: 1px solid #10b981; border-radius: var(--radius-sm); padding: 0.625rem 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: #047857; font-weight: 600;">
             <span>✓</span> All tenant integrations, schedules and subscriptions operating normally.
           </div>
         `;
@@ -3915,22 +3915,31 @@ async function loadAdminDashboard() {
     const tbody = document.getElementById('admin-dashboard-recent-syncs');
     if (tbody) {
       if (!recentSyncs || recentSyncs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">No sync runs recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">No sync runs recorded yet.</td></tr>`;
       } else {
         tbody.innerHTML = recentSyncs.map(s => {
           const statusBadge = s.status === 'SUCCESS' || s.status === 'COMPLETED' ? 'badge-success' : (s.status === 'FAILED' ? 'badge-destructive' : 'badge-warning');
           const statusLabel = s.status === 'SUCCESS' || s.status === 'COMPLETED' ? 'Completed' : (s.status === 'FAILED' ? 'Failed' : 'In Progress');
           const safeOrg = escapeHtml(s.organizationName || s.companyName || 'Unknown Client');
           const syncLabel = { 'GOOGLE_SHEETS': 'Google Sheets Export', 'FULL': 'Full Sync', 'INCREMENTAL': 'Incremental Sync', 'INVENTORY': 'Inventory Sync' }[s.syncType] || escapeHtml(s.syncType || 'Sync');
+          const sheetCell = s.sheetUrl
+            ? `<a href="${escapeHtml(s.sheetUrl)}" target="_blank" rel="noopener noreferrer" title="Open this run's Google Sheet"
+                  style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; color: var(--vnc-blue); border: 1px solid var(--border); border-radius: var(--radius-sm); text-decoration: none; background: transparent;">
+                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                 Sheet
+               </a>`
+            : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">—</span>`;
 
           return `
             <tr>
               <td style="font-weight: 700;">${safeOrg}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground); font-family: var(--font-mono);">${escapeHtml(s.runId || s.id || '—')}</td>
               <td><span class="badge badge-secondary">${syncLabel}</span></td>
               <td style="font-weight: 600;">${Number(s.recordsProcessed || 0).toLocaleString()}</td>
               <td style="color: var(--muted-foreground);">${s.durationMs ? `${(s.durationMs / 1000).toFixed(1)}s` : '—'}</td>
               <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
               <td style="font-size: 0.75rem; color: var(--muted-foreground);">${s.completedAt ? new Date(s.completedAt).toLocaleTimeString() : 'In Progress'}</td>
+              <td>${sheetCell}</td>
             </tr>
           `;
         }).join('');
@@ -4496,11 +4505,19 @@ async function loadAdminSheets() {
 
 // ── 9. Sync Runs Monitoring ─────────────────────────────────────────────────
 
+let adminSyncSearchDebounceTimer = null;
+function debouncedLoadAdminSync() {
+  clearTimeout(adminSyncSearchDebounceTimer);
+  adminSyncSearchDebounceTimer = setTimeout(() => loadAdminSync(1), 300);
+}
+
 async function loadAdminSync(page = 1) {
   adminState.syncs.page = page;
   const status = document.getElementById('admin-sync-status-filter')?.value || '';
   const syncType = document.getElementById('admin-sync-type-filter')?.value || '';
-  const params = new URLSearchParams({ page, limit: adminState.syncs.limit, status, syncType });
+  const dateRange = document.getElementById('admin-sync-date-filter')?.value || '';
+  const company = document.getElementById('admin-sync-search')?.value.trim() || '';
+  const params = new URLSearchParams({ page, limit: adminState.syncs.limit, status, syncType, dateRange, company });
 
   try {
     const res = await fetch(`/api/admin/sync?${params.toString()}`);
@@ -4513,16 +4530,23 @@ async function loadAdminSync(page = 1) {
     const tbody = document.getElementById('admin-sync-table-body');
     if (tbody) {
       if (runs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No sync runs recorded.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No sync runs recorded.</td></tr>`;
       } else {
         tbody.innerHTML = runs.map(r => {
           const safeOrg = escapeHtml(r.companyName || r.organizationName || 'Unknown Client');
-          const syncLabel = { 'GOOGLE_SHEETS': 'Google Sheets Export', 'FULL': 'Full Sync', 'INCREMENTAL': 'Incremental Sync', 'INVENTORY': 'Inventory Sync', 'REPORT': 'Report Sync' }[r.syncType] || escapeHtml(r.syncType || 'Sync');
+          const syncLabel = { 'GOOGLE_SHEETS': 'Google Sheets Export', 'FULL': 'Full Sync', 'INCREMENTAL': 'Incremental Sync', 'INVENTORY': 'Inventory Sync', 'REPORT': 'Report Sync', 'GOOGLE_SHEET_PULL': 'Google Sheets Pull' }[r.syncType] || escapeHtml(r.syncType || 'Sync');
           const isOk = r.status === 'SUCCESS' || r.status === 'COMPLETED';
           const isRunning = r.status === 'RUNNING' || r.status === 'IN_PROGRESS';
           const statusLabel = isOk ? 'Completed' : (isRunning ? 'In Progress' : 'Failed');
           const statusCls = isOk ? 'badge-success' : (isRunning ? 'badge-warning' : 'badge-destructive');
           const safeErr = escapeHtml(r.errorMessage || r.error || 'None');
+          const sheetCell = r.sheetUrl
+            ? `<a href="${escapeHtml(r.sheetUrl)}" target="_blank" rel="noopener noreferrer" title="Open this run's Google Sheet"
+                  style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; color: var(--vnc-blue); border: 1px solid var(--border); border-radius: var(--radius-sm); text-decoration: none; background: transparent;">
+                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                 Sheet
+               </a>`
+            : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">—</span>`;
 
           return `
             <tr>
@@ -4534,6 +4558,7 @@ async function loadAdminSync(page = 1) {
               <td style="font-size: 0.75rem; color: var(--muted-foreground);">${r.startedAt ? new Date(r.startedAt).toLocaleString() : '—'}</td>
               <td style="font-size: 0.75rem; color: var(--muted-foreground);">${r.completedAt ? new Date(r.completedAt).toLocaleString() : 'In Progress'}</td>
               <td style="font-size: 0.75rem; color: ${r.errorMessage || r.error ? 'var(--destructive)' : 'var(--muted-foreground)'};">${safeErr}</td>
+              <td>${sheetCell}</td>
             </tr>
           `;
         }).join('');
