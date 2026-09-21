@@ -746,6 +746,35 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       const trendMonths = getTrailingMonths(trendRefDate, 10);
       const monthCols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'];
 
+      // Cover & Index "Data Period / Generated" line — dynamic based on sync period & current date
+      const firstMonth = trendMonths[0];
+      const lastMonth = trendMonths[trendMonths.length - 1];
+      let dataPeriod = '';
+      if (syncWindow.dateRange === 'custom' && syncWindow.startDate && syncWindow.endDate) {
+        const s = new Date(syncWindow.startDate);
+        const e = new Date(syncWindow.endDate);
+        dataPeriod = `${s.toLocaleString('default', { month: 'short' })} ${s.getDate()}, ${s.getFullYear()} – ${e.toLocaleString('default', { month: 'short' })} ${e.getDate()}, ${e.getFullYear()}`;
+      } else if (syncWindow.dateRange === '30d') {
+        dataPeriod = 'Last 30 Days';
+      } else if (syncWindow.dateRange === '60d') {
+        dataPeriod = 'Last 60 Days';
+      } else if (syncWindow.dateRange === '90d') {
+        dataPeriod = 'Last 90 Days';
+      } else if (syncWindow.dateRange === '180d') {
+        dataPeriod = 'Last 6 Months';
+      } else if (syncWindow.dateRange === '365d' || syncWindow.dateRange === '12m') {
+        dataPeriod = 'Last 12 Months';
+      } else {
+        dataPeriod = firstMonth.year === lastMonth.year
+          ? `${firstMonth.monthName} – ${lastMonth.monthName} ${firstMonth.year}`
+          : `${firstMonth.monthName} ${firstMonth.year} – ${lastMonth.monthName} ${lastMonth.year}`;
+      }
+
+      batchData.push({
+        range: `'${COVER_SHEET}'!A5`,
+        values: [[`Data Period: ${dataPeriod}  |  Generated: ${trendRefDate.toDateString()}`]]
+      });
+
       // Header row: real dates driving every formula below via TEXT(col$3,"mmmm") / YEAR(col$3)
       batchData.push({ range: "'Sales Trend Analysis'!B3:K3", values: [trendMonths.map(m => m.isoDate)] });
 

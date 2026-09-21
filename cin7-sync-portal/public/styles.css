@@ -3808,6 +3808,155 @@ input:checked + .slider:before {
 }
 
 /* ==========================================================================
+   WORKBOOK PREVIEW MODAL ENHANCED HIGHLIGHTS & KPI CARDS
+   ========================================================================== */
+.preview-hero-banner {
+  background: linear-gradient(135deg, rgba(0, 70, 130, 0.06) 0%, rgba(122, 78, 171, 0.08) 100%);
+  border: 1px solid rgba(0, 70, 130, 0.15);
+  border-radius: var(--radius-md);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.preview-hero-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--vnc-main, #004682);
+  margin-bottom: 0.25rem;
+}
+
+.preview-hero-subtitle {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.preview-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.preview-kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  position: relative;
+  overflow: hidden;
+}
+
+.preview-kpi-card.highlight-blue {
+  border-left: 4px solid var(--vnc-main, #004682);
+}
+
+.preview-kpi-card.highlight-green {
+  border-left: 4px solid #10b981;
+}
+
+.preview-kpi-card.highlight-purple {
+  border-left: 4px solid #7a4eab;
+}
+
+.preview-kpi-card.highlight-amber {
+  border-left: 4px solid #f59e0b;
+}
+
+.preview-kpi-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  margin-bottom: 0.35rem;
+}
+
+.preview-kpi-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--foreground);
+  line-height: 1.2;
+}
+
+.preview-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.preview-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.preview-pill-critical {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.preview-pill-low {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.preview-pill-healthy {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.preview-pill-overstock {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.preview-highlight-total {
+  background: rgba(0, 70, 130, 0.07) !important;
+  font-weight: 800 !important;
+  border-top: 2px solid rgba(0, 70, 130, 0.25) !important;
+  border-bottom: 2px solid rgba(0, 70, 130, 0.25) !important;
+}
+
+.preview-highlight-profit {
+  background: rgba(16, 185, 129, 0.08) !important;
+  font-weight: 700 !important;
+}
+
+.preview-highlight-section {
+  background: #f1f5f9 !important;
+  font-weight: 800 !important;
+  color: var(--vnc-main, #004682) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem !important;
+}
+
+.preview-raw-banner {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+}
+
+/* ==========================================================================
    GLOBAL APPLICATION FOOTER (MODERN ENTERPRISE SAAS REDESIGN)
    ========================================================================== */
 .app-global-footer {

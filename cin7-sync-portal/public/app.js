@@ -2457,7 +2457,7 @@ async function openWorkbookViewer() {
 
     if (!data.success || !Array.isArray(data.sheets) || data.sheets.length === 0) {
       if (tableContainer) {
-        tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">${escapeHtml(data.message || 'No synced Google Sheet found yet. Run a sync first.')}</div>`;
+        tableContainer.innerHTML = `<div style="padding: 2.5rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">${escapeHtml(data.message || 'No synced Google Sheet found yet. Run a sync first.')}</div>`;
       }
       return;
     }
@@ -2477,7 +2477,7 @@ async function openWorkbookViewer() {
   } catch (err) {
     console.error('Error loading live workbook preview:', err);
     if (tableContainer) {
-      tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Failed to load live Google Sheet data. Please try again.</div>`;
+      tableContainer.innerHTML = `<div style="padding: 2.5rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Failed to load live Google Sheet data. Please try again.</div>`;
     }
   }
 }
@@ -2493,38 +2493,184 @@ function selectViewerSheet(sheetName, btnElement) {
   if (!tableContainer) return;
 
   const sheet = (state.workbookPreviewSheets || []).find(s => s.name === sheetName);
-  const rows = sheet ? sheet.rows : [];
+  const rawRows = sheet ? (sheet.rows || []) : [];
 
-  if (rows.length === 0) {
+  if (rawRows.length === 0) {
     tableContainer.innerHTML = `
-      <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; background: var(--card);">
+      <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2.5rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; background: var(--card);">
         '${escapeHtml(sheetName)}' has no data yet in the live Google Sheet.
       </div>
     `;
     return;
   }
 
+  // Filter out completely empty spacer rows
+  const cleanRows = rawRows.filter(row => Array.isArray(row) && row.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
+
+  // 1. Specialized View for "Cover & Index"
+  if (sheetName.includes('Cover') || sheetName.includes('Index')) {
+    renderCoverSheetPreview(cleanRows, tableContainer);
+    return;
+  }
+
+  // 2. Specialized View for Raw Data sheets (e.g. Sales / Inventory / Purchase Raw Data)
+  const isRawDataSheet = sheetName.toLowerCase().includes('raw data') || sheetName.toLowerCase().includes('transaction');
+  if (isRawDataSheet) {
+    renderRawDataPreview(sheetName, cleanRows, tableContainer);
+    return;
+  }
+
+  // 3. Default Analytical & Financial Models with Highlighted Important Rows
+  renderAnalyticalSheetPreview(sheetName, cleanRows, tableContainer);
+}
+
+function renderCoverSheetPreview(rows, container) {
+  // Extract key fields from Cover & Index rows
+  let companyName = state.client?.companyName || 'Client Organization';
+  let modelTitle = 'Monthly Controller Reporting Model';
+  let dataPeriodStr = '';
+  let totalRevenue = '$0';
+  let grossProfit = '$0';
+  let criticalAlerts = '0';
+  let lowStockAlerts = '0';
+  let healthyAlerts = '0';
+  let overstockAlerts = '0';
+  let indexRows = [];
+
+  let inIndex = false;
+
+  rows.forEach((row, idx) => {
+    const firstCell = String(row[0] || '').trim();
+    if (idx === 0 && firstCell) companyName = firstCell;
+    if (idx === 1 && firstCell) modelTitle = firstCell;
+    if (firstCell.includes('Data Period:')) dataPeriodStr = firstCell;
+
+    // Detect Total Revenue / Gross Profit
+    row.forEach((cell, cIdx) => {
+      const cStr = String(cell || '').trim();
+      if (cStr.toLowerCase() === 'total revenue' && row[cIdx + 1]) totalRevenue = row[cIdx + 1];
+      if (cStr.toLowerCase() === 'gross profit' && row[cIdx + 1]) grossProfit = row[cIdx + 1];
+      if (cStr.includes('INVENTORY ALERTS')) {
+        const fullAlertStr = row.join(' ');
+        const critMatch = fullAlertStr.match(/Critical:\s*(\d+)/i);
+        const lowMatch = fullAlertStr.match(/Low Stock:\s*(\d+)/i);
+        const healthMatch = fullAlertStr.match(/Healthy:\s*(\d+)/i);
+        const overMatch = fullAlertStr.match(/Overstock:\s*(\d+)/i);
+        if (critMatch) criticalAlerts = critMatch[1];
+        if (lowMatch) lowStockAlerts = lowMatch[1];
+        if (healthMatch) healthyAlerts = healthMatch[1];
+        if (overMatch) overstockAlerts = overMatch[1];
+      }
+    });
+
+    // Check if row has revenue / profit numbers
+    if (firstCell.startsWith('$') && !firstCell.includes('INVENTORY')) {
+      totalRevenue = firstCell;
+      if (row[1] && String(row[1]).startsWith('$')) grossProfit = row[1];
+      else if (row[row.length - 1] && String(row[row.length - 1]).startsWith('$')) grossProfit = row[row.length - 1];
+    }
+
+    if (firstCell.includes('WORKBOOK INDEX')) {
+      inIndex = true;
+      return;
+    }
+
+    if (inIndex && row.length >= 2) {
+      indexRows.push(row);
+    }
+  });
+
+  const indexTableHtml = indexRows.length > 0 ? `
+    <div style="margin-top: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--card);">
+      <div style="background: var(--muted); padding: 0.625rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); text-transform: uppercase;">
+        📑 Workbook Sheets & Model Directory
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.8125rem;">
+        <tbody>
+          ${indexRows.map((r, i) => `
+            <tr style="border-bottom: 1px solid var(--border); background: ${i % 2 === 0 ? 'var(--card)' : 'var(--secondary)'};">
+              <td style="padding: 0.5rem 1rem; font-weight: 600; color: var(--foreground);">${escapeHtml(r[1] || r[0])}</td>
+              <td style="padding: 0.5rem 1rem; text-align: right;"><span class="badge badge-secondary" style="font-size: 0.6875rem;">${escapeHtml(r[2] || 'Report')}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
+  container.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <!-- Hero Banner -->
+      <div class="preview-hero-banner">
+        <div>
+          <div class="preview-hero-title">${escapeHtml(companyName)}</div>
+          <div class="preview-hero-subtitle">${escapeHtml(modelTitle)} &bull; Powered by Cin7 Core</div>
+        </div>
+        ${dataPeriodStr ? `<div class="badge badge-primary" style="font-size: 0.75rem; padding: 0.4rem 0.75rem; font-weight: 600;">${escapeHtml(dataPeriodStr)}</div>` : ''}
+      </div>
+
+      <!-- Executive KPI Cards -->
+      <div class="preview-kpi-grid">
+        <div class="preview-kpi-card highlight-blue">
+          <span class="preview-kpi-label">Total Revenue</span>
+          <span class="preview-kpi-value" style="color: var(--vnc-main);">${escapeHtml(totalRevenue)}</span>
+        </div>
+        <div class="preview-kpi-card highlight-green">
+          <span class="preview-kpi-label">Gross Profit</span>
+          <span class="preview-kpi-value" style="color: #10b981;">${escapeHtml(grossProfit)}</span>
+        </div>
+        <div class="preview-kpi-card highlight-purple">
+          <span class="preview-kpi-label">Inventory Health</span>
+          <div class="preview-pill-group">
+            <span class="preview-pill preview-pill-critical">Critical: ${escapeHtml(criticalAlerts)}</span>
+            <span class="preview-pill preview-pill-low">Low: ${escapeHtml(lowStockAlerts)}</span>
+            <span class="preview-pill preview-pill-healthy">Healthy: ${escapeHtml(healthyAlerts)}</span>
+            <span class="preview-pill preview-pill-overstock">Overstock: ${escapeHtml(overstockAlerts)}</span>
+          </div>
+        </div>
+      </div>
+
+      ${indexTableHtml}
+    </div>
+  `;
+}
+
+function renderAnalyticalSheetPreview(sheetName, rows, container) {
   const [headerRow, ...bodyRowsData] = rows;
 
   const headerCells = headerRow.map(cell => `
-    <th style="padding: 0.625rem 0.875rem; color: var(--muted-foreground); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em; text-align: left; white-space: nowrap;">${escapeHtml(cell)}</th>
+    <th style="padding: 0.625rem 0.875rem; color: var(--muted-foreground); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em; text-align: left; white-space: nowrap;">${escapeHtml(cell)}</th>
   `).join('');
 
   const bodyRows = bodyRowsData.map(row => {
-    const cells = row.map(cell => `<td style="padding: 0.625rem 0.875rem; white-space: nowrap;">${escapeHtml(cell)}</td>`).join('');
-    return `<tr style="border-bottom: 1px solid var(--border); transition: background 0.15s ease;">${cells}</tr>`;
+    const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
+    const isTotalRow = rowStr.includes('total') || rowStr.includes('sum');
+    const isProfitRow = rowStr.includes('gross profit') || rowStr.includes('margin %') || rowStr.includes('net movement');
+    const isSectionRow = row.length > 0 && row.filter(c => c !== null && c !== undefined && String(c).trim() !== '').length === 1 && String(row[0]).length > 2 && String(row[0]) === String(row[0]).toUpperCase();
+
+    let rowClass = '';
+    if (isTotalRow) rowClass = 'preview-highlight-total';
+    else if (isProfitRow) rowClass = 'preview-highlight-profit';
+    else if (isSectionRow) rowClass = 'preview-highlight-section';
+
+    const cells = row.map((cell, idx) => {
+      const cellVal = escapeHtml(cell);
+      return `<td style="padding: 0.625rem 0.875rem; white-space: nowrap; ${idx === 0 && (isTotalRow || isProfitRow) ? 'font-weight: 800;' : ''}">${cellVal}</td>`;
+    }).join('');
+
+    return `<tr class="${rowClass}" style="border-bottom: 1px solid var(--border); transition: background 0.15s ease;">${cells}</tr>`;
   }).join('');
 
-  tableContainer.innerHTML = `
+  container.innerHTML = `
     <div style="border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--card);">
       <div style="background: var(--secondary); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
         <div>
           <span style="font-weight: 700; font-size: 0.875rem; color: var(--foreground);">${escapeHtml(sheetName)}</span>
-          <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">— live from your synced Google Sheet</span>
+          <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">— live model calculations</span>
         </div>
-        <span class="badge badge-outline" style="font-size: 0.6875rem;">${bodyRowsData.length} rows previewed</span>
+        <span class="badge badge-outline" style="font-size: 0.6875rem;">${bodyRowsData.length} rows</span>
       </div>
-      <div style="overflow-x: auto; max-height: 480px; overflow-y: auto;">
+      <div style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
         <table style="width: 100%; border-collapse: collapse; font-size: 0.8125rem;">
           <thead>
             <tr style="background: var(--muted); border-bottom: 1px solid var(--border);">
