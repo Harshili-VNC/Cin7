@@ -172,7 +172,16 @@ function updateUIHeader() {
     // RBAC UI permissions
     const adminElements = document.querySelectorAll('.admin-only');
     const managerPlusElements = document.querySelectorAll('.manager-only');
+    // Visible to everyone (status stays readable) but only editable by ADMIN/SUPER_ADMIN,
+    // e.g. Cin7 Account ID and the Google Sheets Master Template ID.
+    const adminEditableInputs = document.querySelectorAll('.admin-editable');
     const syncButtons = document.querySelectorAll('#btn-sync-now, #btn-sync-sales, #btn-sync-inventory, #btn-sync-purchases, #btn-pull-sheets, #btn-pull-sheets-card');
+    const isAdmin = platformRole === 'SUPER_ADMIN' || role === 'ADMIN';
+
+    adminEditableInputs.forEach(el => {
+      el.disabled = !isAdmin;
+      el.title = isAdmin ? '' : 'Only organization admins can change this';
+    });
 
     if (role === 'VIEWER' && platformRole !== 'SUPER_ADMIN') {
       adminElements.forEach(el => el.style.display = 'none');

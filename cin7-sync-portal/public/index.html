@@ -1281,7 +1281,7 @@
                 <div class="settings-card-body">
                   <div class="form-group" style="margin-top: 0;">
                     <label class="form-label" for="settings-sheets-template-id">Master Template ID</label>
-                    <input class="form-input" id="settings-sheets-template-id" placeholder="System Managed Master Template" oninput="markSettingsDirty()">
+                    <input class="form-input admin-editable" id="settings-sheets-template-id" placeholder="System Managed Master Template" oninput="markSettingsDirty()">
                   </div>
                   <div class="settings-grid-2">
                     <div class="form-group" style="margin-top: 0;">
@@ -1299,11 +1299,11 @@
                 </div>
                 <div class="settings-card-footer">
                   <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <a href="/api/auth/google/connect" class="btn btn-secondary btn-xs" id="btn-auth-google-sheet" title="Authorize Google Drive & Sheets in Browser">🔗 Authorize Google</a>
+                    <a href="/api/auth/google/connect" class="btn btn-secondary btn-xs admin-only" id="btn-auth-google-sheet" title="Authorize Google Drive & Sheets in Browser">🔗 Authorize Google</a>
                     <button type="button" class="btn btn-outline btn-xs" onclick="testGoogleSheetsConnection()">Test Connection</button>
                     <button type="button" class="btn btn-ghost btn-xs" id="btn-open-google-sheet" onclick="openActiveGoogleSheet()">Open Template ↗</button>
                   </div>
-                  <button type="button" class="btn btn-primary btn-xs" onclick="saveGoogleSheetsSettings()">Save</button>
+                  <button type="button" class="btn btn-primary btn-xs admin-only" onclick="saveGoogleSheetsSettings()">Save</button>
                 </div>
               </div>
             </div>
@@ -1327,13 +1327,13 @@
                   <div class="settings-grid-2">
                     <div class="form-group" style="margin-top: 0;">
                       <label class="form-label" for="settings-cin7-account">Account ID</label>
-                      <input class="form-input" id="settings-cin7-account" placeholder="Enter Cin7 Account ID" oninput="markSettingsDirty()">
+                      <input class="form-input admin-editable" id="settings-cin7-account" placeholder="Enter Cin7 Account ID" oninput="markSettingsDirty()">
                     </div>
                     <div class="form-group" style="margin-top: 0;">
                       <label class="form-label" for="settings-cin7-key">API Application Key</label>
                       <div style="display: flex; gap: 0.5rem;">
                         <input class="form-input" type="text" id="settings-cin7-key" placeholder="••••••••••••••••••••" disabled style="letter-spacing: 0.1em; background: var(--secondary); font-family: var(--font-mono);">
-                        <button type="button" class="btn btn-outline btn-sm" onclick="openReplaceCin7Modal()" title="Replace API Key">Replace</button>
+                        <button type="button" class="btn btn-outline btn-sm admin-only" onclick="openReplaceCin7Modal()" title="Replace API Key">Replace</button>
                       </div>
                     </div>
                   </div>
@@ -1346,7 +1346,7 @@
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                     Test Connection
                   </button>
-                  <button type="button" class="btn btn-primary btn-xs" onclick="openReplaceCin7Modal()">Save Credentials</button>
+                  <button type="button" class="btn btn-primary btn-xs admin-only" onclick="openReplaceCin7Modal()">Save Credentials</button>
                 </div>
               </div>
             </div>
