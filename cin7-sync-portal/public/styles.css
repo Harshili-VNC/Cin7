@@ -2037,15 +2037,20 @@ body:has(#auth-landing-view:not(.hidden)) {
   }
 }
 
-/* Settings Cards Styling — matches Admin Portal's flat card treatment */
+/* Settings Cards Styling */
 .settings-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transition: box-shadow 0.2s ease;
+}
+
+.settings-card:hover {
+  box-shadow: var(--shadow-hover);
 }
 
 .settings-card-header {
@@ -3140,7 +3145,7 @@ input:checked + .slider:before {
    ========================================================================== */
 
 .admin-hero-card {
-  background: var(--card);
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
@@ -3255,7 +3260,7 @@ input:checked + .slider:before {
 }
 
 .admin-kpi-card {
-  background: var(--card);
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.125rem;
