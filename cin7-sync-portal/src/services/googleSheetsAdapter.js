@@ -746,6 +746,20 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       const trendMonths = getTrailingMonths(trendRefDate, 10);
       const monthCols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'];
 
+      // Cover & Index "Data Period / Generated" line — was a hardcoded placeholder
+      // string in the master template ("Data Period: March – November 2025 |
+      // Generated: Thu Mar 12 2026"). Now derived from the same trailing-months
+      // window as Sales Trend Analysis, and the real sync timestamp.
+      const firstMonth = trendMonths[0];
+      const lastMonth = trendMonths[trendMonths.length - 1];
+      const dataPeriod = firstMonth.year === lastMonth.year
+        ? `${firstMonth.monthName} – ${lastMonth.monthName} ${firstMonth.year}`
+        : `${firstMonth.monthName} ${firstMonth.year} – ${lastMonth.monthName} ${lastMonth.year}`;
+      batchData.push({
+        range: `'${COVER_SHEET}'!A5`,
+        values: [[`Data Period: ${dataPeriod}  |  Generated: ${trendRefDate.toDateString()}`]]
+      });
+
       // Header row: real dates driving every formula below via TEXT(col$3,"mmmm") / YEAR(col$3)
       batchData.push({ range: "'Sales Trend Analysis'!B3:K3", values: [trendMonths.map(m => m.isoDate)] });
 
