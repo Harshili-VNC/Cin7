@@ -72,7 +72,6 @@
 
   --shadow-sm: 0 1px 2px rgba(0, 70, 130, 0.04);
   --shadow-card: 0 1px 3px rgba(0, 70, 130, 0.05), 0 10px 25px -5px rgba(0, 70, 130, 0.06);
-  --shadow-hover: 0 4px 12px -2px rgba(0, 70, 130, 0.12), 0 2px 4px -2px rgba(0, 70, 130, 0.08);
   --shadow-lift: 0 20px 35px -10px rgba(0, 70, 130, 0.16), 0 1px 3px rgba(0, 70, 130, 0.05);
   --shadow-modal: 0 25px 50px -12px rgba(0, 40, 77, 0.35);
 
@@ -2038,20 +2037,15 @@ body:has(#auth-landing-view:not(.hidden)) {
   }
 }
 
-/* Settings Cards Styling */
+/* Settings Cards Styling — matches Admin Portal's flat card treatment */
 .settings-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: box-shadow 0.2s ease;
-}
-
-.settings-card:hover {
-  box-shadow: var(--shadow-hover);
 }
 
 .settings-card-header {
@@ -3151,7 +3145,7 @@ input:checked + .slider:before {
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.5rem;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .admin-hero-top {
@@ -3265,14 +3259,9 @@ input:checked + .slider:before {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.125rem;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  transition: box-shadow 0.2s ease;
-}
-
-.admin-kpi-card:hover {
-  box-shadow: var(--shadow-hover);
 }
 
 .admin-kpi-title {
