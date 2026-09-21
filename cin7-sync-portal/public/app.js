@@ -208,6 +208,17 @@ function updateUIHeader() {
 }
 
 function navigateTo(viewId) {
+  // Defense-in-depth: the backend already rejects every /api/admin/* call for
+  // non-super-admins, but don't even show the Admin Portal shell (nav labels,
+  // layout) to a client who navigates here directly (e.g. via console/URL).
+  if (viewId === 'admin') {
+    const platformRole = (state.user?.platformRole || state.user?.platform_role || 'USER').toUpperCase();
+    if (platformRole !== 'SUPER_ADMIN') {
+      showToast('You do not have access to the Admin Portal.', 'error');
+      viewId = 'dashboard';
+    }
+  }
+
   const views = ['auth-landing', 'client-select', 'onboarding', 'dashboard', 'reports', 'settings', 'admin-portal', 'support', 'privacy-policy', 'terms-conditions'];
   views.forEach(v => {
     const el = document.getElementById(`${v}-view`);
