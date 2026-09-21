@@ -3508,41 +3508,43 @@ async function loadBillingData() {
       ovBadge.className = `badge ${currentStatus === 'ACTIVE' ? 'badge-success' : 'badge-warning'}`;
     }
 
+    const usersCurrent = usage.users?.current ?? 0;
+    const syncsCurrent = usage.syncs?.current ?? 0;
+
     const ovUsers = document.getElementById('overview-billing-users');
-    if (ovUsers) ovUsers.innerText = `${usage.users?.current || usage.users || 1} / ${limits.max_users || '10'}`;
+    if (ovUsers) ovUsers.innerText = `${usersCurrent || 1} / ${limits.max_users || '10'}`;
 
     const ovSyncs = document.getElementById('overview-billing-syncs');
-    const currentSyncCount = usage.syncsThisMonth ?? usage.syncs_this_month ?? 0;
-    if (ovSyncs) ovSyncs.innerText = `${currentSyncCount} / ${limits.max_syncs_per_month || '500'}`;
+    if (ovSyncs) ovSyncs.innerText = `${syncsCurrent} / ${limits.max_syncs_per_month || '500'}`;
 
     // 3. Update Progress Bars & Metrics in Dedicated Tab
     const seatsFraction = document.getElementById('billing-seats-fraction');
-    if (seatsFraction) seatsFraction.innerText = `${usage.users} / ${limits.max_users || '∞'}`;
+    if (seatsFraction) seatsFraction.innerText = `${usersCurrent} / ${limits.max_users || '∞'}`;
 
     const seatsBar = document.getElementById('billing-seats-bar');
     if (seatsBar && limits.max_users) {
-      const pct = Math.min(100, Math.round((usage.users / limits.max_users) * 100));
+      const pct = Math.min(100, Math.round((usersCurrent / limits.max_users) * 100));
       seatsBar.style.width = `${pct}%`;
     }
 
     const seatsNote = document.getElementById('billing-seats-note');
     if (seatsNote && limits.max_users) {
-      const remaining = Math.max(0, limits.max_users - usage.users);
+      const remaining = Math.max(0, limits.max_users - usersCurrent);
       seatsNote.innerText = `${remaining} seat${remaining === 1 ? '' : 's'} available`;
     }
 
     const syncsFraction = document.getElementById('billing-syncs-fraction');
-    if (syncsFraction) syncsFraction.innerText = `${usage.syncs_this_month} / ${limits.max_syncs_per_month || '∞'}`;
+    if (syncsFraction) syncsFraction.innerText = `${syncsCurrent} / ${limits.max_syncs_per_month || '∞'}`;
 
     const syncsBar = document.getElementById('billing-syncs-bar');
     if (syncsBar && limits.max_syncs_per_month) {
-      const pct = Math.min(100, Math.round((usage.syncs_this_month / limits.max_syncs_per_month) * 100));
+      const pct = Math.min(100, Math.round((syncsCurrent / limits.max_syncs_per_month) * 100));
       syncsBar.style.width = `${pct}%`;
     }
 
     const syncsNote = document.getElementById('billing-syncs-note');
     if (syncsNote && limits.max_syncs_per_month) {
-      const remaining = Math.max(0, limits.max_syncs_per_month - usage.syncs_this_month);
+      const remaining = Math.max(0, limits.max_syncs_per_month - syncsCurrent);
       syncsNote.innerText = `${remaining} sync${remaining === 1 ? '' : 's'} remaining this month`;
     }
 
