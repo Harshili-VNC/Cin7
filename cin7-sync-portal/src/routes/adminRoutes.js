@@ -532,6 +532,135 @@ router.get('/organizations/:id', async (req, res) => {
 });
 
 /**
+ * Shared impersonation-start logic: swaps req.session.user to the target user's own real
+ * identity (their real role — so their existing role-based restrictions apply unchanged —
+ * with platform_role forced to USER so the impersonated session never inherits Super Admin
+ * privileges), while stashing the real admin's identity in req.session.impersonatorAdmin so
+ * POST /api/auth/impersonate/exit can restore it later. Logged via the same audit trail used
+ * for the read-only 360 inspection above.
+ */
+async function startImpersonation(req, res, targetUser) {
+  if (req.session.impersonatorAdmin) {
+    return res.status(409).json({ success: false, error: 'ALREADY_IMPERSONATING', message: 'Exit your current impersonation session before starting another.' });
+  }
+  if (!targetUser.client_id) {
+    return res.status(400).json({ success: false, error: 'NO_ORGANIZATION', message: 'This user has not been assigned to an organization yet.' });
+  }
+  const targetPlatformRole = (targetUser.platform_role || 'USER').toUpperCase();
+  if (targetPlatformRole === 'SUPER_ADMIN') {
+    return res.status(403).json({ success: false, error: 'CANNOT_IMPERSONATE_SUPER_ADMIN', message: 'Cannot impersonate another Super Admin account.' });
+  }
+
+  const client = await db.getOne('SELECT company_name FROM clients WHERE id = ?', [targetUser.client_id]);
+
+  req.session.impersonatorAdmin = {
+    id: req.user.id,
+    email: req.user.email,
+    fullName: req.user.full_name || req.user.fullName || req.user.email
+  };
+
+  req.session.user = {
+    id: targetUser.id,
+    client_id: targetUser.client_id,
+    organization_id: targetUser.client_id,
+    email: targetUser.email,
+    full_name: targetUser.full_name,
+    fullName: targetUser.full_name,
+    phone_number: targetUser.phone_number,
+    role: (targetUser.role || 'ADMIN').toUpperCase(),
+    platform_role: 'USER',
+    platformRole: 'USER',
+    onboarding_status: 'completed',
+    onboardingStatus: 'completed'
+  };
+
+  await new Promise((resolve, reject) => {
+    req.session.save(err => err ? reject(err) : resolve());
+  });
+
+  await logAction({
+    organizationId: targetUser.client_id,
+    userId: req.session.impersonatorAdmin.id,
+    action: 'IMPERSONATION_START',
+    resource: 'user_session',
+    details: {
+      targetUserId: targetUser.id,
+      targetEmail: targetUser.email,
+      targetRole: targetUser.role,
+      organizationName: client?.company_name,
+      initiatedBy: req.session.impersonatorAdmin.email
+    }
+  });
+
+  res.json({
+    success: true,
+    impersonating: {
+      userId: targetUser.id,
+      email: targetUser.email,
+      role: targetUser.role,
+      organizationName: client?.company_name
+    }
+  });
+}
+
+/**
+ * POST /api/admin/organizations/:id/impersonate
+ * Starts a full impersonation session as that organization's own admin user, so the Super
+ * Admin lands on the real client dashboard with that org's real data, sync history and
+ * permissions (not the read-only 360 summary).
+ */
+router.post('/organizations/:id/impersonate', async (req, res) => {
+  const orgId = req.params.id;
+  try {
+    const client = await db.getOne('SELECT * FROM clients WHERE id = ?', [orgId]);
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'ORGANIZATION_NOT_FOUND', message: 'Organization not found' });
+    }
+
+    // Prefer the org's own ADMIN-role user (full settings/credentials access); fall back to
+    // its earliest user of any role if it has no ADMIN yet.
+    let targetUser = await db.getOne(
+      "SELECT * FROM users WHERE client_id = ? AND UPPER(role) = 'ADMIN' AND UPPER(COALESCE(platform_role,'USER')) != 'SUPER_ADMIN' ORDER BY created_at ASC LIMIT 1",
+      [orgId]
+    );
+    if (!targetUser) {
+      targetUser = await db.getOne(
+        "SELECT * FROM users WHERE client_id = ? AND UPPER(COALESCE(platform_role,'USER')) != 'SUPER_ADMIN' ORDER BY created_at ASC LIMIT 1",
+        [orgId]
+      );
+    }
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'NO_USERS_IN_ORGANIZATION', message: 'This organization has no users to view it as.' });
+    }
+
+    await startImpersonation(req, res, targetUser);
+  } catch (err) {
+    console.error('[ADMIN IMPERSONATE ORG ERROR]', err.message);
+    res.status(500).json({ success: false, error: 'Failed to start impersonation session' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/impersonate
+ * Starts a full impersonation session as that exact user — their exact role and
+ * permissions apply, so e.g. impersonating a Viewer shows a read-only dashboard.
+ */
+router.post('/users/:id/impersonate', async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const targetUser = await db.getOne('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    await startImpersonation(req, res, targetUser);
+  } catch (err) {
+    console.error('[ADMIN IMPERSONATE USER ERROR]', err.message);
+    res.status(500).json({ success: false, error: 'Failed to start impersonation session' });
+  }
+});
+
+/**
  * GET /api/admin/users
  * Cross-organization user directory (with role, status, search, and pagination).
  * Never exposes passwords or password hashes.
@@ -605,6 +734,131 @@ router.get('/users', async (req, res) => {
   } catch (err) {
     console.error('[ADMIN USERS ERROR]', err.message);
     res.status(500).json({ success: false, error: 'Failed to retrieve platform users' });
+  }
+});
+
+/**
+ * POST /api/admin/users/invite
+ * Invites a new user or Super Admin via Supabase Auth email invitation.
+ * Super Admin sets: email, fullName, organizationId, role (ADMIN/MANAGER/VIEWER), and platformRole (USER/SUPER_ADMIN).
+ */
+router.post('/users/invite', async (req, res) => {
+  const { email, fullName, organizationId, role, platformRole } = req.body;
+
+  if (!email || !email.trim()) {
+    return res.status(400).json({ success: false, message: 'Email address is required.' });
+  }
+
+  const cleanEmail = email.toLowerCase().trim();
+  const validRole = ['ADMIN', 'MANAGER', 'VIEWER'].includes((role || '').toUpperCase())
+    ? role.toUpperCase()
+    : 'ADMIN';
+  const validPlatformRole = (platformRole || '').toUpperCase() === 'SUPER_ADMIN'
+    ? 'SUPER_ADMIN'
+    : 'USER';
+  const cleanName = (fullName && fullName.trim()) ? fullName.trim() : cleanEmail.split('@')[0];
+
+  // Resolve target organization
+  let targetOrgId = organizationId;
+  if (!targetOrgId || targetOrgId === 'default' || (validPlatformRole === 'SUPER_ADMIN' && !targetOrgId)) {
+    targetOrgId = 'client-vnc-master';
+  }
+
+  try {
+    // 1. Verify target client organization exists
+    const org = await db.getOne('SELECT id, company_name FROM clients WHERE id = ?', [targetOrgId]);
+    if (!org) {
+      const anyClient = await db.getOne('SELECT id FROM clients ORDER BY created_at ASC LIMIT 1');
+      targetOrgId = anyClient ? anyClient.id : 'client-vnc-master';
+    }
+
+    // 2. Check if user already exists in DB
+    const existingDbUser = await db.getOne('SELECT id, email, platform_role, role, client_id FROM users WHERE email = ?', [cleanEmail]);
+
+    let supabaseUserId = null;
+    let inviteSentViaSupabase = false;
+
+    // 3. Trigger Supabase Auth invitation if Supabase client is initialized
+    if (db.supabase && db.supabase.auth && db.supabase.auth.admin) {
+      try {
+        const appOrigin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
+        const inviteRes = await db.supabase.auth.admin.inviteUserByEmail(cleanEmail, {
+          data: {
+            full_name: cleanName,
+            role: validRole,
+            platform_role: validPlatformRole,
+            organization_id: targetOrgId
+          },
+          redirectTo: `${appOrigin}/#auth-landing`
+        });
+
+        if (inviteRes.error) {
+          console.warn('[SUPABASE INVITE NOTICE]', inviteRes.error.message);
+        } else if (inviteRes.data && inviteRes.data.user) {
+          supabaseUserId = inviteRes.data.user.id;
+          inviteSentViaSupabase = true;
+          console.log(`[SUPABASE INVITE] Email invite dispatched to ${cleanEmail} (UUID: ${supabaseUserId})`);
+        }
+      } catch (sbErr) {
+        console.warn('[SUPABASE INVITE ERROR (non-fatal)]', sbErr.message);
+      }
+    }
+
+    // 4. Upsert user record into Postgres users table
+    const { v4: uuidv4 } = require('uuid');
+    const finalUserId = supabaseUserId || (existingDbUser ? existingDbUser.id : `user-${uuidv4().substring(0, 8)}`);
+
+    if (existingDbUser) {
+      await db.query(
+        `UPDATE users 
+         SET full_name = ?, client_id = ?, role = ?, platform_role = ?, status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP
+         WHERE email = ?`,
+        [cleanName, targetOrgId, validRole, validPlatformRole, cleanEmail]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO users (id, client_id, full_name, email, phone_number, password_hash, role, platform_role, status, auth_provider, onboarding_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, null, null, ?, ?, 'ACTIVE', 'supabase', 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [finalUserId, targetOrgId, cleanName, cleanEmail, validRole, validPlatformRole]
+      );
+    }
+
+    // 5. Record platform audit log
+    await logAction({
+      organizationId: targetOrgId,
+      userId: req.user?.id || 'super-admin',
+      action: validPlatformRole === 'SUPER_ADMIN' ? 'SUPER_ADMIN_INVITED' : 'USER_INVITED',
+      resource: cleanEmail,
+      result: 'SUCCESS',
+      details: {
+        email: cleanEmail,
+        fullName: cleanName,
+        organizationId: targetOrgId,
+        role: validRole,
+        platformRole: validPlatformRole,
+        invitedBy: req.user?.email,
+        inviteSentViaSupabase
+      }
+    });
+
+    res.json({
+      success: true,
+      message: inviteSentViaSupabase
+        ? `Invitation email successfully sent to ${cleanEmail}!`
+        : `User ${cleanEmail} successfully configured as ${validPlatformRole === 'SUPER_ADMIN' ? 'Super Admin' : validRole}!`,
+      user: {
+        id: finalUserId,
+        email: cleanEmail,
+        fullName: cleanName,
+        organizationId: targetOrgId,
+        role: validRole,
+        platformRole: validPlatformRole,
+        inviteSentViaSupabase
+      }
+    });
+  } catch (err) {
+    console.error('[ADMIN INVITE ERROR]', err.message);
+    res.status(500).json({ success: false, error: err.message || 'Failed to invite user.' });
   }
 });
 

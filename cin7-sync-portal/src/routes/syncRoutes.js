@@ -322,23 +322,41 @@ async function executeFullSyncBackground({
       updatedSince: salesUpdatedSince,
       isCancelled,
       onProgress: (p) => {
-        updateProgress('ENRICHING', p.current, p.total, Math.round(20 + (p.percent * 0.35)), p.message, {
-          cachedCount: p.cachedCount,
-          uncachedCount: p.uncachedCount,
-          etaSeconds: p.etaSeconds
-        });
+        if (p.stage === 'PRODUCT_MASTER') {
+          const pct = Math.round(52 + ((p.percent || 0) * 0.08));
+          updateProgress('ENRICHING', p.current, p.total, pct, p.message || 'Loading Product Master catalog...');
+        } else {
+          const pct = Math.round(20 + ((p.percent || 0) * 0.32));
+          updateProgress('ENRICHING', p.current, p.total, pct, p.message, {
+            cachedCount: p.cachedCount,
+            uncachedCount: p.uncachedCount,
+            etaSeconds: p.etaSeconds
+          });
+        }
       }
     });
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('ENRICHING', 0, 0, 58, 'Fetching Inventory stock from Cin7...');
-    const invData = await cin7Engine.fetchInventory(clientId);
+    updateProgress('ENRICHING', 0, 0, 60, 'Processing Inventory stock from Cin7...');
+    const invData = await cin7Engine.fetchInventory(clientId, {
+      isCancelled,
+      onProgress: (p) => {
+        updateProgress('ENRICHING', p.current, p.total, 62, p.message);
+      }
+    });
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('ENRICHING', 0, 0, 64, 'Fetching Purchase Orders from Cin7...');
-    const fetchedPO = await cin7Engine.fetchPurchaseOrders(clientId, { updatedSince: poUpdatedSince });
+    updateProgress('ENRICHING', 0, 0, 65, 'Fetching Purchase Orders from Cin7...');
+    const fetchedPO = await cin7Engine.fetchPurchaseOrders(clientId, {
+      updatedSince: poUpdatedSince,
+      isCancelled,
+      onProgress: (p) => {
+        const pct = Math.round(65 + ((p.percent || 0) * 0.05));
+        updateProgress('ENRICHING', p.current, p.total, pct, p.message);
+      }
+    });
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
@@ -383,6 +401,18 @@ async function executeFullSyncBackground({
     let dest = null;
     let nextVersion = 'v1.0';
 
+    // salesData/poData rows carry an internal, trailing "true Order Date" field (used above by
+    // filterSalesByWindow/filterPurchaseByWindow) that isn't part of the documented sheet schema.
+    // Strip it before writing to the client-facing spreadsheet so no stray, unlabeled column
+    // appears — the untouched salesData/poData (with the field) still gets persisted to the
+    // snapshot below, so the next incremental sync can keep filtering by real order date.
+    const stripInternalFields = (dataset) => ({
+      headers: dataset.headers,
+      rows: dataset.rows.map(r => r.slice(0, dataset.headers.length))
+    });
+    const salesDataOut = stripInternalFields(salesData);
+    const poDataOut = stripInternalFields(poData);
+
     const clientRecord = await db.getOne('SELECT * FROM clients WHERE id = ?', [clientId]);
     const currentVersion = clientRecord?.current_version || 'v1.0';
     nextVersion = clientStorageService.calculateNextVersion(currentVersion);
@@ -402,13 +432,13 @@ async function executeFullSyncBackground({
       const newSpreadsheetId = dest.file_id;
 
       // Populate raw data sheets starting at row A7
-      await adapter.syncSales(salesData, clientEmail, dest);
+      await adapter.syncSales(salesDataOut, clientEmail, dest);
       await adapter.syncInventory(invData, clientEmail, dest);
-      await adapter.syncPurchaseOrders(poData, clientEmail, dest);
+      await adapter.syncPurchaseOrders(poDataOut, clientEmail, dest);
 
       // Update dynamic report formulas
       updateProgress('CALCULATING', 4, 5, 90, 'Updating dynamic dashboard and KPI formulas...');
-      await adapter.updateClonedReportFormulas(newSpreadsheetId, salesData, invData, { dateRange, startDate, endDate });
+      await adapter.updateClonedReportFormulas(newSpreadsheetId, salesDataOut, invData, { dateRange, startDate, endDate });
 
       await adapter.updateSyncLog({
         syncType: 'google_sheets',
@@ -429,9 +459,9 @@ async function executeFullSyncBackground({
       fileId = dest.file_id;
     } else {
       const adapter = new MicrosoftExcelAdapter(clientId, user);
-      await adapter.syncSales(salesData);
+      await adapter.syncSales(salesDataOut);
       await adapter.syncInventory(invData);
-      await adapter.syncPurchaseOrders(poData, nextVersion);
+      await adapter.syncPurchaseOrders(poDataOut, nextVersion);
       await adapter.updateSyncLog({
         syncType: 'all',
         status: 'Success',

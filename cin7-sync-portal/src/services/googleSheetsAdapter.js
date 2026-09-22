@@ -21,6 +21,27 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
  * refDate, oldest first. Used to drive the "Sales Trend Analysis" tab's rolling
  * month columns from the sync's actual reference date instead of a hardcoded year.
  */
+/**
+ * Converts a 1-based column index to its A1 letter (1 -> A, 2 -> B, 27 -> AA, ...).
+ */
+function colLetter(oneBasedIdx) {
+  let s = '';
+  let n = oneBasedIdx;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/**
+ * Escapes a value for safe embedding inside a double-quoted Sheets formula string literal.
+ */
+function escapeFormulaString(value) {
+  return String(value).replace(/"/g, '""');
+}
+
 function getTrailingMonths(refDate, count) {
   const anchor = new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), 1));
   const months = [];
@@ -550,40 +571,149 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         name: r[2]
       }));
 
+      // Determine the live, per-tenant sales-channel taxonomy directly from this sync's
+      // sales data — no hardcoded channel list. Every distinct raw Cin7 channel value
+      // shows up, ranked by revenue (same approach as topProducts above), so the report
+      // reflects whatever channels this specific client actually sells through.
+      const salesByChannel = {};
+      salesData.rows.forEach(r => {
+        const channel = String(r[17] || '').trim();
+        if (!channel) return;
+        const saleAmt = parseFloat(r[20] || 0);
+        if (!salesByChannel[channel]) salesByChannel[channel] = { channel, revenue: 0 };
+        salesByChannel[channel].revenue += saleAmt;
+      });
+      const liveChannels = Object.values(salesByChannel).sort((a, b) => b.revenue - a.revenue);
+
+      // The master template ships with a fixed number of channel slots in three places.
+      // When a client has more distinct channels than the template provides, insert extra
+      // columns/rows (format-inherited from the last existing slot) so every channel gets
+      // its own column/row instead of being dropped or double-counted into someone else's.
+      const COGS_SHEET_NAME = 'COGS & Profitability by Channel';
+      const TREND_SHEET_NAME = 'Sales Trend Analysis';
+      const KPI_SHEET_NAME = 'KPI Dashboard';
+      const COGS_BASE_CHANNEL_SLOTS = 12; // columns B..M
+      const TREND_BASE_CHANNEL_SLOTS = 13; // rows 4..16
+      const KPI_BASE_CHANNEL_SLOTS = 10; // rows 12..21
+
+      const extraCogsCols = Math.max(0, liveChannels.length - COGS_BASE_CHANNEL_SLOTS);
+      const extraTrendRows = Math.max(0, liveChannels.length - TREND_BASE_CHANNEL_SLOTS);
+      const extraKpiRows = Math.max(0, liveChannels.length - KPI_BASE_CHANNEL_SLOTS);
+
+      if (extraCogsCols > 0 || extraTrendRows > 0 || extraKpiRows > 0) {
+        const meta = await sheets.spreadsheets.get({
+          spreadsheetId,
+          fields: 'sheets(properties(sheetId,title))'
+        });
+        const sheetIdByName = {};
+        (meta.data.sheets || []).forEach(s => { sheetIdByName[s.properties.title] = s.properties.sheetId; });
+
+        const structuralRequests = [];
+        if (extraCogsCols > 0 && sheetIdByName[COGS_SHEET_NAME] !== undefined) {
+          // Insert before column N (0-based index 13, i.e. right before the existing Total column).
+          structuralRequests.push({
+            insertDimension: {
+              range: { sheetId: sheetIdByName[COGS_SHEET_NAME], dimension: 'COLUMNS', startIndex: 13, endIndex: 13 + extraCogsCols },
+              inheritFromBefore: true
+            }
+          });
+        }
+        if (extraTrendRows > 0 && sheetIdByName[TREND_SHEET_NAME] !== undefined) {
+          // Insert before row 17 (0-based index 16, i.e. right before TOTAL REVENUE).
+          structuralRequests.push({
+            insertDimension: {
+              range: { sheetId: sheetIdByName[TREND_SHEET_NAME], dimension: 'ROWS', startIndex: 16, endIndex: 16 + extraTrendRows },
+              inheritFromBefore: true
+            }
+          });
+        }
+        if (extraKpiRows > 0 && sheetIdByName[KPI_SHEET_NAME] !== undefined) {
+          // Insert before row 22 (0-based index 21, i.e. right before the Product Performance section).
+          structuralRequests.push({
+            insertDimension: {
+              range: { sheetId: sheetIdByName[KPI_SHEET_NAME], dimension: 'ROWS', startIndex: 21, endIndex: 21 + extraKpiRows },
+              inheritFromBefore: true
+            }
+          });
+        }
+
+        if (structuralRequests.length > 0) {
+          console.log(`[DYNAMIC REPORTS] ${liveChannels.length} live sales channels detected — growing template (COGS +${extraCogsCols} cols, Trend +${extraTrendRows} rows, KPI +${extraKpiRows} rows)`);
+          await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: structuralRequests } });
+        }
+      }
+
+      // Row/column count each channel section now actually has available, after any growth above.
+      const cogsChannelSlots = Math.max(COGS_BASE_CHANNEL_SLOTS, liveChannels.length);
+      const trendChannelSlots = Math.max(TREND_BASE_CHANNEL_SLOTS, liveChannels.length);
+      const kpiChannelSlots = Math.max(KPI_BASE_CHANNEL_SLOTS, liveChannels.length);
+
       const batchData = [];
 
-      // A. "COGS & Profitability by Channel"
-      const channelCols = [
-        { col: 'B', channel: 'amazon' },
-        { col: 'C', channel: 'amazon-us' },
-        { col: 'D', channel: 'Shopify web' },
-        { col: 'E', channel: 'Shopify POS' },
-        { col: 'F', channel: 'Shopify admin' },
-        { col: 'G', channel: 'subscription_contract' },
-        { col: 'H', channel: 'subscription_contract_checkout_one' },
-        { col: 'I', channel: '296827748353' },
-        { col: 'J', channel: 'faire' },
-        { col: 'K', channel: 'tiktok' },
-        { col: 'L', channel: 'Shopify' },
-        { col: 'M', channel: 'API' }
-      ];
+      // A. "COGS & Profitability by Channel" — Product x Channel matrix. Channel columns
+      // start at B; the Total column always sits immediately after the last channel slot
+      // (unused slots beyond liveChannels.length, when a client has fewer channels than the
+      // template's base capacity, are cleared rather than left showing stale placeholder data).
+      const cogsTotalCol = colLetter(2 + cogsChannelSlots);
+      for (let i = 0; i < cogsChannelSlots; i++) {
+        const col = colLetter(2 + i);
+        const ch = liveChannels[i];
 
-      topProducts.forEach((p, i) => {
-        const rowNum = 5 + i; // Revenue rows 5 to 10
-        const cogsRowNum = 14 + i; // COGS rows 14 to 19
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}4`, values: [[ch ? ch.channel : '']] });
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}13`, values: [[ch ? ch.channel : '']] });
 
-        // Col A product labels
-        batchData.push({ range: `'COGS & Profitability by Channel'!A${rowNum}`, values: [[p.sku]] });
-        batchData.push({ range: `'COGS & Profitability by Channel'!A${cogsRowNum}`, values: [[p.sku]] });
-
-        // Channel formulas
-        channelCols.forEach(({ col, channel }) => {
-          const revForm = `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!S:S,"*${channel}*",'Sales Transactions Raw Data'!J:J,"Finished Goods")`;
-          const cogsForm = `=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!S:S,"*${channel}*",'Sales Transactions Raw Data'!J:J,"Finished Goods")`;
-          batchData.push({ range: `'COGS & Profitability by Channel'!${col}${rowNum}`, values: [[revForm]] });
-          batchData.push({ range: `'COGS & Profitability by Channel'!${col}${cogsRowNum}`, values: [[cogsForm]] });
+        topProducts.forEach((p, pi) => {
+          const rowNum = 5 + pi; // Revenue rows 5 to 10
+          const cogsRowNum = 14 + pi; // COGS rows 14 to 19
+          if (ch) {
+            const chLit = escapeFormulaString(ch.channel);
+            const skuLit = escapeFormulaString(p.sku);
+            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${rowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${skuLit}",'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
+            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${cogsRowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!G:G,"${skuLit}",'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
+          } else {
+            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${rowNum}`, values: [[0]] });
+            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${cogsRowNum}`, values: [[0]] });
+          }
         });
-      });
+
+        // Per-column TOTAL REVENUE (11) / TOTAL COGS (20) / GROSS PROFIT (21) / GM% (22)
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}11`, values: [[`=SUM(${col}5:${col}10)`]] });
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}20`, values: [[`=SUM(${col}14:${col}19)`]] });
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}21`, values: [[`=${col}11-${col}20`]] });
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}22`, values: [[`=IF(${col}11=0,"-",${col}21/${col}11)`]] });
+      }
+      // Total column, repositioned to sit right after the last live channel slot.
+      batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}4`, values: [['Total']] });
+      batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}13`, values: [['Total']] });
+      for (const rowNum of [5, 6, 7, 8, 9, 10]) {
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}${rowNum}`, values: [[`=SUM(B${rowNum}:${colLetter(1 + cogsChannelSlots)}${rowNum})`]] });
+      }
+      for (const rowNum of [14, 15, 16, 17, 18, 19]) {
+        batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}${rowNum}`, values: [[`=SUM(B${rowNum}:${colLetter(1 + cogsChannelSlots)}${rowNum})`]] });
+      }
+      batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}11`, values: [[`=SUM(${cogsTotalCol}5:${cogsTotalCol}10)`]] });
+      batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}20`, values: [[`=SUM(${cogsTotalCol}14:${cogsTotalCol}19)`]] });
+      batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}21`, values: [[`=${cogsTotalCol}11-${cogsTotalCol}20`]] });
+      batchData.push({ range: `'${COGS_SHEET_NAME}'!${cogsTotalCol}22`, values: [[`=IF(${cogsTotalCol}11=0,"-",${cogsTotalCol}21/${cogsTotalCol}11)`]] });
+
+      // A2. "KPI Dashboard" — CHANNEL PERFORMANCE cards (rows 12+), one per live channel,
+      // ranked by revenue. Product Performance / Inventory Alerts sections below were already
+      // shifted down (if needed) by the structural insert above, and need no changes of their
+      // own — they reference other sheets by fixed row, not by their own position.
+      for (let i = 0; i < kpiChannelSlots; i++) {
+        const rowNum = 12 + i;
+        const ch = liveChannels[i];
+        const cogsCol = colLetter(2 + i); // same channel, same index, in the COGS sheet
+        if (ch) {
+          const chLit = escapeFormulaString(ch.channel);
+          batchData.push({ range: `'${KPI_SHEET_NAME}'!A${rowNum}`, values: [[ch.channel]] });
+          batchData.push({ range: `'${KPI_SHEET_NAME}'!B${rowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
+          batchData.push({ range: `'${KPI_SHEET_NAME}'!C${rowNum}`, values: [[`='${COGS_SHEET_NAME}'!${cogsCol}22`]] });
+          batchData.push({ range: `'${KPI_SHEET_NAME}'!D${rowNum}`, values: [[`=IF($B$5=0,"-",B${rowNum}/$B$5)`]] });
+        } else {
+          batchData.push({ range: `'${KPI_SHEET_NAME}'!A${rowNum}:D${rowNum}`, values: [['', '', '', '']] });
+        }
+      }
 
       // B. "Product Margin Analysis"
       topProducts.forEach((p, i) => {
@@ -778,60 +908,62 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       // Header row: real dates driving every formula below via TEXT(col$3,"mmmm") / YEAR(col$3)
       batchData.push({ range: "'Sales Trend Analysis'!B3:K3", values: [trendMonths.map(m => m.isoDate)] });
 
-      const trendChannels = [
-        { row: 4, channel: 'amazon' },
-        { row: 5, channel: 'amazon-us' },
-        { row: 6, channel: 'Shopify web' },
-        { row: 7, channel: 'Shopify POS' },
-        { row: 8, channel: 'Shopify admin' },
-        { row: 9, channel: 'subscription_contract' },
-        { row: 10, channel: 'subscription_contract_checkout_one' },
-        { row: 11, channel: '296827748353' },
-        { row: 12, channel: 'faire' },
-        { row: 13, channel: 'tiktok' },
-        { row: 14, channel: '4901177' },
-        { row: 15, channel: '3890849' },
-        { row: 16, channel: '2329312' }
-      ];
+      // Channel rows (4..4+trendChannelSlots-1), same live/ranked taxonomy as the COGS sheet
+      // above. Unused slots (when a client has fewer channels than the template's base 13)
+      // are cleared rather than left showing a stale channel name with a $0 row beside it.
+      for (let i = 0; i < trendChannelSlots; i++) {
+        const row = 4 + i;
+        const ch = liveChannels[i];
+        batchData.push({ range: `'${TREND_SHEET_NAME}'!A${row}`, values: [[ch ? ch.channel : '']] });
+        if (ch) {
+          const chLit = escapeFormulaString(ch.channel);
+          const rowFormulas = monthCols.map(col =>
+            `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+          );
+          batchData.push({ range: `'${TREND_SHEET_NAME}'!B${row}:K${row}`, values: [rowFormulas] });
+        } else {
+          batchData.push({ range: `'${TREND_SHEET_NAME}'!B${row}:K${row}`, values: [monthCols.map(() => 0)] });
+        }
+      }
 
-      trendChannels.forEach(({ row, channel }) => {
-        const rowFormulas = monthCols.map(col =>
-          `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!S:S,"${channel}",'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
-        );
-        batchData.push({ range: `'Sales Trend Analysis'!B${row}:K${row}`, values: [rowFormulas] });
-      });
+      // TOTAL REVENUE / COGS / GROSS PROFIT / MARGIN / MoM rows always sit directly below the
+      // channel rows — their row numbers shift down by exactly however many extra channel rows
+      // were inserted above (0 when a client's channel count fits the template's base 13).
+      const trendTotalRow = 17 + extraTrendRows;
+      const trendGrossProfitRow1 = trendTotalRow + 1;
+      const trendCogsRow = trendTotalRow + 2;
+      const trendGrossProfitRow2 = trendTotalRow + 3;
+      const trendMarginRow = trendTotalRow + 4;
+      const trendMomRow = trendTotalRow + 5;
 
-      // TOTAL REVENUE (row 17): summed directly from raw data, independent of the channel
-      // breakdown above — so it stays correct even for channel values the taxonomy above
-      // doesn't recognize, rather than under-counting like SUM(channel rows) would.
+      // TOTAL REVENUE: summed directly from raw data, independent of the channel breakdown
+      // above — so it stays correct even if a channel value is missing/blank, rather than
+      // under-counting like SUM(channel rows) would.
       const totalRevenueFormulas = monthCols.map(col =>
         `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
       );
-      batchData.push({ range: "'Sales Trend Analysis'!B17:K17", values: [totalRevenueFormulas] });
+      batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendTotalRow}:K${trendTotalRow}`, values: [totalRevenueFormulas] });
 
-      // COGS (row 19)
       const cogsFormulas = monthCols.map(col =>
         `=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
       );
-      batchData.push({ range: "'Sales Trend Analysis'!B19:K19", values: [cogsFormulas] });
+      batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendCogsRow}:K${trendCogsRow}`, values: [cogsFormulas] });
 
-      // GROSS PROFIT — rows 18 and 20 are both labeled as gross profit in the template;
-      // keep both in sync rather than leaving one to a broken legacy formula.
-      const grossProfitFormulas = monthCols.map(col => `=${col}17-${col}19`);
-      batchData.push({ range: "'Sales Trend Analysis'!B18:K18", values: [grossProfitFormulas] });
-      batchData.push({ range: "'Sales Trend Analysis'!B20:K20", values: [grossProfitFormulas] });
+      // GROSS PROFIT — the template labels this on two rows; keep both in sync.
+      const grossProfitFormulas = monthCols.map(col => `=${col}${trendTotalRow}-${col}${trendCogsRow}`);
+      batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendGrossProfitRow1}:K${trendGrossProfitRow1}`, values: [grossProfitFormulas] });
+      batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendGrossProfitRow2}:K${trendGrossProfitRow2}`, values: [grossProfitFormulas] });
 
-      // Gross Margin % (row 21)
-      const marginFormulas = monthCols.map(col => `=IF(${col}17=0,"-",${col}18/${col}17)`);
-      batchData.push({ range: "'Sales Trend Analysis'!B21:K21", values: [marginFormulas] });
+      const marginFormulas = monthCols.map(col => `=IF(${col}${trendTotalRow}=0,"-",${col}${trendGrossProfitRow1}/${col}${trendTotalRow})`);
+      batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendMarginRow}:K${trendMarginRow}`, values: [marginFormulas] });
 
-      // MoM Revenue Growth (row 22) — first column has no prior month to compare against
+      // MoM Revenue Growth — first column has no prior month to compare against.
       const momFormulas = monthCols.map((col, idx) => {
         if (idx === 0) return '-';
         const prevCol = monthCols[idx - 1];
-        return `=IF(${prevCol}17=0,"-",${col}17/${prevCol}17-1)`;
+        return `=IF(${prevCol}${trendTotalRow}=0,"-",${col}${trendTotalRow}/${prevCol}${trendTotalRow}-1)`;
       });
-      batchData.push({ range: "'Sales Trend Analysis'!B22:K22", values: [momFormulas] });
+      batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendMomRow}:K${trendMomRow}`, values: [momFormulas] });
 
       // Execute batch update
       await sheets.spreadsheets.values.batchUpdate({
