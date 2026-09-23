@@ -120,12 +120,14 @@ function renderImpersonationBanner() {
   const banner = document.getElementById('impersonation-banner');
   if (!banner) return;
   if (state.impersonating) {
+    const userEl = document.getElementById('impersonate-user-label');
+    const orgEl = document.getElementById('impersonate-org-label');
     const nameEl = document.getElementById('impersonation-banner-text');
-    if (nameEl) {
-      const who = state.user?.fullName || state.user?.full_name || state.user?.email || 'this user';
-      const org = state.client?.companyName || 'their organization';
-      nameEl.innerText = `Viewing as ${who} (${org}) — Admin Mode`;
-    }
+    const who = state.user?.fullName || state.user?.full_name || state.user?.email || 'User';
+    const org = state.client?.companyName || state.client?.company_name || 'Organization';
+    if (userEl) userEl.innerText = who;
+    if (orgEl) orgEl.innerText = org;
+    if (nameEl) nameEl.innerText = `Viewing as ${who} (${org}) — Admin Mode`;
     banner.classList.remove('hidden');
     document.body.classList.add('impersonation-active');
   } else {
@@ -4436,9 +4438,6 @@ async function loadAdminOrganizations(page = 1) {
                   <button class="btn btn-primary btn-xs" onclick="viewAdminOrg360('${safeId}')" title="Inspect 360° Tenant View">
                     Inspect 360°
                   </button>
-                  <button class="btn btn-outline btn-xs" onclick="impersonateOrg('${safeId}', '${safeName}')" title="Open this organization's real dashboard, synced as their admin">
-                    View as
-                  </button>
                   ${o.id !== 'client-vnc-master' ? `
                     <button class="btn btn-outline btn-xs" style="color: var(--destructive, #ef4444); border-color: rgba(239,68,68,0.3); padding: 0.2rem 0.4rem;" onclick="deleteAdminOrg('${safeId}', '${safeName}')" title="Delete Organization">
                       🗑️
@@ -5070,37 +5069,94 @@ async function loadAdminSheets() {
     const data = await res.json();
     if (!data.success) return;
 
-    const tbody = document.getElementById('admin-sheets-table-body');
-    if (tbody) {
-      const sheets = data.integrations || data.sheets || [];
-      if (sheets.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No Google Sheets integrations found.</td></tr>`;
-      } else {
-        tbody.innerHTML = sheets.map(s => {
-          const safeOrg = escapeHtml(s.companyName || s.organizationName || 'Unknown Client');
-          const isConn = s.status === 'CONNECTED';
-          const statusLabel = isConn ? 'Connected ✓' : 'Not Configured';
-          const safeModel = escapeHtml(s.fileName || 'Master Financial Model');
-          const safeTemplateStatus = escapeHtml(s.templateStatus || 'Up to date ✓');
-          const updatedDate = s.updatedAt || s.lastUpdated ? new Date(s.updatedAt || s.lastUpdated).toLocaleDateString() : 'Never';
-          const lastSync = escapeHtml(s.lastSync || 'Never');
+    state.adminSheetsData = data.integrations || data.sheets || [];
+    state.adminSheetsPage = 1;
 
-          return `
-            <tr>
-              <td style="font-weight: 700;">${safeOrg}</td>
-              <td style="font-weight: 600; color: var(--foreground);">${safeModel}</td>
-              <td><span class="badge ${isConn ? 'badge-success' : 'badge-secondary'}">${statusLabel}</span></td>
-              <td style="color: #047857; font-weight: 600;">${safeTemplateStatus}</td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${updatedDate}</td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${lastSync}</td>
-            </tr>
-          `;
-        }).join('');
-      }
+    const connectedBadge = document.getElementById('admin-sheets-connected-badge');
+    if (connectedBadge) {
+      const connectedCount = state.adminSheetsData.filter(s => s.status === 'CONNECTED').length;
+      connectedBadge.innerText = `${connectedCount} of ${state.adminSheetsData.length} Connected`;
+      connectedBadge.className = `badge ${connectedCount === state.adminSheetsData.length && state.adminSheetsData.length > 0 ? 'badge-success' : 'badge-secondary'}`;
     }
+
+    renderAdminSheetsTable();
   } catch (err) {
     console.error('Error loading admin sheets:', err);
   }
+}
+
+function renderAdminSheetsTable() {
+  const tbody = document.getElementById('admin-sheets-table-body');
+  if (!tbody) return;
+
+  const sheets = state.adminSheetsData || [];
+  const paginationInfo = document.getElementById('admin-sheets-pagination-info');
+  const pageIndicator = document.getElementById('admin-sheets-page-indicator');
+  const prevBtn = document.getElementById('admin-sheets-prev-btn');
+  const nextBtn = document.getElementById('admin-sheets-next-btn');
+
+  const total = sheets.length;
+  const pageSizeRaw = state.adminSheetsPageSize || 10;
+  const pageSize = pageSizeRaw === 'all' ? Math.max(total, 1) : parseInt(pageSizeRaw, 10);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  if (state.adminSheetsPage > totalPages) state.adminSheetsPage = totalPages;
+  if (state.adminSheetsPage < 1) state.adminSheetsPage = 1;
+  const page = state.adminSheetsPage;
+
+  if (total === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No Google Sheets integrations found.</td></tr>`;
+    if (paginationInfo) paginationInfo.innerText = 'Showing 0 of 0 integrations';
+    if (pageIndicator) pageIndicator.innerText = 'Page 1 of 1';
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    return;
+  }
+
+  const startIdx = (page - 1) * pageSize;
+  const endIdx = Math.min(startIdx + pageSize, total);
+  const pageItems = sheets.slice(startIdx, endIdx);
+
+  tbody.innerHTML = pageItems.map(s => {
+    const safeOrg = escapeHtml(s.companyName || s.organizationName || 'Unknown Client');
+    const isConn = s.status === 'CONNECTED';
+    const statusLabel = isConn ? 'Connected ✓' : 'Not Configured';
+    const safeModel = escapeHtml(s.fileName || 'Master Financial Model');
+    const safeTemplateStatus = escapeHtml(s.templateStatus || 'Up to date ✓');
+    const updatedDate = s.updatedAt || s.lastUpdated ? new Date(s.updatedAt || s.lastUpdated).toLocaleDateString() : 'Never';
+    const lastSync = escapeHtml(s.lastSync || 'Never');
+
+    return `
+      <tr>
+        <td style="font-weight: 700;">${safeOrg}</td>
+        <td style="font-weight: 600; color: var(--foreground);">${safeModel}</td>
+        <td><span class="badge ${isConn ? 'badge-success' : 'badge-secondary'}">${statusLabel}</span></td>
+        <td style="color: #047857; font-weight: 600;">${safeTemplateStatus}</td>
+        <td style="font-size: 0.75rem; color: var(--muted-foreground);">${updatedDate}</td>
+        <td style="font-size: 0.75rem; color: var(--muted-foreground);">${lastSync}</td>
+      </tr>
+    `;
+  }).join('');
+
+  if (paginationInfo) {
+    paginationInfo.innerText = `Showing ${startIdx + 1}–${endIdx} of ${total.toLocaleString()} integrations`;
+  }
+  if (pageIndicator) {
+    pageIndicator.innerText = `Page ${page} of ${totalPages}`;
+  }
+  if (prevBtn) prevBtn.disabled = page <= 1;
+  if (nextBtn) nextBtn.disabled = page >= totalPages;
+}
+
+function changeAdminSheetsPage(delta) {
+  state.adminSheetsPage = (state.adminSheetsPage || 1) + delta;
+  renderAdminSheetsTable();
+}
+
+function changeAdminSheetsPageSize(size) {
+  state.adminSheetsPageSize = size === 'all' ? 'all' : (parseInt(size, 10) || 10);
+  state.adminSheetsPage = 1;
+  renderAdminSheetsTable();
 }
 
 // ── 9. Sync Runs Monitoring ─────────────────────────────────────────────────
@@ -5477,6 +5533,7 @@ async function impersonateUser(userId, orgId, userName, orgName) {
     state.impersonating = true;
 
     // Show impersonation banner and offset navbar
+    document.body.classList.add('impersonation-active');
     const banner = document.getElementById('impersonation-banner');
     if (banner) {
       banner.classList.remove('hidden');
@@ -5525,6 +5582,7 @@ async function exitImpersonation() {
   }
   state.impersonating = false;
 
+  document.body.classList.remove('impersonation-active');
   const banner = document.getElementById('impersonation-banner');
   if (banner) banner.classList.add('hidden');
   const navbar = document.getElementById('navbar');

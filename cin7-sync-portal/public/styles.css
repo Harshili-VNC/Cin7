@@ -230,6 +230,11 @@ button, input, select, textarea {
   color: var(--navy-foreground);
   backdrop-filter: blur(12px);
   box-shadow: 0 4px 20px rgba(0, 40, 77, 0.15);
+  transition: top 0.2s ease;
+}
+
+body.impersonation-active .header-navbar {
+  top: 42px;
 }
 
 .header-container {
