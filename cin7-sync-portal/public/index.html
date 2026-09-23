@@ -4441,11 +4441,19 @@
 
     <!-- ── 6. INTERACTIVE SYNC MODAL ──────────────────────────────────── -->
     <div id="sync-modal" class="modal-overlay hidden">
-      <div class="modal-dialog">
+      <div class="modal-dialog" style="position: relative;">
 
         <!-- Progress View -->
         <div id="sync-modal-progress-view">
-          <h3 style="font-size: 1.125rem; font-weight: 700;" id="sync-modal-title">Syncing last 30 days</h3>
+          <button type="button" id="btn-sync-minimize" onclick="minimizeSyncModal()"
+            style="position: absolute; top: 1rem; right: 1rem; display: flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); cursor: pointer; transition: all 0.15s ease;"
+            onmouseover="this.style.borderColor='var(--vnc-main)'; this.style.color='var(--vnc-main)'; this.style.background='rgba(0,70,130,0.06)';"
+            onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted-foreground)'; this.style.background='transparent';"
+            title="Keep syncing in the background and go back to the app">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+
+          <h3 style="font-size: 1.125rem; font-weight: 700; padding-right: 2.25rem;" id="sync-modal-title">Syncing last 30 days</h3>
           <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin-top: 0.25rem;">
             Keep this window open — we're updating your financial model.
           </p>
@@ -4487,13 +4495,6 @@
             <span style="font-size: 0.75rem; color: var(--muted-foreground);" id="sync-modal-eta-text">Safe to refresh
               or navigate away — sync runs in background.</span>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <button type="button" id="btn-sync-minimize" onclick="minimizeSyncModal()"
-                style="display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
-                onmouseover="this.style.borderColor='var(--vnc-main)'; this.style.color='var(--vnc-main)';"
-                onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted-foreground)';"
-                title="Keep syncing in the background and go back to the app">
-                Minimize
-              </button>
               <button type="button" id="btn-sync-cancel" onclick="cancelActiveSync()"
                 style="display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
                 onmouseover="this.style.borderColor='#ef4444'; this.style.color='#ef4444';"
