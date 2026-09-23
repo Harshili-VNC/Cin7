@@ -553,7 +553,9 @@ router.get('/users', async (req, res) => {
     let mappedUsers = users.map(u => ({
       id: u.id,
       organizationId: u.client_id,
+      organization_id: u.client_id,
       companyName: clientsMap[u.client_id] || u.client_id,
+      organizationName: clientsMap[u.client_id] || u.client_id,
       fullName: u.full_name,
       email: u.email,
       phoneNumber: u.phone_number,
@@ -639,7 +641,9 @@ router.get('/subscriptions', async (req, res) => {
       return {
         id: s.id,
         organizationId: s.organization_id,
+        organization_id: s.organization_id,
         companyName: clientsMap[s.organization_id] || s.organization_id,
+        organizationName: clientsMap[s.organization_id] || s.organization_id,
         planId: s.plan_id,
         planName: plan.name || 'Professional',
         planCode: plan.code || 'PROFESSIONAL',

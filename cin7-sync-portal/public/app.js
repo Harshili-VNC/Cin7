@@ -4125,13 +4125,16 @@ async function loadAdminUsers(page = 1) {
       } else {
         tbody.innerHTML = users.map(u => {
           const roleClass = u.role === 'ADMIN' ? 'role-admin' : (u.role === 'MANAGER' ? 'role-manager' : 'role-viewer');
-          const platClass = u.platform_role === 'SUPER_ADMIN' ? 'role-super_admin' : 'badge-secondary';
+          const platClass = (u.platformRole || u.platform_role) === 'SUPER_ADMIN' ? 'role-super_admin' : 'badge-secondary';
           const safeName = escapeHtml(u.fullName || u.email);
           const safeEmail = escapeHtml(u.email);
-          const safeOrg = escapeHtml(u.organizationName || u.organization_id);
+          const safeOrg = escapeHtml(u.companyName || u.organizationName || u.organizationId || u.organization_id || 'Unknown Org');
           const safeRole = escapeHtml(u.role);
-          const safePlat = escapeHtml(u.platform_role || 'USER');
+          const safePlat = escapeHtml(u.platformRole || u.platform_role || 'USER');
           const safeStatus = escapeHtml(u.status || 'ACTIVE');
+
+          const lastLogin = u.lastLoginAt || u.last_login_at;
+          const createdAt = u.createdAt || u.created_at;
 
           return `
             <tr>
@@ -4141,8 +4144,8 @@ async function loadAdminUsers(page = 1) {
               <td><span class="badge ${roleClass}">${safeRole}</span></td>
               <td><span class="badge ${platClass}">${safePlat}</span></td>
               <td><span class="badge badge-success">${safeStatus}</span></td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never'}</td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Aug 2026'}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${lastLogin ? new Date(lastLogin).toLocaleDateString() : 'Never'}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${createdAt ? new Date(createdAt).toLocaleDateString() : 'Aug 2026'}</td>
             </tr>
           `;
         }).join('');
@@ -4195,9 +4198,13 @@ async function loadAdminSubscriptions(page = 1) {
       } else {
         tbody.innerHTML = subs.map(s => {
           const statusClass = s.status === 'ACTIVE' ? 'badge-success' : (s.status === 'TRIALING' ? 'badge-info' : 'badge-warning');
-          const safeOrg = escapeHtml(s.organizationName || s.organization_id);
-          const safePlan = escapeHtml(s.planName || s.plan_id);
+          const safeOrg = escapeHtml(s.companyName || s.organizationName || s.organizationId || s.organization_id || 'Unknown Org');
+          const safePlan = escapeHtml(s.planName || s.plan_id || 'Professional');
           const safeStatus = escapeHtml(s.status);
+
+          const trialEndDate = s.trialEnd || s.trial_end;
+          const currentPeriodEndDate = s.currentPeriodEnd || s.current_period_end;
+          const isCancelAtPeriodEnd = Boolean(s.cancelAtPeriodEnd ?? s.cancel_at_period_end);
 
           return `
             <tr>
@@ -4205,9 +4212,9 @@ async function loadAdminSubscriptions(page = 1) {
               <td><strong>${safePlan}</strong></td>
               <td>$${s.price || 99}.00 / mo</td>
               <td><span class="badge ${statusClass}">${safeStatus}</span></td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${s.trial_end ? new Date(s.trial_end).toLocaleDateString() : '—'}</td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${s.current_period_end ? new Date(s.current_period_end).toLocaleDateString() : 'Ongoing'}</td>
-              <td>${s.cancel_at_period_end ? 'No (Cancels at end)' : 'Yes ✓'}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${trialEndDate ? new Date(trialEndDate).toLocaleDateString() : '—'}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${currentPeriodEndDate ? new Date(currentPeriodEndDate).toLocaleDateString() : 'Ongoing'}</td>
+              <td>${isCancelAtPeriodEnd ? 'No (Cancels at end)' : 'Yes ✓'}</td>
             </tr>
           `;
         }).join('');
