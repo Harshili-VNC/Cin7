@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=4.2">
+  <link rel="stylesheet" href="styles.css?v=4.3">
   <link rel="icon" type="image/png" href="assets/vnc-logo-badge.png">
 </head>
 <body>
@@ -1768,9 +1768,10 @@
 
     <!-- ── 6. VNC SUPER ADMIN PORTAL VIEW ────────────────────────────── -->
     <section id="admin-portal-view" class="view-container hidden">
-      <!-- Super Admin Dedicated Sticky Top Navigation Bar -->
+      <!-- Super Admin Dedicated Sticky Top Navigation Bar (2-Tier Enterprise Command Header) -->
       <header class="admin-topbar" id="admin-navbar">
-        <div class="admin-topbar-inner">
+        <!-- Tier 1: Global Admin Utility Navigation Bar -->
+        <div class="admin-topbar-upper">
           <!-- Left: Brand Lockup & Status Indicator -->
           <div class="admin-topbar-brand" onclick="switchAdminTab('dashboard')" title="Admin Dashboard">
             <div class="admin-logo-box">
@@ -1785,7 +1786,7 @@
             </div>
           </div>
 
-          <!-- Center/Left: System Status Indicator Pill -->
+          <!-- Center: System Status Indicator Pill -->
           <div class="admin-status-indicator" title="System Operational Status">
             <span class="admin-status-dot"></span>
             <span class="admin-status-text" id="admin-health-badge">All Systems Operational</span>
@@ -1815,6 +1816,27 @@
             <button class="admin-signout-btn" onclick="handleLogout()" title="Sign out of Platform">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
               <span>Sign out</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tier 2: Dynamic Page Context & Executive Action Row -->
+        <div class="admin-topbar-lower">
+          <div class="admin-topbar-context">
+            <div class="admin-breadcrumb-bar">
+              <span class="admin-crumb-parent">Admin Console</span>
+              <span class="admin-crumb-slash">/</span>
+              <span class="admin-crumb-active" id="admin-current-breadcrumb">Overview</span>
+            </div>
+            <div class="admin-context-text-row">
+              <h1 class="admin-context-title" id="admin-header-title">Executive Dashboard</h1>
+              <p class="admin-context-desc" id="admin-header-desc">Multi-tenant synchronization performance, organization health and live pipeline status.</p>
+            </div>
+          </div>
+          <div class="admin-topbar-cta" id="admin-header-cta-slot">
+            <button class="btn btn-primary btn-sm admin-primary-cta" onclick="openAdminAddOrgModal()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Add Organization</span>
             </button>
           </div>
         </div>
@@ -1897,25 +1919,6 @@
             <!-- 1. ADMIN DASHBOARD SUBVIEW -->
             <div id="admin-view-dashboard" class="admin-subview">
               
-              <!-- Clean Page Header -->
-              <div class="admin-page-header">
-                <div>
-                  <div class="admin-breadcrumb">
-                    <span>Admin Console</span>
-                    <span class="admin-breadcrumb-sep">/</span>
-                    <span class="admin-breadcrumb-current">Overview</span>
-                  </div>
-                  <h2 class="admin-page-title">Executive Dashboard</h2>
-                  <p class="admin-page-desc">Multi-tenant synchronization performance, organization health and live pipeline status.</p>
-                </div>
-                <div class="admin-page-header-actions">
-                  <button class="btn btn-primary btn-sm" onclick="openAdminAddOrgModal()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    <span>Add Organization</span>
-                  </button>
-                </div>
-              </div>
-
               <!-- Attention / Status Alerts -->
               <div id="admin-dashboard-alerts" style="margin-bottom: 1.25rem;">
                 <!-- Injected dynamically via app.js if any attention items exist -->
@@ -3655,6 +3658,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=4.2"></script>
+  <script src="app.js?v=4.3"></script>
 </body>
 </html>
