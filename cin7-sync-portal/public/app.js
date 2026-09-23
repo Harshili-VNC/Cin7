@@ -125,10 +125,14 @@ async function checkAuthStatus() {
 
 function updateUIHeader() {
   const navbar = document.getElementById('navbar');
+  const isExcludedView = !state.currentView || state.currentView === 'auth-landing' || state.currentView === 'client-select' || state.currentView === 'onboarding' || state.currentView === 'admin' || state.currentView === 'admin-portal';
+  if (state.user && !isExcludedView) {
+    if (navbar) navbar.classList.remove('hidden');
+  } else {
+    if (navbar) navbar.classList.add('hidden');
+  }
+
   if (state.user) {
-    if (navbar && state.currentView !== 'admin' && state.currentView !== 'admin-portal') {
-      navbar.classList.remove('hidden');
-    }
 
     // Populate user pill
     const name = state.user.fullName || state.user.full_name || state.user.name || 'User';
