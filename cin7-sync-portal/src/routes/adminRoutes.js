@@ -418,7 +418,7 @@ router.get('/organizations/:id', async (req, res) => {
     }
 
     // Users
-    const usersRes = await db.query('SELECT id, client_id, full_name, email, phone_number, role, platform_role, status, auth_provider, created_at, updated_at FROM users WHERE client_id = ?', [orgId]);
+    const usersRes = await db.query('SELECT id, client_id, full_name, email, phone_number, role, platform_role, status, auth_provider, created_at, updated_at, last_login_at FROM users WHERE client_id = ?', [orgId]);
     const users = (usersRes.rows || []).map(u => ({
       id: u.id,
       fullName: u.full_name,
@@ -428,7 +428,8 @@ router.get('/organizations/:id', async (req, res) => {
       platformRole: (u.platform_role || 'USER').toUpperCase(),
       status: (u.status || 'ACTIVE').toUpperCase(),
       authProvider: u.auth_provider || 'local',
-      createdAt: u.created_at
+      createdAt: u.created_at,
+      lastLoginAt: u.last_login_at
     }));
 
     // Subscription & Plan
@@ -560,7 +561,8 @@ router.get('/users', async (req, res) => {
       platformRole: (u.platform_role || 'USER').toUpperCase(),
       status: (u.status || 'ACTIVE').toUpperCase(),
       authProvider: u.auth_provider || 'local',
-      createdAt: u.created_at
+      createdAt: u.created_at,
+      lastLoginAt: u.last_login_at
     }));
 
     if (search && search.trim()) {

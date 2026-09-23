@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS clients (
     subscription_status VARCHAR(50) DEFAULT 'ACTIVE', -- 'ACTIVE' or 'EXPIRED'
     current_version VARCHAR(50) DEFAULT 'v1.0',
     last_sync_at TIMESTAMP,
+    last_active_at TIMESTAMP, -- updated whenever any of this org's users logs in (not just on sync)
     sync_status VARCHAR(50) DEFAULT 'IDLE',
     sync_schedule_json TEXT DEFAULT '{"daily_sync":true,"schedule_time":"02:00","timezone":"Asia/Kolkata","incremental_sync":true}',
     notifications_config_json TEXT DEFAULT '{"email_daily_summary":true,"email_sync_completed":true,"email_sync_failed":true,"email_critical_errors":true,"email_weekly_reports":false,"slack_status":"Not Connected","teams_status":"Not Connected"}',
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS users (
     auth_provider VARCHAR(50) NOT NULL DEFAULT 'local',
     onboarding_status VARCHAR(50) DEFAULT 'pending',
     onboarding_completed_at TIMESTAMP,
+    last_login_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

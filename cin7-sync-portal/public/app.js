@@ -4053,7 +4053,7 @@ async function viewAdminOrg360(orgId) {
             <td style="font-family: var(--font-mono); font-size: 0.75rem;">${safeEmail}</td>
             <td><span class="badge badge-secondary">${safeRole}</span></td>
             <td><span class="badge badge-success">${safeStatus}</span></td>
-            <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never'}</td>
+            <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never'}</td>
           </tr>
         `;
       }).join('') || `<tr><td colspan="5" style="text-align: center; padding: 1rem;">No users found.</td></tr>`;
@@ -4141,8 +4141,8 @@ async function loadAdminUsers(page = 1) {
               <td><span class="badge ${roleClass}">${safeRole}</span></td>
               <td><span class="badge ${platClass}">${safePlat}</span></td>
               <td><span class="badge badge-success">${safeStatus}</span></td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never'}</td>
-              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Aug 2026'}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never'}</td>
+              <td style="font-size: 0.75rem; color: var(--muted-foreground);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Aug 2026'}</td>
             </tr>
           `;
         }).join('');
