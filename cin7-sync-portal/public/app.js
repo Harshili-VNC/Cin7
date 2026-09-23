@@ -891,7 +891,7 @@ function renderSyncStatusBar(syncState = 'SUCCESS', options = {}) {
 
   if (syncState === 'SYNCING') {
     container.innerHTML = `
-      <div class="sync-state-box state-syncing">
+      <div class="sync-state-box state-syncing" onclick="restoreSyncModal()" style="cursor: pointer;" title="Click to view sync progress">
         <div class="sync-state-icon-wrap rotating">⟳</div>
         <div class="sync-state-info">
           <span class="sync-state-heading">Syncing in progress...</span>
@@ -1648,6 +1648,27 @@ function showSyncCompleted(result = {}) {
 function closeSyncModal() {
   const modal = document.getElementById('sync-modal');
   if (modal) modal.classList.add('hidden');
+}
+
+/**
+ * Hides the sync progress modal without stopping the sync — polling keeps
+ * running in the background, and the header's sync-state pill stays live
+ * so the user can jump back in via restoreSyncModal().
+ */
+function minimizeSyncModal() {
+  const modal = document.getElementById('sync-modal');
+  if (modal) modal.classList.add('hidden');
+  showToast('Sync is still running in the background.', 'info');
+}
+
+function restoreSyncModal() {
+  if (!state.isSyncing) return;
+  const modal = document.getElementById('sync-modal');
+  const progressView = document.getElementById('sync-modal-progress-view');
+  const completeView = document.getElementById('sync-modal-complete-view');
+  if (progressView) progressView.classList.remove('hidden');
+  if (completeView) completeView.classList.add('hidden');
+  if (modal) modal.classList.remove('hidden');
 }
 
 /**

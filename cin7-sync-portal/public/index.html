@@ -4486,12 +4486,21 @@
             style="display: flex; align-items: center; justify-content: space-between; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
             <span style="font-size: 0.75rem; color: var(--muted-foreground);" id="sync-modal-eta-text">Safe to refresh
               or navigate away — sync runs in background.</span>
-            <button type="button" id="btn-sync-cancel" onclick="cancelActiveSync()"
-              style="display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
-              onmouseover="this.style.borderColor='#ef4444'; this.style.color='#ef4444';"
-              onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted-foreground)';">
-              Stop Sync
-            </button>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <button type="button" id="btn-sync-minimize" onclick="minimizeSyncModal()"
+                style="display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
+                onmouseover="this.style.borderColor='var(--vnc-main)'; this.style.color='var(--vnc-main)';"
+                onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted-foreground)';"
+                title="Keep syncing in the background and go back to the app">
+                Minimize
+              </button>
+              <button type="button" id="btn-sync-cancel" onclick="cancelActiveSync()"
+                style="display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
+                onmouseover="this.style.borderColor='#ef4444'; this.style.color='#ef4444';"
+                onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted-foreground)';">
+                Stop Sync
+              </button>
+            </div>
           </div>
         </div>
 
