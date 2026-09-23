@@ -69,6 +69,12 @@ async function checkAuthStatus() {
       state.user = data.user;
       state.client = data.client;
       state.cin7 = data.cin7;
+      state.latestSyncResult = null;
+      state.lastSyncTime = data.client?.lastSyncAt || null;
+      state.lastSyncError = null;
+      state.recentActivities = [];
+      state.impersonating = data.impersonating || null;
+      renderImpersonationBanner();
 
       // Check if user needs first-time client onboarding / selection
       if (data.needsClientSelection === true) {
@@ -110,6 +116,24 @@ async function checkAuthStatus() {
   }
 }
 
+function renderImpersonationBanner() {
+  const banner = document.getElementById('impersonation-banner');
+  if (!banner) return;
+  if (state.impersonating) {
+    const nameEl = document.getElementById('impersonation-banner-text');
+    if (nameEl) {
+      const who = state.user?.fullName || state.user?.full_name || state.user?.email || 'this user';
+      const org = state.client?.companyName || 'their organization';
+      nameEl.innerText = `Viewing as ${who} (${org}) — Admin Mode`;
+    }
+    banner.classList.remove('hidden');
+    document.body.classList.add('impersonation-active');
+  } else {
+    banner.classList.add('hidden');
+    document.body.classList.remove('impersonation-active');
+  }
+}
+
 function updateUIHeader() {
   const navbar = document.getElementById('navbar');
   const isExcludedView = !state.currentView || state.currentView === 'auth-landing' || state.currentView === 'client-select' || state.currentView === 'onboarding' || state.currentView === 'admin' || state.currentView === 'admin-portal';
@@ -142,6 +166,13 @@ function updateUIHeader() {
       avatarEl.innerText = getUserInitials(name);
     }
     if (nameEl) nameEl.innerText = name;
+
+    // Mirror identity into the separate Admin Console topbar (super admins only)
+    const adminAvatarEl = document.getElementById('admin-topbar-avatar');
+    const adminNameEl = document.getElementById('admin-topbar-user-name');
+    if (adminAvatarEl) adminAvatarEl.innerText = avatarEl ? avatarEl.innerText : '';
+    if (adminNameEl) adminNameEl.innerText = name;
+
     if (roleEl) {
       if (platformRole === 'SUPER_ADMIN') {
         roleEl.innerText = 'Super Admin';
@@ -269,6 +300,14 @@ function navigateTo(viewId) {
       }
     }
   });
+
+  // The Admin Portal is a deliberately separate console: it has its own
+  // .admin-topbar (branding, identity, sign out) and must never show the
+  // client-facing .header-navbar (Sync/Reports/Settings) at the same time.
+  const navbar = document.getElementById('navbar');
+  if (navbar && state.user) {
+    navbar.classList.toggle('hidden', viewId === 'admin');
+  }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -805,6 +844,15 @@ async function handleLogout() {
   state.user = null;
   state.client = null;
   state.cin7 = null;
+  state.latestSyncResult = null;
+  state.lastSyncTime = null;
+  state.lastSyncError = null;
+  state.recentActivities = [];
+  try {
+    localStorage.removeItem('vnc_recent_activities');
+  } catch (_) {}
+  renderActivityList();
+  updateDashboardData();
   updateUIHeader();
   navigateTo('auth-landing');
   showToast('Signed out', 'success');
@@ -1086,24 +1134,48 @@ function formatSyncTime(ts) {
   return { main, rel };
 }
 
+function getActivityCacheKey() {
+  const cid = state.client?.id || state.user?.client_id || state.user?.organizationId;
+  return cid ? `vnc_recent_activities_${cid}` : null;
+}
+
 /**
  * Load recent sync activity from the server's sync history endpoint.
- * Falls back to localStorage cache for instant display while the network call completes.
+ * Falls back to tenant-scoped localStorage cache for instant display while the network call completes.
  */
 async function loadRecentActivityFromHistory() {
-  // Show localStorage cache immediately while fetching fresh data
-  try {
-    const cached = localStorage.getItem('vnc_recent_activities');
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        state.recentActivities = parsed.slice(0, 10);
+  const cacheKey = getActivityCacheKey();
+
+  // Clear any stale unscoped key
+  try { localStorage.removeItem('vnc_recent_activities'); } catch (_) {}
+
+  // Show tenant-scoped localStorage cache immediately while fetching fresh data
+  if (cacheKey) {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          state.recentActivities = parsed.slice(0, 10);
+          renderActivityList();
+        } else {
+          state.recentActivities = [];
+          renderActivityList();
+        }
+      } else {
+        state.recentActivities = [];
         renderActivityList();
       }
+    } catch (_) {
+      state.recentActivities = [];
+      renderActivityList();
     }
-  } catch (_) {}
+  } else {
+    state.recentActivities = [];
+    renderActivityList();
+  }
 
-  // Fetch fresh from DB
+  // Fetch fresh from DB for current authenticated tenant
   try {
     const res = await fetch('/api/sync/history?pageSize=10');
     if (!res.ok) return;
@@ -1188,8 +1260,11 @@ async function loadRecentActivityFromHistory() {
       updateDashboardData();
     }
 
-    // Persist to localStorage for next page load
-    try { localStorage.setItem('vnc_recent_activities', JSON.stringify(activities.slice(0, 10))); } catch (_) {}
+    // Persist to tenant-scoped localStorage
+    const currentKey = getActivityCacheKey();
+    if (currentKey) {
+      try { localStorage.setItem(currentKey, JSON.stringify(activities.slice(0, 10))); } catch (_) {}
+    }
   } catch (err) {
     console.warn('[Activity] Could not load sync history:', err.message);
   }
@@ -1574,7 +1649,10 @@ function showSyncCompleted(result = {}) {
   state.recentActivities.unshift(newEntry);
   state.recentActivities = state.recentActivities.slice(0, 10);
   // Persist updated list so it survives page refresh
-  try { localStorage.setItem('vnc_recent_activities', JSON.stringify(state.recentActivities)); } catch (_) {}
+  const syncKey = getActivityCacheKey();
+  if (syncKey) {
+    try { localStorage.setItem(syncKey, JSON.stringify(state.recentActivities)); } catch (_) {}
+  }
   renderActivityList();
   updateDashboardData();
 }
@@ -1659,7 +1737,10 @@ async function handlePullFromGoogleSheets() {
     };
     state.recentActivities.unshift(newEntry);
     state.recentActivities = state.recentActivities.slice(0, 10);
-    try { localStorage.setItem('vnc_recent_activities', JSON.stringify(state.recentActivities)); } catch (_) {}
+    const pullKey = getActivityCacheKey();
+    if (pullKey) {
+      try { localStorage.setItem(pullKey, JSON.stringify(state.recentActivities)); } catch (_) {}
+    }
     renderActivityList();
 
     // Refresh dashboard metric cards and status bar
@@ -2666,15 +2747,21 @@ async function clearOrderDetailCache() {
 
 // ── 6. WORKBOOK VIEWER & DOWNLOAD ───────────────────────────────────────────
 
+const WORKBOOK_PREVIEW_SHEET = 'KPI Dashboard';
+
 async function openWorkbookViewer() {
   const modal = document.getElementById('workbook-viewer-modal');
   const tabsBar = document.getElementById('viewer-tabs-bar');
   const tableContainer = document.getElementById('viewer-table-container');
 
   if (modal) modal.classList.remove('hidden');
-  if (tabsBar) tabsBar.innerHTML = '';
+  // Single-sheet preview now — no tab bar needed.
+  if (tabsBar) {
+    tabsBar.innerHTML = '';
+    tabsBar.classList.add('hidden');
+  }
   if (tableContainer) {
-    tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Loading live data from your synced Google Sheet…</div>`;
+    tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Loading live KPI Dashboard data from your synced Google Sheet…</div>`;
   }
 
   try {
@@ -2683,7 +2770,7 @@ async function openWorkbookViewer() {
 
     if (!data.success || !Array.isArray(data.sheets) || data.sheets.length === 0) {
       if (tableContainer) {
-        tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">${escapeHtml(data.message || 'No synced Google Sheet found yet. Run a sync first.')}</div>`;
+        tableContainer.innerHTML = `<div style="padding: 2.5rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">${escapeHtml(data.message || 'No synced Google Sheet found yet. Run a sync first.')}</div>`;
       }
       return;
     }
@@ -2691,19 +2778,18 @@ async function openWorkbookViewer() {
     state.workbookPreviewSheets = data.sheets;
     state.workbookSheets = data.sheets.map(s => s.name);
 
-    if (tabsBar) {
-      tabsBar.innerHTML = state.workbookSheets.map((s, idx) => `
-        <button class="sheet-tab-btn ${idx === 0 ? 'active' : ''}" onclick="selectViewerSheet('${escapeHtml(s)}', this)">
-          ${escapeHtml(s)}
-        </button>
-      `).join('');
+    if (!state.workbookSheets.includes(WORKBOOK_PREVIEW_SHEET)) {
+      if (tableContainer) {
+        tableContainer.innerHTML = `<div style="padding: 2.5rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">'${escapeHtml(WORKBOOK_PREVIEW_SHEET)}' was not found in the synced Google Sheet.</div>`;
+      }
+      return;
     }
 
-    selectViewerSheet(state.workbookSheets[0]);
+    selectViewerSheet(WORKBOOK_PREVIEW_SHEET);
   } catch (err) {
     console.error('Error loading live workbook preview:', err);
     if (tableContainer) {
-      tableContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Failed to load live Google Sheet data. Please try again.</div>`;
+      tableContainer.innerHTML = `<div style="padding: 2.5rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">Failed to load live Google Sheet data. Please try again.</div>`;
     }
   }
 }
@@ -2719,38 +2805,184 @@ function selectViewerSheet(sheetName, btnElement) {
   if (!tableContainer) return;
 
   const sheet = (state.workbookPreviewSheets || []).find(s => s.name === sheetName);
-  const rows = sheet ? sheet.rows : [];
+  const rawRows = sheet ? (sheet.rows || []) : [];
 
-  if (rows.length === 0) {
+  if (rawRows.length === 0) {
     tableContainer.innerHTML = `
-      <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; background: var(--card);">
+      <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2.5rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; background: var(--card);">
         '${escapeHtml(sheetName)}' has no data yet in the live Google Sheet.
       </div>
     `;
     return;
   }
 
+  // Filter out completely empty spacer rows
+  const cleanRows = rawRows.filter(row => Array.isArray(row) && row.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
+
+  // 1. Specialized View for "Cover & Index"
+  if (sheetName.includes('Cover') || sheetName.includes('Index')) {
+    renderCoverSheetPreview(cleanRows, tableContainer);
+    return;
+  }
+
+  // 2. Specialized View for Raw Data sheets (e.g. Sales / Inventory / Purchase Raw Data)
+  const isRawDataSheet = sheetName.toLowerCase().includes('raw data') || sheetName.toLowerCase().includes('transaction');
+  if (isRawDataSheet) {
+    renderRawDataPreview(sheetName, cleanRows, tableContainer);
+    return;
+  }
+
+  // 3. Default Analytical & Financial Models with Highlighted Important Rows
+  renderAnalyticalSheetPreview(sheetName, cleanRows, tableContainer);
+}
+
+function renderCoverSheetPreview(rows, container) {
+  // Extract key fields from Cover & Index rows
+  let companyName = state.client?.companyName || 'Client Organization';
+  let modelTitle = 'Monthly Controller Reporting Model';
+  let dataPeriodStr = '';
+  let totalRevenue = '$0';
+  let grossProfit = '$0';
+  let criticalAlerts = '0';
+  let lowStockAlerts = '0';
+  let healthyAlerts = '0';
+  let overstockAlerts = '0';
+  let indexRows = [];
+
+  let inIndex = false;
+
+  rows.forEach((row, idx) => {
+    const firstCell = String(row[0] || '').trim();
+    if (idx === 0 && firstCell) companyName = firstCell;
+    if (idx === 1 && firstCell) modelTitle = firstCell;
+    if (firstCell.includes('Data Period:')) dataPeriodStr = firstCell;
+
+    // Detect Total Revenue / Gross Profit
+    row.forEach((cell, cIdx) => {
+      const cStr = String(cell || '').trim();
+      if (cStr.toLowerCase() === 'total revenue' && row[cIdx + 1]) totalRevenue = row[cIdx + 1];
+      if (cStr.toLowerCase() === 'gross profit' && row[cIdx + 1]) grossProfit = row[cIdx + 1];
+      if (cStr.includes('INVENTORY ALERTS')) {
+        const fullAlertStr = row.join(' ');
+        const critMatch = fullAlertStr.match(/Critical:\s*(\d+)/i);
+        const lowMatch = fullAlertStr.match(/Low Stock:\s*(\d+)/i);
+        const healthMatch = fullAlertStr.match(/Healthy:\s*(\d+)/i);
+        const overMatch = fullAlertStr.match(/Overstock:\s*(\d+)/i);
+        if (critMatch) criticalAlerts = critMatch[1];
+        if (lowMatch) lowStockAlerts = lowMatch[1];
+        if (healthMatch) healthyAlerts = healthMatch[1];
+        if (overMatch) overstockAlerts = overMatch[1];
+      }
+    });
+
+    // Check if row has revenue / profit numbers
+    if (firstCell.startsWith('$') && !firstCell.includes('INVENTORY')) {
+      totalRevenue = firstCell;
+      if (row[1] && String(row[1]).startsWith('$')) grossProfit = row[1];
+      else if (row[row.length - 1] && String(row[row.length - 1]).startsWith('$')) grossProfit = row[row.length - 1];
+    }
+
+    if (firstCell.includes('WORKBOOK INDEX')) {
+      inIndex = true;
+      return;
+    }
+
+    if (inIndex && row.length >= 2) {
+      indexRows.push(row);
+    }
+  });
+
+  const indexTableHtml = indexRows.length > 0 ? `
+    <div style="margin-top: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--card);">
+      <div style="background: var(--muted); padding: 0.625rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); text-transform: uppercase;">
+        📑 Workbook Sheets & Model Directory
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.8125rem;">
+        <tbody>
+          ${indexRows.map((r, i) => `
+            <tr style="border-bottom: 1px solid var(--border); background: ${i % 2 === 0 ? 'var(--card)' : 'var(--secondary)'};">
+              <td style="padding: 0.5rem 1rem; font-weight: 600; color: var(--foreground);">${escapeHtml(r[1] || r[0])}</td>
+              <td style="padding: 0.5rem 1rem; text-align: right;"><span class="badge badge-secondary" style="font-size: 0.6875rem;">${escapeHtml(r[2] || 'Report')}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
+  container.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <!-- Hero Banner -->
+      <div class="preview-hero-banner">
+        <div>
+          <div class="preview-hero-title">${escapeHtml(companyName)}</div>
+          <div class="preview-hero-subtitle">${escapeHtml(modelTitle)} &bull; Powered by Cin7 Core</div>
+        </div>
+        ${dataPeriodStr ? `<div class="badge badge-primary" style="font-size: 0.75rem; padding: 0.4rem 0.75rem; font-weight: 600;">${escapeHtml(dataPeriodStr)}</div>` : ''}
+      </div>
+
+      <!-- Executive KPI Cards -->
+      <div class="preview-kpi-grid">
+        <div class="preview-kpi-card highlight-blue">
+          <span class="preview-kpi-label">Total Revenue</span>
+          <span class="preview-kpi-value" style="color: var(--vnc-main);">${escapeHtml(totalRevenue)}</span>
+        </div>
+        <div class="preview-kpi-card highlight-green">
+          <span class="preview-kpi-label">Gross Profit</span>
+          <span class="preview-kpi-value" style="color: #10b981;">${escapeHtml(grossProfit)}</span>
+        </div>
+        <div class="preview-kpi-card highlight-purple">
+          <span class="preview-kpi-label">Inventory Health</span>
+          <div class="preview-pill-group">
+            <span class="preview-pill preview-pill-critical">Critical: ${escapeHtml(criticalAlerts)}</span>
+            <span class="preview-pill preview-pill-low">Low: ${escapeHtml(lowStockAlerts)}</span>
+            <span class="preview-pill preview-pill-healthy">Healthy: ${escapeHtml(healthyAlerts)}</span>
+            <span class="preview-pill preview-pill-overstock">Overstock: ${escapeHtml(overstockAlerts)}</span>
+          </div>
+        </div>
+      </div>
+
+      ${indexTableHtml}
+    </div>
+  `;
+}
+
+function renderAnalyticalSheetPreview(sheetName, rows, container) {
   const [headerRow, ...bodyRowsData] = rows;
 
   const headerCells = headerRow.map(cell => `
-    <th style="padding: 0.625rem 0.875rem; color: var(--muted-foreground); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em; text-align: left; white-space: nowrap;">${escapeHtml(cell)}</th>
+    <th style="padding: 0.625rem 0.875rem; color: var(--muted-foreground); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em; text-align: left; white-space: nowrap;">${escapeHtml(cell)}</th>
   `).join('');
 
   const bodyRows = bodyRowsData.map(row => {
-    const cells = row.map(cell => `<td style="padding: 0.625rem 0.875rem; white-space: nowrap;">${escapeHtml(cell)}</td>`).join('');
-    return `<tr style="border-bottom: 1px solid var(--border); transition: background 0.15s ease;">${cells}</tr>`;
+    const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
+    const isTotalRow = rowStr.includes('total') || rowStr.includes('sum');
+    const isProfitRow = rowStr.includes('gross profit') || rowStr.includes('margin %') || rowStr.includes('net movement');
+    const isSectionRow = row.length > 0 && row.filter(c => c !== null && c !== undefined && String(c).trim() !== '').length === 1 && String(row[0]).length > 2 && String(row[0]) === String(row[0]).toUpperCase();
+
+    let rowClass = '';
+    if (isTotalRow) rowClass = 'preview-highlight-total';
+    else if (isProfitRow) rowClass = 'preview-highlight-profit';
+    else if (isSectionRow) rowClass = 'preview-highlight-section';
+
+    const cells = row.map((cell, idx) => {
+      const cellVal = escapeHtml(cell);
+      return `<td style="padding: 0.625rem 0.875rem; white-space: nowrap; ${idx === 0 && (isTotalRow || isProfitRow) ? 'font-weight: 800;' : ''}">${cellVal}</td>`;
+    }).join('');
+
+    return `<tr class="${rowClass}" style="border-bottom: 1px solid var(--border); transition: background 0.15s ease;">${cells}</tr>`;
   }).join('');
 
-  tableContainer.innerHTML = `
+  container.innerHTML = `
     <div style="border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--card);">
       <div style="background: var(--secondary); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
         <div>
           <span style="font-weight: 700; font-size: 0.875rem; color: var(--foreground);">${escapeHtml(sheetName)}</span>
-          <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">— live from your synced Google Sheet</span>
+          <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">— live model calculations</span>
         </div>
-        <span class="badge badge-outline" style="font-size: 0.6875rem;">${bodyRowsData.length} rows previewed</span>
+        <span class="badge badge-outline" style="font-size: 0.6875rem;">${bodyRowsData.length} rows</span>
       </div>
-      <div style="overflow-x: auto; max-height: 480px; overflow-y: auto;">
+      <div style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
         <table style="width: 100%; border-collapse: collapse; font-size: 0.8125rem;">
           <thead>
             <tr style="background: var(--muted); border-bottom: 1px solid var(--border);">
@@ -4218,6 +4450,9 @@ async function loadAdminOrganizations(page = 1) {
                   <button class="btn btn-primary btn-xs" onclick="viewAdminOrg360('${safeId}')" title="Inspect 360° Tenant View">
                     Inspect 360°
                   </button>
+                  <button class="btn btn-outline btn-xs" onclick="impersonateOrg('${safeId}', '${safeName}')" title="Open this organization's real dashboard, synced as their admin">
+                    View as
+                  </button>
                   ${o.id !== 'client-vnc-master' ? `
                     <button class="btn btn-outline btn-xs" style="color: var(--destructive, #ef4444); border-color: rgba(239,68,68,0.3); padding: 0.2rem 0.4rem;" onclick="deleteAdminOrg('${safeId}', '${safeName}')" title="Delete Organization">
                       🗑️
@@ -4312,6 +4547,86 @@ async function handleAdminCreateOrgSubmit(e) {
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerText = 'Create Organization';
+    }
+  }
+}
+
+async function openAdminInviteUserModal() {
+  const modal = document.getElementById('modal-admin-invite-user');
+  if (!modal) return;
+
+  const form = document.getElementById('admin-invite-user-form');
+  if (form) form.reset();
+
+  const orgSelect = document.getElementById('invite-user-org');
+  if (orgSelect) {
+    orgSelect.innerHTML = '<option value="client-vnc-master">VNC Global Platform (Master)</option>';
+    try {
+      const res = await fetch('/api/admin/organizations?limit=100');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.organizations)) {
+        data.organizations.forEach(org => {
+          if (org.id !== 'client-vnc-master') {
+            const opt = document.createElement('option');
+            opt.value = org.id;
+            opt.textContent = `${org.companyName || org.name} (${org.id})`;
+            orgSelect.appendChild(opt);
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  modal.classList.remove('hidden');
+  document.getElementById('invite-user-email')?.focus();
+}
+
+function closeAdminInviteUserModal() {
+  const modal = document.getElementById('modal-admin-invite-user');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function handleAdminInviteUserSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('invite-user-email')?.value.trim();
+  const fullName = document.getElementById('invite-user-fullname')?.value.trim();
+  const organizationId = document.getElementById('invite-user-org')?.value || 'client-vnc-master';
+  const role = document.getElementById('invite-user-role')?.value || 'ADMIN';
+  const platformRole = document.getElementById('invite-user-platform-role')?.value || 'USER';
+  const submitBtn = document.getElementById('btn-invite-user-submit');
+
+  if (!email) {
+    showToast('Recipient email is required.', 'error');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner" style="display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:rot 0.8s linear infinite; vertical-align:middle; margin-right:4px;"></span> Sending Invite...';
+  }
+
+  try {
+    const res = await fetch('/api/admin/users/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, fullName, organizationId, role, platformRole })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(data.message || `Invitation successfully dispatched to ${email}!`, 'success');
+      closeAdminInviteUserModal();
+      await loadAdminUsers(1);
+    } else {
+      showToast(data.message || data.error || 'Failed to send invitation.', 'error');
+    }
+  } catch (err) {
+    console.error('Error inviting user:', err);
+    showToast('Failed to send invitation. Please check network connection.', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Send Invitation';
     }
   }
 }
@@ -4448,6 +4763,49 @@ function closeAdminOrg360() {
   if (modal) modal.classList.add('hidden');
 }
 
+// ── 3B. Admin Impersonation ("View as") ──────────────────────────────────────
+
+async function impersonateOrg(orgId, orgLabel) {
+  if (!confirm(`Open ${orgLabel}'s real dashboard, synced as their admin? You'll be able to see and do everything they can, including triggering syncs and editing their credentials, until you exit.`)) return;
+  await startImpersonationRequest(`/api/admin/organizations/${orgId}/impersonate`);
+}
+
+async function impersonateUser(userId, userLabel) {
+  if (!confirm(`Open ${userLabel}'s dashboard, logged in exactly as them (their own role and permissions apply)? This lasts until you exit.`)) return;
+  await startImpersonationRequest(`/api/admin/users/${userId}/impersonate`);
+}
+
+async function startImpersonationRequest(url) {
+  try {
+    const res = await fetch(url, { method: 'POST' });
+    const data = await res.json();
+    if (!data.success) {
+      showToast(data.message || 'Failed to start impersonation session.', 'error');
+      return;
+    }
+    // Full reload so every piece of client-side state (state.user, state.client, cached
+    // dashboard data, etc.) is rebuilt fresh from the now-impersonated session, rather than
+    // mixing leftover admin-context state with the impersonated client's data.
+    window.location.href = '/';
+  } catch (err) {
+    showToast('Failed to start impersonation session: ' + err.message, 'error');
+  }
+}
+
+async function exitImpersonation() {
+  try {
+    const res = await fetch('/api/auth/impersonate/exit', { method: 'POST' });
+    const data = await res.json();
+    if (!data.success) {
+      showToast(data.message || 'Failed to exit impersonation.', 'error');
+      return;
+    }
+    window.location.href = '/';
+  } catch (err) {
+    showToast('Failed to exit impersonation: ' + err.message, 'error');
+  }
+}
+
 // ── 4. Cross-Organization Users Directory ───────────────────────────────────
 
 function debounceAdminUsers() {
@@ -4476,7 +4834,7 @@ async function loadAdminUsers(page = 1) {
     if (tbody) {
       const users = data.users || [];
       if (users.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No users matched the search criteria.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No users matched the search criteria.</td></tr>`;
       } else {
         tbody.innerHTML = users.map(u => {
           const roleClass = u.role === 'ADMIN' ? 'role-admin' : (u.role === 'MANAGER' ? 'role-manager' : 'role-viewer');

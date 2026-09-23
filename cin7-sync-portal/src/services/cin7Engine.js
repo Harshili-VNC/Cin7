@@ -499,6 +499,12 @@ function mapSaleLineToRow(sale, line, productMap = null) {
   const sku = String(line.SKU || '').trim();
   const sourceChannel = sale.SourceChannel || sale.SaleChannel || '';
   const productInfo = productMap ? (productMap.get(sku) || {}) : {};
+  // True Order Date (when the order was placed), kept separate from the Invoice-date-preferring
+  // column below — used by filterSalesByWindow so "Last 30/60/90 Days" filters by order date,
+  // not invoice date. Appended as a trailing field (see SALES_HEADERS.length) so it never shifts
+  // any of the existing, positionally-referenced columns; strip it before writing to the
+  // client-facing spreadsheet (see stripInternalRowFields in syncRoutes.js).
+  const trueOrderDate = sale.OrderDate ? sale.OrderDate.split('T')[0] : '';
 
   return [
     year,
@@ -526,7 +532,8 @@ function mapSaleLineToRow(sale, line, productMap = null) {
     cogs,
     0,
     profit,
-    margin
+    margin,
+    trueOrderDate
   ];
 }
 
@@ -768,68 +775,119 @@ const SALES_HEADERS = [
   'COGS', 'Profit less journals', 'Journals', 'Profit', 'Profit'
 ];
 
-// In-memory per-client cache of the SKU -> {brand, category, family} product master map.
-// Rebuilt once per sync run rather than per-SKU lookup.
-const productMasterCache = new Map();
+// In-memory per-client cache of product availability items and SKU metadata map.
+// Reused across fetchProductMaster and fetchInventory during the same sync run.
+const productAvailabilityCache = new Map();
+const PRODUCT_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache TTL
+
+/**
+ * Fetches or returns cached Product Availability / Master catalog from Cin7 Core API.
+ * Shared between fetchProductMaster and fetchInventory to eliminate duplicate sequential API calls.
+ */
+async function fetchRawProductAvailability(clientId, { onProgress = null, isCancelled = null, forceRefresh = false } = {}) {
+  const safeClientId = getSafeClientId(clientId);
+
+  if (!forceRefresh && productAvailabilityCache.has(safeClientId)) {
+    const entry = productAvailabilityCache.get(safeClientId);
+    if (Date.now() - entry.timestamp < PRODUCT_CACHE_TTL_MS && entry.data && entry.data.length > 0) {
+      console.log(`[CIN7 LIVE] Using cached Product Catalog (${entry.data.length} SKUs).`);
+      if (onProgress && typeof onProgress === 'function') {
+        onProgress({
+          current: entry.data.length,
+          total: entry.data.length,
+          percent: 100,
+          message: `Product Catalog ready (${entry.data.length.toLocaleString()} SKUs cached)`
+        });
+      }
+      return { products: entry.data, map: entry.map };
+    }
+  }
+
+  const creds = await getClientCin7Credentials(safeClientId);
+  console.log('[CIN7 LIVE] Fetching Product availability/master catalog via /ref/productavailability...');
+  let allProducts = [];
+  let page = 1;
+  let totalInApi = 0;
+  let loggedSample = false;
+
+  while (true) {
+    if (typeof isCancelled === 'function' && isCancelled()) {
+      const cancelErr = new Error('Sync was cancelled by user.');
+      cancelErr.code = 'SYNC_CANCELLED';
+      throw cancelErr;
+    }
+
+    const res = await cin7ApiGet(`${CIN7_BASE_URL}/ref/productavailability`, {
+      headers: cin7Headers(creds),
+      params: { Page: page, Limit: 100 },
+      timeout: 30000
+    }, 'Product Master', 5);
+
+    totalInApi = res.data?.Total || 0;
+    const products = res.data?.ProductAvailabilityList || [];
+
+    if (!loggedSample && products.length) {
+      console.log('[CIN7 LIVE] Sample Product master record (verify field names):', JSON.stringify(products[0]));
+      loggedSample = true;
+    }
+
+    allProducts = allProducts.concat(products);
+    console.log(`Product Master: records fetched from page ${page}: ${products.length} (Total in Cin7: ${totalInApi})`);
+
+    const totalPages = Math.ceil(totalInApi / 100) || 1;
+    const pct = totalInApi ? Math.min(100, Math.round((allProducts.length / totalInApi) * 100)) : 100;
+
+    if (onProgress && typeof onProgress === 'function') {
+      onProgress({
+        current: allProducts.length,
+        total: totalInApi || allProducts.length,
+        page,
+        totalPages,
+        percent: pct,
+        message: `Fetching Product Catalog: ${allProducts.length.toLocaleString()} / ${(totalInApi || allProducts.length).toLocaleString()} SKUs (Page ${page}/${totalPages})`
+      });
+    }
+
+    if (products.length === 0 || allProducts.length >= totalInApi) {
+      break;
+    }
+    page++;
+  }
+
+  const map = new Map();
+  for (const p of allProducts) {
+    const sku = String(p.SKU || '').trim();
+    if (!sku) continue;
+    map.set(sku, {
+      brand: p.Brand || '',
+      category: p.Category || '',
+      family: p.Family || p.ProductFamily || p.Group || p.CategoryGroup || ''
+    });
+  }
+
+  productAvailabilityCache.set(safeClientId, {
+    timestamp: Date.now(),
+    data: allProducts,
+    map
+  });
+
+  return { products: allProducts, map };
+}
 
 /**
  * Fetches Cin7's Product master list and builds a SKU -> {brand, category, family} map.
  * Category/Brand/Family live on the product master record, not on Sale/Purchase order
  * lines, so this is required to populate those columns in the synced sheets.
- *
- * NOTE: Cin7 Core's exact field name for "Family" is not confirmed against live docs —
- * this tries several common candidates and logs the raw shape of the first record so
- * the correct key can be verified/adjusted from real API output if needed.
  */
-async function fetchProductMaster(clientId) {
-  const creds = await getClientCin7Credentials(clientId);
-  const map = new Map();
+async function fetchProductMaster(clientId, { onProgress = null, isCancelled = null } = {}) {
   try {
-    console.log('[CIN7 LIVE] Fetching Product master (Brand/Category/Family) via /ref/productavailability...');
-    let allProducts = [];
-    let page = 1;
-    let totalInApi = 0;
-    let loggedSample = false;
-
-    while (true) {
-      const res = await cin7ApiGet(`${CIN7_BASE_URL}/ref/productavailability`, {
-        headers: cin7Headers(creds),
-        params: { Page: page, Limit: 100 },
-        timeout: 30000
-      }, 'Product Master', 5);
-
-      totalInApi = res.data?.Total || 0;
-      const products = res.data?.ProductAvailabilityList || [];
-
-      if (!loggedSample && products.length) {
-        console.log('[CIN7 LIVE] Sample Product master record (verify field names):', JSON.stringify(products[0]));
-        loggedSample = true;
-      }
-
-      console.log(`Product Master: records fetched from page ${page}: ${products.length} (Total in Cin7: ${totalInApi})`);
-      allProducts = allProducts.concat(products);
-
-      if (products.length === 0 || allProducts.length >= totalInApi) {
-        break;
-      }
-      page++;
-    }
-
-    for (const p of allProducts) {
-      const sku = String(p.SKU || '').trim();
-      if (!sku) continue;
-      map.set(sku, {
-        brand: p.Brand || '',
-        category: p.Category || '',
-        family: p.Family || p.ProductFamily || p.Group || p.CategoryGroup || ''
-      });
-    }
-
+    const { map } = await fetchRawProductAvailability(clientId, { onProgress, isCancelled });
     console.log(`[CIN7 LIVE] Product master map built: ${map.size} SKUs.`);
+    return map;
   } catch (err) {
     console.warn('[CIN7 LIVE] Product master fetch failed (non-fatal, Brand/Category/Family will be blank):', err.message);
+    return new Map();
   }
-  return map;
 }
 
 /**
@@ -892,7 +950,27 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
     const detailedSales = await fetchSaleDetailsConcurrently(allSales, creds, clientId, onProgress, isCancelled);
     const enrichDuration = ((Date.now() - enrichStartMs) / 1000).toFixed(2);
 
-    const productMap = await fetchProductMaster(clientId);
+    if (onProgress && typeof onProgress === 'function') {
+      onProgress({
+        current: 0,
+        total: 0,
+        percent: 0,
+        stage: 'PRODUCT_MASTER',
+        message: 'Loading Product Master catalog...'
+      });
+    }
+
+    const productMap = await fetchProductMaster(clientId, {
+      onProgress: (p) => {
+        if (onProgress && typeof onProgress === 'function') {
+          onProgress({
+            ...p,
+            stage: 'PRODUCT_MASTER'
+          });
+        }
+      },
+      isCancelled
+    });
 
     const rows = detailedSales.flatMap(({ sale, lines }) =>
       lines
@@ -925,32 +1003,11 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
 /**
  * Fetches real Product Availability / Inventory from Cin7 Core API without silent fallback.
  */
-async function fetchInventory(clientId) {
+async function fetchInventory(clientId, { onProgress = null, isCancelled = null } = {}) {
   const startMs = Date.now();
-  const creds = await getClientCin7Credentials(clientId);
   try {
     console.log('[CIN7 LIVE] Fetching real Inventory availability from Cin7 Core API...');
-    let allInv = [];
-    let page = 1;
-    let totalInApi = 0;
-
-    while (true) {
-      const res = await cin7ApiGet(`${CIN7_BASE_URL}/ref/productavailability`, {
-        headers: cin7Headers(creds),
-        params: { Page: page, Limit: 100 },
-        timeout: 30000
-      }, 'Inventory', 5);
-
-      totalInApi = res.data?.Total || 0;
-      const inv = res.data?.ProductAvailabilityList || [];
-      console.log(`Inventory: records fetched from page ${page}: ${inv.length} (Total in Cin7: ${totalInApi})`);
-      allInv = allInv.concat(inv);
-
-      if (inv.length === 0 || allInv.length >= totalInApi) {
-        break;
-      }
-      page++;
-    }
+    const { products: allInv } = await fetchRawProductAvailability(clientId, { onProgress, isCancelled });
 
     const duration = ((Date.now() - startMs) / 1000).toFixed(2);
     console.log(`Inventory: final total: ${allInv.length} (${duration}s)`);
@@ -1002,7 +1059,7 @@ const PURCHASE_HEADERS = [
 /**
  * Fetches real Purchase Orders from Cin7 Core API without silent fallback.
  */
-async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
+async function fetchPurchaseOrders(clientId, { updatedSince = null, onProgress = null, isCancelled = null } = {}) {
   const startMs = Date.now();
   const creds = await getClientCin7Credentials(clientId);
   try {
@@ -1015,6 +1072,12 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
     let totalInApi = 0;
 
     while (true) {
+      if (typeof isCancelled === 'function' && isCancelled()) {
+        const cancelErr = new Error('Sync was cancelled by user.');
+        cancelErr.code = 'SYNC_CANCELLED';
+        throw cancelErr;
+      }
+
       const params = { Page: page, Limit: 100 };
       if (formattedSince) {
         params.UpdatedSince = formattedSince;
@@ -1030,6 +1093,20 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
       const pos = res.data?.PurchaseList || [];
       console.log(`Purchase Orders: records fetched from page ${page}: ${pos.length} (Total in Cin7: ${totalInApi})`);
       allPOs = allPOs.concat(pos);
+
+      const totalPages = Math.ceil((totalInApi || allPOs.length) / 100) || 1;
+      const pct = totalInApi ? Math.min(100, Math.round((allPOs.length / totalInApi) * 100)) : 100;
+
+      if (onProgress && typeof onProgress === 'function') {
+        onProgress({
+          current: allPOs.length,
+          total: totalInApi || allPOs.length,
+          page,
+          totalPages,
+          percent: pct,
+          message: `Fetching Purchase Orders: ${allPOs.length.toLocaleString()} / ${(totalInApi || allPOs.length).toLocaleString()} (Page ${page}/${totalPages})`
+        });
+      }
 
       if (pos.length === 0 || allPOs.length >= totalInApi) {
         break;
@@ -1080,7 +1157,9 @@ async function fetchPurchaseOrders(clientId, { updatedSince = null } = {}) {
         cost,
         0,
         0,
-        parseFloat((cost * 0.1).toFixed(2))
+        parseFloat((cost * 0.1).toFixed(2)),
+        // True Order Date, trailing/internal-only — see matching note in mapSaleLineToRow.
+        p.OrderDate ? p.OrderDate.split('T')[0] : ''
       ];
     });
 
@@ -1315,7 +1394,10 @@ function filterSalesByWindow(rows = [], windowCode = '30d', customOptions = {}) 
   const endCutoff = (windowCode === 'custom' && endDate) ? new Date(endDate + 'T23:59:59.999Z') : null;
 
   return rows.filter(row => {
-    const dateStr = row[3] || row[1];
+    // Filter by when the order was placed (true Order Date, trailing field — see
+    // mapSaleLineToRow), not invoice date. Rows persisted before this field existed
+    // (older snapshots) fall back to the legacy Invoice/Order date column.
+    const dateStr = row[SALES_HEADERS.length] || row[3] || row[1];
     if (!dateStr) return true;
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return true;
@@ -1333,7 +1415,9 @@ function filterPurchaseByWindow(rows = [], windowCode = '30d', customOptions = {
   const endCutoff = (windowCode === 'custom' && endDate) ? new Date(endDate + 'T23:59:59.999Z') : null;
 
   return rows.filter(row => {
-    const dateStr = row[3];
+    // Filter by when the order was placed (true Order Date, trailing field), not the
+    // "Expiry date" / invoice-due-date column. Falls back for older persisted snapshots.
+    const dateStr = row[PURCHASE_HEADERS.length] || row[3];
     if (!dateStr) return true;
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return true;

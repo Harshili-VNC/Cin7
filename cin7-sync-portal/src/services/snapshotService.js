@@ -885,7 +885,9 @@ class SnapshotService {
 
     const lines = [
       headers.map(formatCsvCell).join(','),
-      ...rows.map(r => r.map(formatCsvCell).join(','))
+      // Rows may carry trailing internal-only fields (e.g. the true Order Date used for
+      // rolling-window filtering) beyond the documented header schema — never export those.
+      ...rows.map(r => r.slice(0, headers.length).map(formatCsvCell).join(','))
     ];
 
     return {

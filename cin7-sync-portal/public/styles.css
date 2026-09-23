@@ -77,6 +77,7 @@
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-admin-heading: 'Cedarville Cursive', cursive;
 }
 
 /* Reset & Base */
@@ -84,6 +85,56 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* ==========================================================================
+   HEADING & DISPLAY TYPOGRAPHY
+   ========================================================================== */
+h1, h2, h3, h4,
+.dashboard-company-title,
+.hero-greeting,
+.auth-hero-title,
+.auth-card-title,
+.preview-hero-title,
+.settings-card-header h3,
+.settings-card-title-group h3,
+.modal-title,
+.card-title,
+.section-title {
+  font-family: var(--font-sans);
+  letter-spacing: -0.015em;
+}
+
+/* Admin Panel Cursive Headings */
+#admin-view h1,
+#admin-view h2,
+#admin-view h3,
+#admin-view .dashboard-company-title,
+#admin-view .admin-main-title,
+#admin-view .settings-card-header h3,
+#admin-view .settings-card-title-group h3,
+#admin-view .admin-subview h3,
+#modal-admin-add-org .modal-title {
+  font-family: var(--font-admin-heading) !important;
+  font-style: normal !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em;
+  text-shadow: none !important;
+}
+
+#admin-view .dashboard-company-title {
+  font-size: clamp(2rem, 3.8vw, 2.75rem) !important;
+  font-weight: 400 !important;
+  line-height: 1.35;
+  text-shadow: none !important;
+}
+
+#admin-view .settings-card-header h3,
+#admin-view .settings-card-title-group h3,
+#admin-view .admin-subview h3 {
+  font-size: 1.35rem !important;
+  font-weight: 400 !important;
+  line-height: 1.35;
 }
 
 html, body {
@@ -128,6 +179,43 @@ button, input, select, textarea {
 
 .hidden {
   display: none !important;
+}
+
+/* ==========================================================================
+   ADMIN IMPERSONATION BANNER ("View as")
+   ========================================================================== */
+.impersonation-banner {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 0.5rem 1rem;
+  background: var(--vnc-yellow);
+  color: #1e1508;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(241, 144, 49, 0.35);
+}
+
+.impersonation-banner-exit {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #1e1508;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(30, 21, 8, 0.25);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.impersonation-banner-exit:hover {
+  background: #ffffff;
 }
 
 /* ==========================================================================
@@ -269,6 +357,133 @@ button, input, select, textarea {
   box-shadow: 0 4px 20px rgba(26, 16, 61, 0.25);
 }
 
+/* ==========================================================================
+   ADMIN CONSOLE TOPBAR — deliberately separate from .header-navbar (client)
+   ========================================================================== */
+.admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: linear-gradient(135deg, #0c0a1a 0%, #1a1538 45%, #312f77 100%);
+  border-bottom: 1px solid rgba(122, 78, 171, 0.35);
+  box-shadow: 0 4px 20px rgba(12, 10, 26, 0.3);
+}
+
+.admin-topbar-inner {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0.75rem clamp(1.25rem, 3vw, 2.75rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-topbar-logo {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  object-fit: contain;
+  background: var(--vnc-dark);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.admin-topbar-subtitle {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #c9b6ea;
+  font-weight: 700;
+}
+
+.admin-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.admin-topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.admin-topbar-avatar {
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 9999px;
+  background: var(--gradient-purple);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.admin-topbar-user-details {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.admin-topbar-user-name {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.admin-topbar-user-role {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #d8a4ff;
+}
+
+.admin-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-topbar-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.admin-topbar-signout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  color: rgba(255, 255, 255, 0.75);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-topbar-signout:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ffffff;
+}
+
 .hero-inner {
   width: 100%;
   max-width: 100%;
@@ -326,6 +541,7 @@ button, input, select, textarea {
 }
 
 .dashboard-company-title {
+  font-family: var(--font-sans);
   font-size: clamp(1.65rem, 3.2vw, 2.35rem);
   font-weight: 800;
   color: #ffffff;
@@ -3489,11 +3705,12 @@ input:checked + .slider:before {
 }
 
 .admin-main-title {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-family: var(--font-admin-heading);
+  font-size: 1.85rem;
+  font-weight: 400;
   color: var(--foreground);
   margin-top: 0.25rem;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
 }
 
 .admin-subtitle {
@@ -3574,7 +3791,7 @@ input:checked + .slider:before {
 }
 
 .admin-nav-item:hover svg {
-  stroke: var(--vnc-main);
+  stroke: var(--vnc-dark);
 }
 
 .admin-nav-item.active {
@@ -4350,6 +4567,155 @@ input:checked + .slider:before {
   color: #ffffff !important;
   border-color: var(--vnc-main, #004682) !important;
   box-shadow: 0 1px 4px rgba(0, 70, 130, 0.25);
+}
+
+/* ==========================================================================
+   WORKBOOK PREVIEW MODAL ENHANCED HIGHLIGHTS & KPI CARDS
+   ========================================================================== */
+.preview-hero-banner {
+  background: linear-gradient(135deg, rgba(0, 70, 130, 0.06) 0%, rgba(122, 78, 171, 0.08) 100%);
+  border: 1px solid rgba(0, 70, 130, 0.15);
+  border-radius: var(--radius-md);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.preview-hero-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--vnc-main, #004682);
+  margin-bottom: 0.25rem;
+}
+
+.preview-hero-subtitle {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.preview-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.preview-kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  position: relative;
+  overflow: hidden;
+}
+
+.preview-kpi-card.highlight-blue {
+  border-left: 4px solid var(--vnc-main, #004682);
+}
+
+.preview-kpi-card.highlight-green {
+  border-left: 4px solid #10b981;
+}
+
+.preview-kpi-card.highlight-purple {
+  border-left: 4px solid #7a4eab;
+}
+
+.preview-kpi-card.highlight-amber {
+  border-left: 4px solid #f59e0b;
+}
+
+.preview-kpi-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  margin-bottom: 0.35rem;
+}
+
+.preview-kpi-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--foreground);
+  line-height: 1.2;
+}
+
+.preview-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.preview-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.preview-pill-critical {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.preview-pill-low {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.preview-pill-healthy {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.preview-pill-overstock {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.preview-highlight-total {
+  background: rgba(0, 70, 130, 0.07) !important;
+  font-weight: 800 !important;
+  border-top: 2px solid rgba(0, 70, 130, 0.25) !important;
+  border-bottom: 2px solid rgba(0, 70, 130, 0.25) !important;
+}
+
+.preview-highlight-profit {
+  background: rgba(16, 185, 129, 0.08) !important;
+  font-weight: 700 !important;
+}
+
+.preview-highlight-section {
+  background: #f1f5f9 !important;
+  font-weight: 800 !important;
+  color: var(--vnc-main, #004682) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem !important;
+}
+
+.preview-raw-banner {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
 }
 
 /* ==========================================================================

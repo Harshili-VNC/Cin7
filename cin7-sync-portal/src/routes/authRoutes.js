@@ -588,6 +588,10 @@ router.get('/me', async (req, res) => {
     return res.json({
       authenticated: true,
       needsClientSelection: true,
+      impersonating: req.session.impersonatorAdmin ? {
+        adminEmail: req.session.impersonatorAdmin.email,
+        adminFullName: req.session.impersonatorAdmin.fullName
+      } : null,
       user: {
         id: dbUser.id,
         email: dbUser.email,
@@ -639,6 +643,10 @@ router.get('/me', async (req, res) => {
   res.json({
     authenticated: true,
     needsClientSelection: false,
+    impersonating: req.session.impersonatorAdmin ? {
+      adminEmail: req.session.impersonatorAdmin.email,
+      adminFullName: req.session.impersonatorAdmin.fullName
+    } : null,
     user: {
       id: dbUser.id,
       email: dbUser.email,
@@ -914,6 +922,63 @@ router.post('/logout', (req, res) => {
     res.clearCookie('connect.sid');
     res.json({ success: true, message: 'Logged out successfully' });
   }
+});
+
+/**
+ * POST /api/auth/impersonate/exit
+ * Restores the real Super Admin's own session after an admin impersonation session
+ * (started via /api/admin/organizations/:id/impersonate or /api/admin/users/:id/impersonate).
+ * Deliberately NOT gated by requireSuperAdmin — the impersonated session's own
+ * platform_role is forced to USER for the duration, so this must only require that an
+ * impersonation is actually active (req.session.impersonatorAdmin) to let it end.
+ */
+router.post('/impersonate/exit', async (req, res) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Unauthorized. Please login to continue.' });
+  }
+  if (!req.session.impersonatorAdmin) {
+    return res.status(400).json({ success: false, error: 'NOT_IMPERSONATING', message: 'No active impersonation session to exit.' });
+  }
+
+  const admin = req.session.impersonatorAdmin;
+  const impersonatedUserId = req.session.user.id || null;
+  const impersonatedEmail = req.session.user.email || null;
+  const impersonatedClientId = req.session.user.client_id || null;
+
+  const adminDbUser = await db.getOne('SELECT * FROM users WHERE id = ?', [admin.id]);
+  if (!adminDbUser) {
+    return res.status(500).json({ success: false, error: 'ADMIN_ACCOUNT_MISSING', message: 'Could not restore the admin session — the admin account no longer exists.' });
+  }
+
+  req.session.user = {
+    id: adminDbUser.id,
+    client_id: adminDbUser.client_id || null,
+    organization_id: adminDbUser.client_id || null,
+    email: adminDbUser.email,
+    full_name: adminDbUser.full_name,
+    fullName: adminDbUser.full_name,
+    phone_number: adminDbUser.phone_number,
+    role: (adminDbUser.role || 'ADMIN').toUpperCase(),
+    platform_role: (adminDbUser.platform_role || 'SUPER_ADMIN').toUpperCase(),
+    platformRole: (adminDbUser.platform_role || 'SUPER_ADMIN').toUpperCase(),
+    onboarding_status: adminDbUser.onboarding_status || 'completed',
+    onboardingStatus: adminDbUser.onboarding_status || 'completed'
+  };
+  delete req.session.impersonatorAdmin;
+
+  await new Promise((resolve, reject) => {
+    req.session.save(err => err ? reject(err) : resolve());
+  });
+
+  await logAction({
+    organizationId: impersonatedClientId,
+    userId: admin.id,
+    action: 'IMPERSONATION_END',
+    resource: 'user_session',
+    details: { impersonatedUserId, impersonatedEmail, endedBy: admin.email }
+  });
+
+  res.json({ success: true });
 });
 
 module.exports = router;

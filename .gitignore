@@ -52,3 +52,10 @@ Thumbs.db
 *.zip
 extracted-zip/
 
+# Agent and Skill configs
+.agents/
+skills-lock.json
+
+# Legacy local versions
+prevcin7--version/
+
