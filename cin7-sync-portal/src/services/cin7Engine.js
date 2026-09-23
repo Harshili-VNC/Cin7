@@ -510,7 +510,7 @@ function mapSaleLineToRow(sale, line, productMap = null) {
     year,
     month,
     sale.OrderNumber || '',
-    sale.InvoiceDate ? sale.InvoiceDate.split('T')[0] : (sale.OrderDate ? sale.OrderDate.split('T')[0] : ''),
+    sale.OrderDate ? sale.OrderDate.split('T')[0] : (sale.InvoiceDate ? sale.InvoiceDate.split('T')[0] : ''),
     sale.InvoiceNumber || '',
     sku,
     sku,
