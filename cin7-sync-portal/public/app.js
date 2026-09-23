@@ -167,12 +167,6 @@ function updateUIHeader() {
     }
     if (nameEl) nameEl.innerText = name;
 
-    // Mirror identity into the separate Admin Console topbar (super admins only)
-    const adminAvatarEl = document.getElementById('admin-topbar-avatar');
-    const adminNameEl = document.getElementById('admin-topbar-user-name');
-    if (adminAvatarEl) adminAvatarEl.innerText = avatarEl ? avatarEl.innerText : '';
-    if (adminNameEl) adminNameEl.innerText = name;
-
     if (roleEl) {
       if (platformRole === 'SUPER_ADMIN') {
         roleEl.innerText = 'Super Admin';
@@ -300,14 +294,6 @@ function navigateTo(viewId) {
       }
     }
   });
-
-  // The Admin Portal is a deliberately separate console: it has its own
-  // .admin-topbar (branding, identity, sign out) and must never show the
-  // client-facing .header-navbar (Sync/Reports/Settings) at the same time.
-  const navbar = document.getElementById('navbar');
-  if (navbar && state.user) {
-    navbar.classList.toggle('hidden', viewId === 'admin');
-  }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 

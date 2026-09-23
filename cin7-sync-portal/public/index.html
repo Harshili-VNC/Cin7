@@ -3748,31 +3748,6 @@
     </div>
   </div>
 
-  <!-- ── IMPERSONATION BANNER (shown when admin is viewing as a user) ──────── -->
-  <div id="impersonation-banner" class="hidden" style="
-    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-    background: linear-gradient(90deg, #7a4eab 0%, #f19031 100%);
-    color: #ffffff; padding: 0.6rem 1.5rem;
-    display: flex; align-items: center; justify-content: space-between;
-    box-shadow: 0 3px 16px rgba(122, 78, 171, 0.4);
-    font-size: 0.875rem; font-weight: 600; gap: 1rem;
-  ">
-    <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <span style="font-size: 1.1rem;">👁</span>
-      <span>Viewing as <strong id="impersonate-user-label">—</strong> · <span id="impersonate-org-label" style="opacity:0.85;"></span></span>
-      <span style="background: rgba(255,255,255,0.2); padding: 0.15rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; letter-spacing: 0.05em;">ADMIN VIEW</span>
-    </div>
-    <button onclick="exitImpersonation()" style="
-      background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.4);
-      color: #ffffff; padding: 0.35rem 0.9rem; border-radius: 6px;
-      font-size: 0.8rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;
-      transition: background 0.15s;
-    " onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-      Exit to Admin Portal
-    </button>
-  </div>
-
   <!-- ── ORG USER SELECT MODAL (shown when admin clicks an org) ────────────── -->
   <div id="modal-org-user-select" class="hidden" style="
     position: fixed; inset: 0; z-index: 1000;
