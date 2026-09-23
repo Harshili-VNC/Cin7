@@ -584,6 +584,10 @@ async function startImpersonation(req, res, targetUser) {
     email: req.user.email,
     fullName: req.user.full_name || req.user.fullName || req.user.email
   };
+  // Also set adminSnapshot (in the same shape /api/admin/impersonate uses) so the
+  // frontend's single exitImpersonation() call, which always hits
+  // POST /api/admin/impersonate/exit, can restore this session too.
+  req.session.adminSnapshot = req.session.adminSnapshot || req.session.user;
 
   req.session.user = {
     id: targetUser.id,
@@ -1616,6 +1620,10 @@ router.post('/impersonate/exit', async (req, res) => {
 
     req.session.user = adminSnapshot;
     delete req.session.adminSnapshot;
+    // Also clear impersonatorAdmin (set by the org/user "View as" flow in
+    // startImpersonation) so /api/auth/me stops reporting an active
+    // impersonation and the banner doesn't stay stuck on after exit.
+    delete req.session.impersonatorAdmin;
     await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
 
     res.json({ success: true, message: 'Impersonation ended. Admin session restored.' });

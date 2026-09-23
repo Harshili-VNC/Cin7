@@ -328,22 +328,6 @@ function navigateTo(viewId) {
   }
 }
 
-function handleSupportTicketSubmit(e) {
-  if (e) e.preventDefault();
-  const name = document.getElementById('support-name')?.value || 'Client';
-  const email = document.getElementById('support-email')?.value || '';
-  const category = document.getElementById('support-category')?.value || 'General';
-  const subject = document.getElementById('support-subject')?.value || '';
-  const urgency = document.getElementById('support-urgency')?.value || 'medium';
-
-  const ticketId = `TKT-${Math.floor(10000 + Math.random() * 90000)}`;
-
-  showToast(`Ticket #${ticketId} submitted successfully! A support engineer will email ${email || 'you'} shortly.`, 'success');
-
-  const form = document.getElementById('support-ticket-form');
-  if (form) form.reset();
-}
-
 // ── 2. AUTHENTICATION & ONBOARDING ──────────────────────────────────────────
 
 function switchAuthTab(tab) {
@@ -4518,11 +4502,6 @@ async function impersonateOrg(orgId, orgLabel) {
   await startImpersonationRequest(`/api/admin/organizations/${orgId}/impersonate`);
 }
 
-async function impersonateUser(userId, userLabel) {
-  if (!confirm(`Open ${userLabel}'s dashboard, logged in exactly as them (their own role and permissions apply)? This lasts until you exit.`)) return;
-  await startImpersonationRequest(`/api/admin/users/${userId}/impersonate`);
-}
-
 async function startImpersonationRequest(url) {
   try {
     const res = await fetch(url, { method: 'POST' });
@@ -4537,20 +4516,6 @@ async function startImpersonationRequest(url) {
     window.location.href = '/';
   } catch (err) {
     showToast('Failed to start impersonation session: ' + err.message, 'error');
-  }
-}
-
-async function exitImpersonation() {
-  try {
-    const res = await fetch('/api/auth/impersonate/exit', { method: 'POST' });
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.message || 'Failed to exit impersonation.', 'error');
-      return;
-    }
-    window.location.href = '/';
-  } catch (err) {
-    showToast('Failed to exit impersonation: ' + err.message, 'error');
   }
 }
 
