@@ -170,8 +170,12 @@ function updateUIHeader() {
       const initials = parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (name.slice(0, 2).toUpperCase() || 'SA');
       adminAvatarEl.innerText = initials;
     }
-    if (adminNameEl) adminNameEl.innerText = name;
-    if (adminRoleEl) adminRoleEl.innerText = platformRole === 'SUPER_ADMIN' ? 'Platform Super Admin' : (role.charAt(0) + role.slice(1).toLowerCase());
+    if (adminNameEl) {
+      adminNameEl.innerText = (name === 'Platform Super Admin' || name === 'Super Admin') ? (state.user.fullName || state.user.email || 'Super Admin') : name;
+    }
+    if (adminRoleEl) {
+      adminRoleEl.innerText = platformRole === 'SUPER_ADMIN' ? 'Platform Lead' : (role.charAt(0) + role.slice(1).toLowerCase());
+    }
 
     // Toggle Super Admin portal nav button in navbar
     const adminNavBtn = document.getElementById('nav-admin-btn');

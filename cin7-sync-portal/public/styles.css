@@ -3145,8 +3145,8 @@ input:checked + .slider:before {
   z-index: 100;
   width: 100%;
   background: linear-gradient(135deg, #0c1e33 0%, #171c3b 45%, #1e1b4b 80%, #312f77 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -3154,32 +3154,34 @@ input:checked + .slider:before {
 .admin-topbar-inner {
   width: 100%;
   max-width: 100%;
-  padding: 0.75rem clamp(1.25rem, 3vw, 2.75rem);
+  min-height: 4.5rem;
+  padding: 0.875rem clamp(1.25rem, 3.5vw, 3rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.25rem;
+  gap: 1.5rem;
   flex-wrap: wrap;
+  box-sizing: border-box;
 }
 
 .admin-topbar-brand {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
+  gap: 1rem;
   cursor: pointer;
   text-decoration: none;
 }
 
 .admin-logo-box {
-  width: 2.375rem;
-  height: 2.375rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 9999px;
   background: #004682;
-  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -3193,37 +3195,37 @@ input:checked + .slider:before {
 .admin-brand-info {
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .admin-brand-title-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
 }
 
 .admin-brand-title {
-  font-size: 1rem;
+  font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   color: #ffffff;
 }
 
 .admin-pill-badge {
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  padding: 0.125rem 0.45rem;
+  letter-spacing: 0.07em;
+  padding: 0.175rem 0.55rem;
   border-radius: 9999px;
-  background: rgba(122, 78, 171, 0.4);
-  color: #d8b4fe;
-  border: 1px solid rgba(168, 85, 247, 0.45);
+  background: rgba(122, 78, 171, 0.45);
+  color: #e9d5ff;
+  border: 1px solid rgba(192, 132, 252, 0.5);
   text-transform: uppercase;
 }
 
 .admin-brand-sub {
-  font-size: 0.725rem;
-  color: rgba(240, 247, 255, 0.75);
+  font-size: 0.775rem;
+  color: rgba(240, 247, 255, 0.8);
   font-weight: 500;
 }
 
@@ -3231,22 +3233,22 @@ input:checked + .slider:before {
 .admin-status-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.875rem;
+  gap: 0.625rem;
+  padding: 0.45rem 1.05rem;
   border-radius: 9999px;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.35);
   color: #a7f3d0;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
 .admin-status-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #10b981;
-  box-shadow: 0 0 8px #10b981;
+  box-shadow: 0 0 10px #10b981;
   animation: pulseGreen 2s infinite ease-in-out;
 }
 
@@ -3259,105 +3261,113 @@ input:checked + .slider:before {
 .admin-topbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.875rem;
   flex-wrap: wrap;
 }
 
 .admin-action-btn {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
   font-weight: 600;
-  padding: 0.45rem 0.75rem;
+  padding: 0.55rem 0.95rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: 0.45rem;
   transition: all 0.2s ease;
 }
 
 .admin-action-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
   color: #ffffff;
 }
 
 .btn-client-portal {
   background: linear-gradient(135deg, #004682 0%, #2f8fed 100%);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
   font-weight: 700;
-  padding: 0.45rem 0.875rem;
+  padding: 0.55rem 1.05rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  box-shadow: 0 2px 8px rgba(0, 70, 130, 0.3);
+  gap: 0.5rem;
+  box-shadow: 0 3px 10px rgba(0, 70, 130, 0.35);
   transition: all 0.2s ease;
   cursor: pointer;
 }
 
 .btn-client-portal:hover {
   filter: brightness(1.1);
-  box-shadow: 0 4px 14px rgba(47, 143, 237, 0.4);
+  box-shadow: 0 5px 16px rgba(47, 143, 237, 0.45);
   transform: translateY(-1px);
 }
 
 .admin-user-pill {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.3rem 0.75rem 0.3rem 0.35rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  gap: 0.75rem;
+  padding: 0.35rem 0.95rem 0.35rem 0.45rem;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 9999px;
 }
 
 .admin-user-avatar {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2.125rem;
+  height: 2.125rem;
   border-radius: 50%;
   background: linear-gradient(135deg, #7a4eab 0%, #312f77 100%);
   color: #ffffff;
   font-weight: 800;
-  font-size: 0.7rem;
+  font-size: 0.775rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
 }
 
 .admin-user-details {
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 .admin-user-name {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: #ffffff;
 }
 
 .admin-user-role {
-  font-size: 0.65rem;
-  color: #c4b5fd;
+  font-size: 0.6875rem;
+  color: #d8b4fe;
   font-weight: 600;
 }
 
 .admin-signout-btn {
   background: transparent;
-  border: 1px solid rgba(239, 68, 68, 0.35);
+  border: 1px solid rgba(239, 68, 68, 0.4);
   color: #fca5a5;
   border-radius: var(--radius-sm);
-  padding: 0.45rem 0.75rem;
+  padding: 0.55rem 0.95rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+.admin-signout-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ffffff;
+  border-color: #ef4444;
 }
 
 .admin-signout-btn:hover {
