@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=4.4">
+  <link rel="stylesheet" href="styles.css?v=4.5">
   <link rel="icon" type="image/png" href="assets/vnc-logo-badge.png">
 </head>
 <body>
@@ -2011,6 +2011,7 @@
                         <thead>
                           <tr>
                             <th>Organization</th>
+                            <th>Contact / Lead</th>
                             <th>Run ID</th>
                             <th>Type</th>
                             <th>Records</th>
@@ -2021,7 +2022,7 @@
                           </tr>
                         </thead>
                         <tbody id="admin-dashboard-recent-syncs">
-                          <tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">Loading sync activity...</td></tr>
+                          <tr><td colspan="9" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">Loading sync activity...</td></tr>
                         </tbody>
                       </table>
                     </div>
@@ -2139,9 +2140,10 @@
                       <thead>
                         <tr>
                           <th>Company</th>
+                          <th>Primary Lead / Contact</th>
                           <th>Status</th>
                           <th>Plan</th>
-                          <th>Users</th>
+                          <th>Team Members</th>
                           <th>CIN7</th>
                           <th>Google Sheets</th>
                           <th>Last Sync</th>
@@ -2149,7 +2151,7 @@
                         </tr>
                       </thead>
                       <tbody id="admin-orgs-table-body">
-                        <tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading organizations...</td></tr>
+                        <tr><td colspan="9" style="text-align: center; padding: 2rem;">Loading organizations...</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2249,6 +2251,7 @@
                       <thead>
                         <tr>
                           <th>Organization</th>
+                          <th>Primary Contact</th>
                           <th>Plan</th>
                           <th>Price / Cycle</th>
                           <th>Status</th>
@@ -2258,7 +2261,7 @@
                         </tr>
                       </thead>
                       <tbody id="admin-subs-table-body">
-                        <tr><td colspan="7" style="text-align: center; padding: 2rem;">Loading subscriptions...</td></tr>
+                        <tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading subscriptions...</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2439,6 +2442,7 @@
                       <thead>
                         <tr>
                           <th>Organization</th>
+                          <th>Contact User</th>
                           <th>Sync Type</th>
                           <th>Records</th>
                           <th>Duration</th>
@@ -2450,7 +2454,7 @@
                         </tr>
                       </thead>
                       <tbody id="admin-sync-table-body">
-                        <tr><td colspan="9" style="text-align: center; padding: 2rem;">Loading sync runs...</td></tr>
+                        <tr><td colspan="10" style="text-align: center; padding: 2rem;">Loading sync runs...</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2540,7 +2544,7 @@
                       <thead>
                         <tr>
                           <th>Timestamp</th>
-                          <th>Admin User</th>
+                          <th>Operator / User</th>
                           <th>Target Org</th>
                           <th>Action</th>
                           <th>Target Type</th>
@@ -3658,6 +3662,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=4.4"></script>
+  <script src="app.js?v=4.5"></script>
 </body>
 </html>

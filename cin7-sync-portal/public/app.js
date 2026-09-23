@@ -141,24 +141,28 @@ function updateUIHeader() {
     const roleEl = document.getElementById('nav-user-role');
     const orgEl = document.getElementById('nav-user-org');
 
+    function getUserInitials(str) {
+      if (!str) return 'U';
+      const parts = str.trim().split(/\s+/);
+      return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (str.slice(0, 2).toUpperCase() || 'U');
+    }
+
     if (avatarEl) {
-      const parts = name.trim().split(/\s+/);
-      const initials = parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (name.slice(0, 2).toUpperCase() || 'HP');
-      avatarEl.innerText = initials;
+      avatarEl.innerText = getUserInitials(name);
     }
     if (nameEl) nameEl.innerText = name;
     if (roleEl) {
       if (platformRole === 'SUPER_ADMIN') {
-        roleEl.innerText = 'Admin';
+        roleEl.innerText = 'Super Admin';
         roleEl.className = 'nav-role-badge role-super_admin';
       } else {
-        const roleFormatted = (role === 'ADMIN' || role === 'CLIENT') ? 'Client' : (role.charAt(0) + role.slice(1).toLowerCase());
+        const roleFormatted = (role === 'ADMIN' || role === 'CLIENT') ? 'Admin' : (role.charAt(0) + role.slice(1).toLowerCase());
         roleEl.innerText = roleFormatted;
         roleEl.className = `nav-role-badge role-${role.toLowerCase()}`;
       }
     }
     if (orgEl) {
-      orgEl.innerText = platformRole === 'SUPER_ADMIN' ? 'VNC Global Platform' : org;
+      orgEl.innerText = org;
     }
 
     // Populate Admin Topbar user pill
@@ -166,15 +170,14 @@ function updateUIHeader() {
     const adminNameEl = document.getElementById('admin-nav-user-name');
     const adminRoleEl = document.getElementById('admin-nav-user-role');
     if (adminAvatarEl) {
-      const parts = name.trim().split(/\s+/);
-      const initials = parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (name.slice(0, 2).toUpperCase() || 'SA');
-      adminAvatarEl.innerText = initials;
+      adminAvatarEl.innerText = getUserInitials(name);
     }
     if (adminNameEl) {
-      adminNameEl.innerText = (name === 'Platform Super Admin' || name === 'Super Admin') ? (state.user.fullName || state.user.email || 'Super Admin') : name;
+      adminNameEl.innerText = name;
     }
     if (adminRoleEl) {
-      adminRoleEl.innerText = platformRole === 'SUPER_ADMIN' ? 'Platform Lead' : (role.charAt(0) + role.slice(1).toLowerCase());
+      const displayRole = platformRole === 'SUPER_ADMIN' ? 'Platform Super Admin' : (role.charAt(0) + role.slice(1).toLowerCase());
+      adminRoleEl.innerText = `${displayRole} · ${email || org}`;
     }
 
     // Toggle Super Admin portal nav button in navbar
@@ -3876,12 +3879,13 @@ async function loadAdminDashboard() {
     const tbody = document.getElementById('admin-dashboard-recent-syncs');
     if (tbody) {
       if (!recentSyncs || recentSyncs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">No sync runs recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">No sync runs recorded yet.</td></tr>`;
       } else {
         tbody.innerHTML = recentSyncs.map(s => {
           const statusBadge = s.status === 'SUCCESS' || s.status === 'COMPLETED' ? 'badge-success' : (s.status === 'FAILED' ? 'badge-destructive' : 'badge-warning');
           const statusLabel = s.status === 'SUCCESS' || s.status === 'COMPLETED' ? 'Completed' : (s.status === 'FAILED' ? 'Failed' : 'In Progress');
           const safeOrg = escapeHtml(s.organizationName || s.companyName || 'Unknown Client');
+          const safeContact = s.contactName ? escapeHtml(s.contactName) : (s.contactEmail ? escapeHtml(s.contactEmail) : 'Platform Admin');
           const syncLabel = { 'GOOGLE_SHEETS': 'Google Sheets Export', 'FULL': 'Full Sync', 'INCREMENTAL': 'Incremental Sync', 'INVENTORY': 'Inventory Sync' }[s.syncType] || escapeHtml(s.syncType || 'Sync');
           const sheetCell = s.sheetUrl
             ? `<a href="${escapeHtml(s.sheetUrl)}" target="_blank" rel="noopener noreferrer" title="Open this run's Google Sheet"
@@ -3894,6 +3898,11 @@ async function loadAdminDashboard() {
           return `
             <tr>
               <td style="font-weight: 700;">${safeOrg}</td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 0.45rem;">
+                  <span style="font-size: 0.8125rem; font-weight: 600; color: var(--foreground);">👤 ${safeContact}</span>
+                </div>
+              </td>
               <td style="font-size: 0.75rem; color: var(--muted-foreground); font-family: var(--font-mono);">${escapeHtml(s.runId || s.id || '—')}</td>
               <td><span class="badge badge-secondary">${syncLabel}</span></td>
               <td style="font-weight: 600;">${Number(s.recordsProcessed || 0).toLocaleString()}</td>
@@ -3956,12 +3965,49 @@ async function loadAdminOrganizations(page = 1) {
           const safeStatus = escapeHtml(o.status || 'ACTIVE');
           const safePlan = escapeHtml(planDisplay);
 
+          function getInitials(str) {
+            if (!str) return 'U';
+            const parts = str.trim().split(/\s+/);
+            return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (str.slice(0, 2).toUpperCase() || 'U');
+          }
+
+          const primaryHtml = o.primaryUser ? `
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <div style="width: 2rem; height: 2rem; border-radius: 50%; background: linear-gradient(135deg, #2f8fed, #004682); color: #ffffff; font-weight: 700; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,70,130,0.25);">
+                ${escapeHtml(getInitials(o.primaryUser.fullName || o.primaryUser.email))}
+              </div>
+              <div style="display: flex; flex-direction: column; line-height: 1.25;">
+                <span style="font-weight: 700; font-size: 0.8125rem; color: var(--foreground);">${escapeHtml(o.primaryUser.fullName || 'Lead User')}</span>
+                <span style="font-size: 0.7rem; color: var(--muted-foreground); font-family: var(--font-mono);">${escapeHtml(o.primaryUser.email || '')}</span>
+              </div>
+            </div>
+          ` : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">No user assigned</span>`;
+
+          const membersList = (o.users || []).map(u => `
+            <span class="badge badge-secondary" title="${escapeHtml(u.fullName || u.email)} · ${escapeHtml(u.role)}" style="font-size: 0.7rem; padding: 0.15rem 0.45rem; display: inline-flex; align-items: center; gap: 0.25rem;">
+              👤 ${escapeHtml((u.fullName || u.email).split(' ')[0])}
+            </span>
+          `).join('');
+
           return `
             <tr>
-              <td style="font-weight: 700;">${safeName}</td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <span style="font-size: 1rem;">🏢</span>
+                  <span style="font-weight: 800; color: var(--foreground); font-size: 0.875rem;">${safeName}</span>
+                </div>
+              </td>
+              <td>${primaryHtml}</td>
               <td><span class="badge ${statusClass}">${safeStatus}</span></td>
               <td><strong>${safePlan}</strong></td>
-              <td style="font-weight: 600;">${usersCount} seat${usersCount !== 1 ? 's' : ''}</td>
+              <td>
+                <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                  <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                    ${membersList || '<span style="font-size: 0.75rem; color: var(--muted-foreground);">0 members</span>'}
+                  </div>
+                  <span style="font-size: 0.6875rem; color: var(--muted-foreground);">${usersCount} total seat${usersCount !== 1 ? 's' : ''}</span>
+                </div>
+              </td>
               <td>${cin7StatusBadge}</td>
               <td>${sheetsStatusBadge}</td>
               <td style="font-size: 0.75rem; color: var(--muted-foreground);">${escapeHtml(lastSyncText)}</td>
@@ -4243,11 +4289,32 @@ async function loadAdminUsers(page = 1) {
           const lastLogin = u.lastLoginAt || u.last_login_at;
           const createdAt = u.createdAt || u.created_at;
 
+          function getInitials(str) {
+            if (!str) return 'U';
+            const parts = str.trim().split(/\s+/);
+            return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (str.slice(0, 2).toUpperCase() || 'U');
+          }
+
           return `
             <tr>
-              <td style="font-weight: 700;">${safeName}</td>
-              <td style="font-family: var(--font-mono); font-size: 0.75rem;">${safeEmail}</td>
-              <td>${safeOrg}</td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 0.625rem;">
+                  <div style="width: 2rem; height: 2rem; border-radius: 50%; background: linear-gradient(135deg, #7a4eab, #004682); color: #ffffff; font-weight: 700; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.2);">
+                    ${escapeHtml(getInitials(u.fullName || u.email))}
+                  </div>
+                  <div>
+                    <div style="font-weight: 700; color: var(--foreground);">${safeName}</div>
+                    <div style="font-size: 0.7rem; color: var(--muted-foreground);">${u.phoneNumber ? escapeHtml(u.phoneNumber) : ''}</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--vnc-blue); font-weight: 600;">${safeEmail}</td>
+              <td style="font-weight: 600;">
+                <div style="display: flex; align-items: center; gap: 0.35rem;">
+                  <span>🏢</span>
+                  <span>${safeOrg}</span>
+                </div>
+              </td>
               <td><span class="badge ${roleClass}">${safeRole}</span></td>
               <td><span class="badge ${platClass}">${safePlat}</span></td>
               <td><span class="badge badge-success">${safeStatus}</span></td>
@@ -4301,7 +4368,7 @@ async function loadAdminSubscriptions(page = 1) {
     const tbody = document.getElementById('admin-subs-table-body');
     if (tbody) {
       if (subs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No subscriptions found.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No subscriptions found.</td></tr>`;
       } else {
         tbody.innerHTML = subs.map(s => {
           const statusClass = s.status === 'ACTIVE' ? 'badge-success' : (s.status === 'TRIALING' ? 'badge-info' : 'badge-warning');
@@ -4313,9 +4380,28 @@ async function loadAdminSubscriptions(page = 1) {
           const currentPeriodEndDate = s.currentPeriodEnd || s.current_period_end;
           const isCancelAtPeriodEnd = Boolean(s.cancelAtPeriodEnd ?? s.cancel_at_period_end);
 
+          function getInitials(str) {
+            if (!str) return 'U';
+            const parts = str.trim().split(/\s+/);
+            return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (str.slice(0, 2).toUpperCase() || 'U');
+          }
+
           return `
             <tr>
               <td style="font-weight: 700;">${safeOrg}</td>
+              <td>
+                ${s.contactName ? `
+                  <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 1.75rem; height: 1.75rem; border-radius: 50%; background: linear-gradient(135deg, #2f8fed, #004682); color: #fff; font-size: 0.7rem; font-weight: 700; display: flex; align-items: center; justify-content: center;">
+                      ${escapeHtml(getInitials(s.contactName))}
+                    </div>
+                    <div>
+                      <div style="font-weight: 700; font-size: 0.8125rem;">${escapeHtml(s.contactName)}</div>
+                      <div style="font-size: 0.7rem; color: var(--muted-foreground); font-family: var(--font-mono);">${escapeHtml(s.contactEmail || '')}</div>
+                    </div>
+                  </div>
+                ` : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">—</span>`}
+              </td>
               <td><strong>${safePlan}</strong></td>
               <td>$${s.price || 99}.00 / mo</td>
               <td><span class="badge ${statusClass}">${safeStatus}</span></td>
@@ -4498,7 +4584,7 @@ async function loadAdminSync(page = 1) {
     const tbody = document.getElementById('admin-sync-table-body');
     if (tbody) {
       if (runs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No sync runs recorded.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 2.5rem; color: var(--muted-foreground);">No sync runs recorded.</td></tr>`;
       } else {
         tbody.innerHTML = runs.map(r => {
           const safeOrg = escapeHtml(r.companyName || r.organizationName || 'Unknown Client');
@@ -4519,6 +4605,13 @@ async function loadAdminSync(page = 1) {
           return `
             <tr>
               <td style="font-weight: 700;">${safeOrg}</td>
+              <td>
+                ${r.contactName ? `
+                  <div style="display: flex; align-items: center; gap: 0.35rem;">
+                    <span style="font-weight: 600; font-size: 0.8125rem;">👤 ${escapeHtml(r.contactName)}</span>
+                  </div>
+                ` : `<span style="color: var(--muted-foreground); font-size: 0.75rem;">System</span>`}
+              </td>
               <td><span class="badge badge-secondary">${syncLabel}</span></td>
               <td style="font-weight: 600;">${Number(r.recordsProcessed || 0).toLocaleString()}</td>
               <td style="color: var(--muted-foreground);">${r.durationMs ? `${(r.durationMs / 1000).toFixed(1)}s` : '—'}</td>
@@ -4594,9 +4687,10 @@ async function loadAdminAudit(page = 1) {
         tbody.innerHTML = logs.map(l => {
           // Resolve admin display name — prefer full name over technical IDs
           const adminName = escapeHtml(l.adminName || l.fullName || l.full_name ||
-            (l.userId === 'user-super-admin-automation' ? 'VNC Admin' : null) ||
-            (l.admin_user_id === 'user-super-admin-automation' ? 'VNC Admin' : null) ||
+            (l.userId === 'user-super-admin-automation' ? 'Automation Super Admin' : null) ||
+            (l.admin_user_id === 'user-super-admin-automation' ? 'Automation Super Admin' : null) ||
             (l.userId && !l.userId.includes('-') ? l.userId : null) || 'Platform Admin');
+          const adminEmail = l.adminEmail ? escapeHtml(l.adminEmail) : null;
           const safeCompany = escapeHtml(l.companyName || l.organizationName || l.targetOrg || 'All Tenants');
           // Human-readable action labels
           const actionLabels = {
@@ -4616,7 +4710,12 @@ async function loadAdminAudit(page = 1) {
           return `
             <tr>
               <td style="font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap;">${l.createdAt || l.created_at ? new Date(l.createdAt || l.created_at).toLocaleString() : 'Just now'}</td>
-              <td style="font-weight: 600;">${adminName}</td>
+              <td>
+                <div style="display: flex; flex-direction: column; line-height: 1.25;">
+                  <span style="font-weight: 700; color: var(--foreground); font-size: 0.8125rem;">👤 ${adminName}</span>
+                  ${adminEmail ? `<span style="font-size: 0.7rem; color: var(--muted-foreground); font-family: var(--font-mono);">${adminEmail}</span>` : ''}
+                </div>
+              </td>
               <td style="font-weight: 600;">${safeCompany}</td>
               <td><span class="badge badge-primary" style="font-size: 0.6875rem;">${safeAction}</span></td>
               <td style="color: var(--muted-foreground);">${safeResource}</td>
