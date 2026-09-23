@@ -148,7 +148,7 @@ button, input, select, textarea {
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 0.875rem clamp(1.25rem, 3vw, 2.75rem);
+  padding: 1.25rem clamp(1.25rem, 3vw, 2.75rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -163,12 +163,12 @@ button, input, select, textarea {
 }
 
 .vnc-badge-img {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 3rem;
+  height: 3rem;
   border-radius: 9999px;
   object-fit: contain;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.3);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
   background: #004682;
 }
 
@@ -177,14 +177,14 @@ button, input, select, textarea {
 }
 
 .vnc-lockup-title {
-  font-size: 0.9375rem;
+  font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   color: #ffffff;
 }
 
 .vnc-lockup-sub {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: #2f8fed;
@@ -801,6 +801,8 @@ button, input, select, textarea {
   border-color: var(--vnc-main);
   background: rgba(0, 70, 130, 0.04);
 }
+
+.select-dropdown {
   border-radius: var(--radius-md);
   font-size: 0.875rem;
   font-weight: 600;
@@ -3144,9 +3146,9 @@ input:checked + .slider:before {
   top: 0;
   z-index: 100;
   width: 100%;
-  background: linear-gradient(135deg, #0c1e33 0%, #171c3b 45%, #1e1b4b 80%, #312f77 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, #1a1040 0%, #251857 40%, #312f77 75%, #5b3fa0 100%);
+  border-bottom: 1px solid rgba(122, 78, 171, 0.35);
+  box-shadow: 0 4px 24px rgba(26, 10, 60, 0.4);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }

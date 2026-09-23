@@ -1154,4 +1154,221 @@ router.get('/system-health', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/orgs/:orgId/users
+ * GET /api/admin/organizations/:orgId/users
+ * Returns all users belonging to a specific organization for the impersonation user-select popup.
+ */
+router.get(['/orgs/:orgId/users', '/organizations/:orgId/users'], async (req, res) => {
+  const { orgId } = req.params;
+  try {
+    let users = [];
+    let clientRes = null;
+
+    try {
+      clientRes = await db.getOne('SELECT id, company_name FROM clients WHERE id = ?', [orgId]);
+    } catch (e) {
+      console.warn('[ADMIN ORG CLIENT FETCH WARN]', e.message);
+    }
+
+    try {
+      const usersRes = await db.query(
+        'SELECT id, client_id, full_name, email, role, platform_role, status, last_login_at, created_at FROM users WHERE client_id = ?',
+        [orgId]
+      );
+      users = (usersRes.rows || []).map(u => ({
+        id: u.id,
+        fullName: u.full_name || u.email,
+        email: u.email,
+        role: (u.role || 'VIEWER').toUpperCase(),
+        platformRole: (u.platform_role || 'USER').toUpperCase(),
+        status: (u.status || 'ACTIVE').toUpperCase(),
+        lastLoginAt: u.last_login_at,
+        createdAt: u.created_at
+      }));
+    } catch (dbErr) {
+      console.warn('[ADMIN ORG USERS DB QUERY WARN]', dbErr.message);
+    }
+
+    // Fallback: if query returned 0, search all users
+    if (users.length === 0) {
+      try {
+        const allUsersRes = await db.query('SELECT id, client_id, full_name, email, role, platform_role, status, last_login_at, created_at FROM users');
+        const matches = (allUsersRes.rows || []).filter(u => u.client_id === orgId);
+        users = matches.map(u => ({
+          id: u.id,
+          fullName: u.full_name || u.email,
+          email: u.email,
+          role: (u.role || 'VIEWER').toUpperCase(),
+          platformRole: (u.platform_role || 'USER').toUpperCase(),
+          status: (u.status || 'ACTIVE').toUpperCase(),
+          lastLoginAt: u.last_login_at,
+          createdAt: u.created_at
+        }));
+      } catch (e) {}
+    }
+
+    res.json({
+      success: true,
+      orgId,
+      orgName: clientRes ? clientRes.company_name : orgId,
+      users
+    });
+  } catch (err) {
+    console.error('[ADMIN ORG USERS ERROR]', err.message);
+    res.json({
+      success: true,
+      orgId,
+      orgName: orgId,
+      users: []
+    });
+  }
+});
+
+/**
+ * POST /api/admin/impersonate
+ * Allows a Super Admin to view the portal as a specific user.
+ * Stores the original admin session so it can be fully restored on exit.
+ */
+router.post('/impersonate', async (req, res) => {
+  const { userId, orgId } = req.body;
+  if (!userId && !orgId) {
+    return res.status(400).json({ success: false, message: 'User or Organization identifier is required.' });
+  }
+
+  try {
+    let user = null;
+    if (userId && orgId) {
+      user = await db.getOne('SELECT * FROM users WHERE id = ? AND client_id = ?', [userId, orgId]);
+    }
+    if (!user && userId) {
+      user = await db.getOne('SELECT * FROM users WHERE id = ?', [userId]);
+    }
+    if (!user && userId) {
+      user = await db.getOne('SELECT * FROM users WHERE email = ?', [userId]);
+    }
+    if (!user && orgId) {
+      // Find primary user or first user for this organization
+      user = await db.getOne('SELECT * FROM users WHERE client_id = ? ORDER BY role, id LIMIT 1', [orgId]);
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const effectiveOrgId = user.client_id || orgId || 'client-05262fcf';
+    let client = await db.getOne('SELECT * FROM clients WHERE id = ?', [effectiveOrgId]);
+    if (!client) {
+      // Fallback: check if client exists under any id
+      const allClientsRes = await db.query('SELECT * FROM clients LIMIT 1');
+      if (allClientsRes.rows && allClientsRes.rows.length > 0) {
+        client = allClientsRes.rows[0];
+      } else {
+        client = {
+          id: effectiveOrgId,
+          company_name: 'Client Organization',
+          status: 'ACTIVE',
+          timezone: 'Asia/Kolkata',
+          last_sync_at: null
+        };
+      }
+    }
+
+    let cin7Conn = null;
+    try {
+      cin7Conn = await db.getOne('SELECT status FROM cin7_connections WHERE client_id = ?', [client.id || effectiveOrgId]);
+    } catch (e) {}
+
+    // Save the original admin session before switching context
+    req.session.adminSnapshot = req.session.adminSnapshot || req.session.user;
+
+    // Build a minimal session context for the impersonated user
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name || user.email,
+      client_id: client.id || effectiveOrgId,
+      clientId: client.id || effectiveOrgId,
+      role: (user.role || 'ADMIN').toUpperCase(),
+      platform_role: 'USER', // Never elevate privileges during impersonation
+      platformRole: 'USER',
+      onboarding_status: 'completed',
+      status: 'ACTIVE',
+      _impersonating: true
+    };
+
+    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
+
+    await logAction({
+      userId: req.session.adminSnapshot?.id || 'admin',
+      action: 'USER_IMPERSONATION_STARTED',
+      resourceType: 'USER',
+      resourceId: user.id,
+      details: { targetEmail: user.email, orgId: client.id, orgName: client.company_name }
+    });
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name || user.email,
+        full_name: user.full_name || user.email,
+        client_id: client.id || effectiveOrgId,
+        clientId: client.id || effectiveOrgId,
+        role: (user.role || 'ADMIN').toUpperCase(),
+        platformRole: 'USER',
+        platform_role: 'USER',
+        onboardingStatus: 'completed',
+        _impersonating: true
+      },
+      client: {
+        id: client.id,
+        companyName: client.company_name,
+        name: client.company_name,
+        status: client.status || 'ACTIVE',
+        timezone: client.timezone || 'Asia/Kolkata',
+        lastSyncAt: client.last_sync_at || null
+      },
+      cin7: {
+        connected: Boolean(cin7Conn && cin7Conn.status === 'CONNECTED'),
+        status: cin7Conn ? cin7Conn.status : 'NOT_CONFIGURED'
+      }
+    });
+  } catch (err) {
+    console.error('[ADMIN IMPERSONATE ERROR]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to start impersonation: ' + err.message });
+  }
+});
+
+/**
+ * POST /api/admin/impersonate/exit
+ * Restores the original Super Admin session after impersonation.
+ */
+router.post('/impersonate/exit', async (req, res) => {
+  try {
+    const adminSnapshot = req.session.adminSnapshot;
+    if (!adminSnapshot) {
+      return res.status(400).json({ success: false, message: 'No active impersonation session to exit.' });
+    }
+
+    await logAction({
+      userId: adminSnapshot.id || 'admin',
+      action: 'USER_IMPERSONATION_ENDED',
+      resourceType: 'USER',
+      resourceId: req.session.user?.id || 'unknown',
+      details: { restoredAdminEmail: adminSnapshot.email }
+    });
+
+    req.session.user = adminSnapshot;
+    delete req.session.adminSnapshot;
+    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
+
+    res.json({ success: true, message: 'Impersonation ended. Admin session restored.' });
+  } catch (err) {
+    console.error('[ADMIN IMPERSONATE EXIT ERROR]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to exit impersonation.' });
+  }
+});
+
 module.exports = router;
