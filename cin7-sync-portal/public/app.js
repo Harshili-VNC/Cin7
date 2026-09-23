@@ -3698,91 +3698,27 @@ const adminState = {
   audit: { page: 1, limit: 10, total: 0, action: '' }
 };
 
-const ADMIN_TAB_INFO = {
-  dashboard: {
-    breadcrumb: 'Overview',
-    title: 'Executive Dashboard',
-    desc: 'Multi-tenant synchronization performance, organization health and live pipeline status.',
-    cta: `<button class="btn btn-primary btn-sm admin-primary-cta" onclick="openAdminAddOrgModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Organization</span></button>`
-  },
-  organizations: {
-    breadcrumb: 'Organizations',
-    title: 'Organizations Management',
-    desc: 'All customer accounts, subscription tier assignments, and tenant isolation status.',
-    cta: `<button class="btn btn-primary btn-sm admin-primary-cta" onclick="openAdminAddOrgModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Organization</span></button>`
-  },
-  users: {
-    breadcrumb: 'User Directory',
-    title: 'Cross-Organization Users',
-    desc: 'Platform users, role assignments, security status, and tenant memberships.',
-    cta: ``
-  },
-  subscriptions: {
-    breadcrumb: 'Subscriptions',
-    title: 'Organization Subscriptions',
-    desc: 'Tiered SaaS plans, active trial periods, and renewal lifecycle.',
-    cta: ``
-  },
-  billing: {
-    breadcrumb: 'Billing & Invoices',
-    title: 'Billing & Payment Due Monitor',
-    desc: 'Real-time subscription billing health, overdue invoices, and payment statuses.',
-    cta: ``
-  },
-  cin7: {
-    breadcrumb: 'CIN7 Connections',
-    title: 'CIN7 Core ERP Connections',
-    desc: 'Live ERP API connection health and credentials across all tenant accounts.',
-    cta: ``
-  },
-  sheets: {
-    breadcrumb: 'Google Sheets',
-    title: 'Google Sheets Integrations',
-    desc: 'Master financial model spreadsheets and Google Drive connectivity per organization.',
-    cta: ``
-  },
-  sync: {
-    breadcrumb: 'Sync Runs',
-    title: 'Platform-Wide Sync Runs',
-    desc: 'Live pipeline execution telemetry, durations, record counts, and failure diagnostics.',
-    cta: ``
-  },
-  usage: {
-    breadcrumb: 'Platform Usage',
-    title: 'Platform Usage Analytics',
-    desc: 'Aggregated storage, API traffic, and sync record processing metrics.',
-    cta: ``
-  },
-  audit: {
-    breadcrumb: 'Audit Trail',
-    title: 'Platform Security & Audit Trail',
-    desc: 'Administrative actions, cross-tenant inspections, and security access logs.',
-    cta: ``
-  },
-  health: {
-    breadcrumb: 'System Health',
-    title: 'System Health & Diagnostics',
-    desc: 'Real-time runtime metrics, database integrity, and external API reachability.',
-    cta: ``
-  }
-};
-
 let adminOrgsDebounceTimer = null;
 let adminUsersDebounceTimer = null;
 
+function updateAdminNavProfile() {
+  if (!state.user) return;
+  const name = state.user.fullName || state.user.full_name || state.user.name || 'Super Admin';
+  const role = (state.user.platformRole || state.user.platform_role || 'SUPER_ADMIN').replace(/_/g, ' ');
+  const parts = name.trim().split(/\s+/);
+  const initials = (parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]) : parts[0].substring(0, 2)).toUpperCase() || 'SA';
+
+  const avatarEl = document.getElementById('admin-nav-user-avatar');
+  const nameEl = document.getElementById('admin-nav-user-name');
+  const roleEl = document.getElementById('admin-nav-user-role');
+
+  if (avatarEl) avatarEl.innerText = initials;
+  if (nameEl) nameEl.innerText = name;
+  if (roleEl) roleEl.innerText = role;
+}
+
 function switchAdminTab(tabName) {
   adminState.activeTab = tabName;
-
-  // Update 2-tier command console topbar context
-  const info = ADMIN_TAB_INFO[tabName] || ADMIN_TAB_INFO.dashboard;
-  const crumbEl = document.getElementById('admin-current-breadcrumb');
-  const titleEl = document.getElementById('admin-header-title');
-  const descEl = document.getElementById('admin-header-desc');
-  const ctaEl = document.getElementById('admin-header-cta-slot');
-  if (crumbEl) crumbEl.innerText = info.breadcrumb;
-  if (titleEl) titleEl.innerText = info.title;
-  if (descEl) descEl.innerText = info.desc;
-  if (ctaEl) ctaEl.innerHTML = info.cta || '';
 
   // Sidebar buttons
   const navBtns = document.querySelectorAll('.admin-sidebar-nav .admin-nav-item');
@@ -3798,10 +3734,12 @@ function switchAdminTab(tabName) {
   const targetView = document.getElementById(`admin-view-${tabName}`);
   if (targetView) targetView.classList.remove('hidden');
 
+  updateAdminNavProfile();
   loadAdminCurrentTab();
 }
 
 function loadAdminCurrentTab() {
+  updateAdminNavProfile();
   const tab = adminState.activeTab;
   if (tab === 'dashboard') loadAdminDashboard();
   if (tab === 'organizations') loadAdminOrganizations(1);
