@@ -161,6 +161,18 @@ function updateUIHeader() {
       orgEl.innerText = platformRole === 'SUPER_ADMIN' ? 'VNC Global Platform' : org;
     }
 
+    // Populate Admin Topbar user pill
+    const adminAvatarEl = document.getElementById('admin-nav-user-avatar');
+    const adminNameEl = document.getElementById('admin-nav-user-name');
+    const adminRoleEl = document.getElementById('admin-nav-user-role');
+    if (adminAvatarEl) {
+      const parts = name.trim().split(/\s+/);
+      const initials = parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (name.slice(0, 2).toUpperCase() || 'SA');
+      adminAvatarEl.innerText = initials;
+    }
+    if (adminNameEl) adminNameEl.innerText = name;
+    if (adminRoleEl) adminRoleEl.innerText = platformRole === 'SUPER_ADMIN' ? 'Platform Super Admin' : (role.charAt(0) + role.slice(1).toLowerCase());
+
     // Toggle Super Admin portal nav button in navbar
     const adminNavBtn = document.getElementById('nav-admin-btn');
     if (adminNavBtn) {

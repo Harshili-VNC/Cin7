@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=4.0">
+  <link rel="stylesheet" href="styles.css?v=4.1">
   <link rel="icon" type="image/png" href="assets/vnc-logo-badge.png">
 </head>
 <body>
@@ -1768,88 +1768,127 @@
 
     <!-- ── 6. VNC SUPER ADMIN PORTAL VIEW ────────────────────────────── -->
     <section id="admin-portal-view" class="view-container hidden">
-      <!-- Super Admin Hero Header Banner -->
-      <div class="hero-section admin-hero-header">
-        <div class="hero-inner">
-          <div class="dashboard-header-eyebrow">
-            <span class="badge" style="background: rgba(255, 255, 255, 0.15); color: #ffffff; font-weight: 800; border: 1px solid rgba(255, 255, 255, 0.3);">🛡️ VNC PLATFORM ADMIN</span>
-            <span class="eyebrow-divider">/</span>
-            <span class="badge badge-success" id="admin-health-badge">SYSTEM HEALTHY</span>
+      <!-- Super Admin Dedicated Sticky Top Navigation Bar -->
+      <header class="admin-topbar" id="admin-navbar">
+        <div class="admin-topbar-inner">
+          <!-- Left: Brand Lockup & Status Indicator -->
+          <div class="admin-topbar-brand" onclick="switchAdminTab('dashboard')" title="Admin Dashboard">
+            <div class="admin-logo-box">
+              <img src="assets/vnc-logo-badge.png" alt="VNC" class="admin-badge-img">
+            </div>
+            <div class="admin-brand-info">
+              <div class="admin-brand-title-row">
+                <span class="admin-brand-title">VNC GLOBAL</span>
+                <span class="admin-pill-badge">SUPER ADMIN</span>
+              </div>
+              <span class="admin-brand-sub">Platform Management Console</span>
+            </div>
           </div>
-          <div class="dashboard-header-title-row">
-            <div class="dashboard-company-info">
-              <h1 class="dashboard-company-title" style="color: #ffffff;">Admin Portal</h1>
-              <p class="dashboard-report-subtitle" style="color: rgba(240, 247, 255, 0.9);">
-                Platform-wide organization oversight, multi-tenant subscription monitoring, integration health and audit logs.
-              </p>
+
+          <!-- Center/Left: System Status Indicator Pill -->
+          <div class="admin-status-indicator" title="System Operational Status">
+            <span class="admin-status-dot"></span>
+            <span class="admin-status-text" id="admin-health-badge">All Systems Operational</span>
+          </div>
+
+          <!-- Right: Action Controls, Back to Client Portal, Profile & Logout -->
+          <div class="admin-topbar-actions">
+            <button class="btn btn-outline btn-xs admin-action-btn" onclick="loadAdminCurrentTab()" title="Refresh Current Tab Data">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+              <span>Refresh</span>
+            </button>
+
+            <button class="btn btn-client-portal btn-xs" onclick="navigateTo('dashboard')" title="Return to Client Portal">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              <span>Client Portal</span>
+            </button>
+
+            <!-- Admin User Profile Pill -->
+            <div class="admin-user-pill" id="admin-user-pill">
+              <div class="admin-user-avatar" id="admin-nav-user-avatar">SA</div>
+              <div class="admin-user-details">
+                <span class="admin-user-name" id="admin-nav-user-name">Super Admin</span>
+                <span class="admin-user-role" id="admin-nav-user-role">Platform Lead</span>
+              </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-              <button class="btn btn-outline btn-sm" onclick="loadAdminCurrentTab()" title="Refresh Current Tab Data" style="background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.3);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                <span>Refresh View</span>
-              </button>
-              <button class="btn btn-primary btn-sm" onclick="navigateTo('dashboard')" style="background: #2f8fed; border: none; color: #fff; font-weight: 700;">
-                <span>← Client Portal</span>
-              </button>
-              <button class="btn btn-outline btn-sm" onclick="handleLogout()" title="Sign out" style="background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.3);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
-                <span>Sign out</span>
-              </button>
-            </div>
+
+            <button class="admin-signout-btn" onclick="handleLogout()" title="Sign out of Platform">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+              <span>Sign out</span>
+            </button>
           </div>
         </div>
-      </div>
+      </header>
 
       <div class="admin-wrapper">
         <!-- Super Admin Two-Pane Navigation Layout -->
         <div class="admin-body-layout">
           
-          <!-- Left Navigation Sidebar -->
+          <!-- Left Categorized Navigation Sidebar -->
           <aside class="admin-sidebar-nav">
-            <button class="admin-nav-item active" id="admin-tab-btn-dashboard" onclick="switchAdminTab('dashboard')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
-              <span>Dashboard</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-organizations" onclick="switchAdminTab('organizations')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-              <span>Organizations</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-users" onclick="switchAdminTab('users')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>Users Directory</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-subscriptions" onclick="switchAdminTab('subscriptions')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
-              <span>Subscriptions</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-billing" onclick="switchAdminTab('billing')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span>Billing / Payment Due</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-cin7" onclick="switchAdminTab('cin7')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
-              <span>CIN7 Connections</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-sheets" onclick="switchAdminTab('sheets')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-              <span>Google Sheets</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-sync" onclick="switchAdminTab('sync')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-              <span>Sync Monitoring</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-usage" onclick="switchAdminTab('usage')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
-              <span>Platform Usage</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-audit" onclick="switchAdminTab('audit')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-              <span>Audit Logs</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-health" onclick="switchAdminTab('health')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-              <span>System Health</span>
-            </button>
+            <!-- Group 1: Core & Tenancy -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">CORE &amp; TENANCY</span>
+              <button class="admin-nav-item active" id="admin-tab-btn-dashboard" onclick="switchAdminTab('dashboard')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                <span>Dashboard</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-organizations" onclick="switchAdminTab('organizations')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                <span>Organizations</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-users" onclick="switchAdminTab('users')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Users Directory</span>
+              </button>
+            </div>
+
+            <!-- Group 2: Billing & Commerce -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">BILLING &amp; COMMERCE</span>
+              <button class="admin-nav-item" id="admin-tab-btn-subscriptions" onclick="switchAdminTab('subscriptions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+                <span>Subscriptions</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-billing" onclick="switchAdminTab('billing')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Billing / Invoices</span>
+              </button>
+            </div>
+
+            <!-- Group 3: Integrations & Pipelines -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">INTEGRATIONS</span>
+              <button class="admin-nav-item" id="admin-tab-btn-cin7" onclick="switchAdminTab('cin7')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                <span>CIN7 Core ERP</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-sheets" onclick="switchAdminTab('sheets')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                <span>Google Sheets</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-sync" onclick="switchAdminTab('sync')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                <span>Sync Monitoring</span>
+              </button>
+            </div>
+
+            <!-- Group 4: Governance & Platform -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">PLATFORM &amp; AUDIT</span>
+              <button class="admin-nav-item" id="admin-tab-btn-usage" onclick="switchAdminTab('usage')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+                <span>Platform Usage</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-audit" onclick="switchAdminTab('audit')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span>Audit Logs</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-health" onclick="switchAdminTab('health')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <span>System Health</span>
+              </button>
+            </div>
           </aside>
 
           <!-- Right Content Pane -->
@@ -1858,72 +1897,204 @@
             <!-- 1. ADMIN DASHBOARD SUBVIEW -->
             <div id="admin-view-dashboard" class="admin-subview">
               
-              <!-- Attention Banners -->
+              <!-- Clean Page Header -->
+              <div class="admin-page-header">
+                <div>
+                  <div class="admin-breadcrumb">
+                    <span>Admin Console</span>
+                    <span class="admin-breadcrumb-sep">/</span>
+                    <span class="admin-breadcrumb-current">Overview</span>
+                  </div>
+                  <h2 class="admin-page-title">Executive Dashboard</h2>
+                  <p class="admin-page-desc">Multi-tenant synchronization performance, organization health and live pipeline status.</p>
+                </div>
+                <div class="admin-page-header-actions">
+                  <button class="btn btn-primary btn-sm" onclick="openAdminAddOrgModal()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    <span>Add Organization</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Attention / Status Alerts -->
               <div id="admin-dashboard-alerts" style="margin-bottom: 1.25rem;">
                 <!-- Injected dynamically via app.js if any attention items exist -->
               </div>
 
-              <!-- Top KPI Cards Grid -->
+              <!-- Top 6 KPI Cards Grid -->
               <div class="admin-kpi-grid">
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">TOTAL ORGANIZATIONS</div>
+                <div class="admin-kpi-card card-accent-blue" onclick="switchAdminTab('organizations')" title="View Organizations" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">TOTAL ORGANIZATIONS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(0, 70, 130, 0.1); color: var(--vnc-main);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val" id="admin-kpi-total-orgs">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-orgs-breakdown">0 Active · 0 Trial</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">TOTAL USERS</div>
+
+                <div class="admin-kpi-card card-accent-purple" onclick="switchAdminTab('users')" title="View Users Directory" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">TOTAL USERS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(122, 78, 171, 0.12); color: var(--vnc-purple);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val" id="admin-kpi-total-users">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-users-breakdown">Active platform seats</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">ACTIVE SUBSCRIPTIONS</div>
+
+                <div class="admin-kpi-card card-accent-green" onclick="switchAdminTab('subscriptions')" title="View Subscriptions" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">ACTIVE SUBSCRIPTIONS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #059669;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val text-success" id="admin-kpi-active-subs">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-subs-status">0 Past Due · 0 Expired</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">SYNCS THIS MONTH</div>
+
+                <div class="admin-kpi-card card-accent-cyan" onclick="switchAdminTab('sync')" title="View Sync Runs" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">SYNCS THIS MONTH</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(47, 143, 237, 0.12); color: var(--vnc-blue);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val" id="admin-kpi-monthly-syncs">0</div>
                   <div class="admin-kpi-sub text-success" id="admin-kpi-sync-rate">100% Success Rate</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">CIN7 CONNECTIONS</div>
+
+                <div class="admin-kpi-card card-accent-indigo" onclick="switchAdminTab('cin7')" title="View Cin7 Connections" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">CIN7 CONNECTIONS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(49, 47, 119, 0.12); color: var(--vnc-dark);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val text-primary" id="admin-kpi-cin7-conns">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-cin7-errors">0 Errors</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">GOOGLE SHEETS</div>
+
+                <div class="admin-kpi-card card-accent-emerald" onclick="switchAdminTab('sheets')" title="View Google Sheets" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">GOOGLE SHEETS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #059669;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val text-success" id="admin-kpi-sheets-conns">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-sheets-errors">0 Errors</div>
                 </div>
               </div>
 
-              <!-- Recent Platform Syncs Card -->
-              <div class="settings-card" style="margin-top: 1.5rem;">
-                <div class="settings-card-header">
-                  <h3 style="font-size: 0.9375rem; font-weight: 700;">Recent Platform Sync Activity</h3>
-                  <button class="btn btn-outline btn-xs" onclick="switchAdminTab('sync')">View All Runs →</button>
-                </div>
-                <div class="settings-card-body" style="padding: 0;">
-                  <div style="overflow-x: auto;">
-                    <table class="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Organization</th>
-                          <th>Run ID</th>
-                          <th>Type</th>
-                          <th>Records</th>
-                          <th>Duration</th>
-                          <th>Status</th>
-                          <th>Completed</th>
-                          <th>Sheet</th>
-                        </tr>
-                      </thead>
-                      <tbody id="admin-dashboard-recent-syncs">
-                        <tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">Loading sync activity...</td></tr>
-                      </tbody>
-                    </table>
+              <!-- Executive Dashboard Split Grid -->
+              <div class="admin-dashboard-split-grid">
+                
+                <!-- Main Column: Recent Syncs Table -->
+                <div class="settings-card admin-dashboard-sync-card">
+                  <div class="settings-card-header">
+                    <div class="settings-card-title-group">
+                      <h3 style="font-size: 0.9375rem; font-weight: 700;">Recent Platform Sync Activity</h3>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Live sync pipeline throughput and automated executions</p>
+                    </div>
+                    <button class="btn btn-outline btn-xs" onclick="switchAdminTab('sync')">View All Runs →</button>
+                  </div>
+                  <div class="settings-card-body" style="padding: 0;">
+                    <div style="overflow-x: auto;">
+                      <table class="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Organization</th>
+                            <th>Run ID</th>
+                            <th>Type</th>
+                            <th>Records</th>
+                            <th>Duration</th>
+                            <th>Status</th>
+                            <th>Completed</th>
+                            <th>Sheet</th>
+                          </tr>
+                        </thead>
+                        <tbody id="admin-dashboard-recent-syncs">
+                          <tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">Loading sync activity...</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
+
+                <!-- Side Column: Platform Status & Quick Shortcuts -->
+                <div class="admin-dashboard-side-col">
+                  <!-- Quick Admin Shortcuts -->
+                  <div class="settings-card">
+                    <div class="settings-card-header">
+                      <h3 style="font-size: 0.875rem; font-weight: 700;">Admin Shortcuts</h3>
+                    </div>
+                    <div class="settings-card-body" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 0.875rem 1rem;">
+                      <button class="admin-shortcut-btn" onclick="openAdminAddOrgModal()">
+                        <span class="admin-shortcut-icon" style="background: rgba(0, 70, 130, 0.1); color: var(--vnc-main);">➕</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">Provision Organization</span>
+                          <span class="admin-shortcut-sub">Set up tenant & credentials</span>
+                        </div>
+                      </button>
+                      <button class="admin-shortcut-btn" onclick="switchAdminTab('users')">
+                        <span class="admin-shortcut-icon" style="background: rgba(122, 78, 171, 0.1); color: var(--vnc-purple);">👥</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">User Directory &amp; Roles</span>
+                          <span class="admin-shortcut-sub">Manage cross-org logins</span>
+                        </div>
+                      </button>
+                      <button class="admin-shortcut-btn" onclick="switchAdminTab('audit')">
+                        <span class="admin-shortcut-icon" style="background: rgba(241, 144, 49, 0.1); color: var(--vnc-yellow);">🛡️</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">Security &amp; Audit Trail</span>
+                          <span class="admin-shortcut-sub">Inspect login &amp; admin events</span>
+                        </div>
+                      </button>
+                      <button class="admin-shortcut-btn" onclick="switchAdminTab('health')">
+                        <span class="admin-shortcut-icon" style="background: rgba(16, 185, 129, 0.1); color: #059669;">⚡</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">System Diagnostics</span>
+                          <span class="admin-shortcut-sub">Verify database &amp; API health</span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Integration Quick Health -->
+                  <div class="settings-card" style="margin-top: 1rem;">
+                    <div class="settings-card-header">
+                      <h3 style="font-size: 0.875rem; font-weight: 700;">Integration Health</h3>
+                    </div>
+                    <div class="settings-card-body" style="padding: 0.75rem 1rem;">
+                      <div class="admin-health-row">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                          <span class="admin-health-dot status-ok"></span>
+                          <span style="font-size: 0.8125rem; font-weight: 600;">Cin7 Core ERP API</span>
+                        </div>
+                        <span class="badge badge-success" style="font-size: 0.65rem;">Operational</span>
+                      </div>
+                      <div class="admin-health-row">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                          <span class="admin-health-dot status-ok"></span>
+                          <span style="font-size: 0.8125rem; font-weight: 600;">Google Drive &amp; Sheets</span>
+                        </div>
+                        <span class="badge badge-success" style="font-size: 0.65rem;">Operational</span>
+                      </div>
+                      <div class="admin-health-row">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                          <span class="admin-health-dot status-ok"></span>
+                          <span style="font-size: 0.8125rem; font-weight: 600;">Supabase Postgres DB</span>
+                        </div>
+                        <span class="badge badge-success" style="font-size: 0.65rem;">Healthy</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
             </div>
@@ -3484,6 +3655,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=4.0"></script>
+  <script src="app.js?v=4.1"></script>
 </body>
 </html>
