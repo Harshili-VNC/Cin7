@@ -4469,23 +4469,29 @@
           <ul class="sync-stage-list" style="margin-top: 1rem;">
             <li class="sync-stage-item" id="sync-stage-1">
               <span class="stage-bullet active">1</span>
-              <span>Connecting to Cin7 Core API</span>
+              <span>Connecting & Authenticating with Cin7 API</span>
             </li>
             <li class="sync-stage-item" id="sync-stage-2">
               <span class="stage-bullet">2</span>
-              <span>Checking for changes since last sync</span>
+              <span>Fetching & Enriching Sales Orders <span id="sync-stage-sales-detail"
+                  style="font-size: 0.75rem; color: var(--vnc-main); font-weight: 700;"></span></span>
             </li>
             <li class="sync-stage-item" id="sync-stage-3">
               <span class="stage-bullet">3</span>
-              <span>Enriching Sales Orders <span id="sync-stage-3-detail"
+              <span>Fetching Inventory & Stock Availability <span id="sync-stage-inv-detail"
                   style="font-size: 0.75rem; color: var(--vnc-main); font-weight: 700;"></span></span>
             </li>
             <li class="sync-stage-item" id="sync-stage-4">
               <span class="stage-bullet">4</span>
-              <span>Validating schemas & upserting state</span>
+              <span>Fetching Purchase Orders & Procurement <span id="sync-stage-po-detail"
+                  style="font-size: 0.75rem; color: var(--vnc-main); font-weight: 700;"></span></span>
             </li>
             <li class="sync-stage-item" id="sync-stage-5">
               <span class="stage-bullet">5</span>
+              <span>Validating schemas & upserting state</span>
+            </li>
+            <li class="sync-stage-item" id="sync-stage-6">
+              <span class="stage-bullet">6</span>
               <span>Populating 17 Master Model sheets</span>
             </li>
           </ul>

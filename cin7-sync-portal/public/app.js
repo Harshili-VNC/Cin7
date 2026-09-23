@@ -1287,7 +1287,7 @@ let activeSyncPollTimer = null;
 let currentActiveRunId = null;
 
 function setSyncModalStage(stageNum) {
-  [1, 2, 3, 4, 5].forEach(s => {
+  [1, 2, 3, 4, 5, 6].forEach(s => {
     const item = document.getElementById(`sync-stage-${s}`);
     const bullet = item?.querySelector('.stage-bullet');
     if (!bullet) return;
@@ -1315,7 +1315,9 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
   const title = document.getElementById('sync-modal-title');
   const fill = document.getElementById('sync-progress-fill');
   const statusMsg = document.getElementById('sync-modal-live-status');
-  const enrichDetail = document.getElementById('sync-stage-3-detail');
+  const salesDetail = document.getElementById('sync-stage-sales-detail') || document.getElementById('sync-stage-3-detail');
+  const invDetail = document.getElementById('sync-stage-inv-detail');
+  const poDetail = document.getElementById('sync-stage-po-detail');
   const btnSync = document.getElementById('btn-sync-now');
 
   if (btnSync) {
@@ -1352,23 +1354,37 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
           setSyncModalStage(1);
           break;
         case 'FETCHING':
-          setSyncModalStage(2);
-          break;
+        case 'FETCHING_SALES':
         case 'ENRICHING':
-          setSyncModalStage(3);
-          if (enrichDetail && p.total > 0) {
+          setSyncModalStage(2);
+          if (salesDetail && p.total > 0) {
             const cachedTxt = p.cachedCount ? ` · ${p.cachedCount.toLocaleString()} cached` : '';
-            enrichDetail.innerText = `(${p.current.toLocaleString()}/${p.total.toLocaleString()}${cachedTxt})`;
+            salesDetail.innerText = `(${p.current.toLocaleString()}/${p.total.toLocaleString()}${cachedTxt})`;
+          }
+          break;
+        case 'FETCHING_INVENTORY':
+        case 'INVENTORY':
+          setSyncModalStage(3);
+          if (invDetail && p.total > 0) {
+            invDetail.innerText = `(${p.current.toLocaleString()} SKUs)`;
+          }
+          break;
+        case 'FETCHING_PURCHASES':
+        case 'PURCHASE_ORDERS':
+        case 'PURCHASES':
+          setSyncModalStage(4);
+          if (poDetail && p.total > 0) {
+            poDetail.innerText = `(${p.current.toLocaleString()}/${p.total.toLocaleString()})`;
           }
           break;
         case 'VALIDATING':
-          setSyncModalStage(4);
+          setSyncModalStage(5);
           break;
         case 'POPULATING':
         case 'CALCULATING':
         case 'VERIFYING':
         case 'FINALIZING':
-          setSyncModalStage(5);
+          setSyncModalStage(6);
           break;
       }
 
@@ -1383,7 +1399,7 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
           btnSync.style.opacity = '';
         }
 
-        setSyncModalStage(6); // Checkmarks all stages
+        setSyncModalStage(7); // Checkmarks all 6 stages
         if (fill) fill.style.width = '100%';
         if (statusMsg) statusMsg.innerText = 'Sync complete! All reports verified.';
 

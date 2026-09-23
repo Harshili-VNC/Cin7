@@ -288,7 +288,7 @@ async function executeFullSyncBackground({
   };
 
   try {
-    updateProgress('CONNECTING', 0, 5, 10, 'Connecting to Cin7 Core API...');
+    updateProgress('CONNECTING', 0, 6, 10, 'Connecting to Cin7 Core API...');
 
     // 1. Resolve & verify credentials exist for tenant
     console.log(`[CIN7 CREDENTIALS] Loading tenant Cin7 credentials for '${clientId}'...`);
@@ -315,7 +315,7 @@ async function executeFullSyncBackground({
     console.log(`  Purchase Strategy: ${useIncrementalPO ? `INCREMENTAL (${poSafety.reason})` : `FULL WINDOW FETCH (${poSafety.reason})`}`);
     console.log(`  Inventory Strategy: CURRENT AVAILABILITY SNAPSHOT\n`);
 
-    updateProgress('FETCHING', 1, 5, 20, useIncrementalSales ? 'Checking for new/modified records since last sync...' : 'Extracting Sales, Inventory & Purchases...');
+    updateProgress('FETCHING_SALES', 0, 0, 15, useIncrementalSales ? 'Checking for new/modified sales records...' : 'Fetching Sales Orders from Cin7...');
 
     // 3. Fetch real Cin7 datasets sequentially
     const fetchedSales = await cin7Engine.fetchSales(clientId, {
@@ -323,11 +323,11 @@ async function executeFullSyncBackground({
       isCancelled,
       onProgress: (p) => {
         if (p.stage === 'PRODUCT_MASTER') {
-          const pct = Math.round(52 + ((p.percent || 0) * 0.08));
-          updateProgress('ENRICHING', p.current, p.total, pct, p.message || 'Loading Product Master catalog...');
+          const pct = Math.round(42 + ((p.percent || 0) * 0.08));
+          updateProgress('FETCHING_SALES', p.current, p.total, pct, p.message || 'Loading Product Master catalog...');
         } else {
-          const pct = Math.round(20 + ((p.percent || 0) * 0.32));
-          updateProgress('ENRICHING', p.current, p.total, pct, p.message, {
+          const pct = Math.round(15 + ((p.percent || 0) * 0.35));
+          updateProgress('FETCHING_SALES', p.current, p.total, pct, p.message, {
             cachedCount: p.cachedCount,
             uncachedCount: p.uncachedCount,
             etaSeconds: p.etaSeconds
@@ -338,29 +338,29 @@ async function executeFullSyncBackground({
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('ENRICHING', 0, 0, 60, 'Processing Inventory stock from Cin7...');
+    updateProgress('FETCHING_INVENTORY', 0, 0, 52, 'Fetching Inventory availability from Cin7...');
     const invData = await cin7Engine.fetchInventory(clientId, {
       isCancelled,
       onProgress: (p) => {
-        updateProgress('ENRICHING', p.current, p.total, 62, p.message);
+        updateProgress('FETCHING_INVENTORY', p.current, p.total, 58, p.message);
       }
     });
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('ENRICHING', 0, 0, 65, 'Fetching Purchase Orders from Cin7...');
+    updateProgress('FETCHING_PURCHASES', 0, 0, 62, 'Fetching Purchase Orders from Cin7...');
     const fetchedPO = await cin7Engine.fetchPurchaseOrders(clientId, {
       updatedSince: poUpdatedSince,
       isCancelled,
       onProgress: (p) => {
-        const pct = Math.round(65 + ((p.percent || 0) * 0.05));
-        updateProgress('ENRICHING', p.current, p.total, pct, p.message);
+        const pct = Math.round(62 + ((p.percent || 0) * 0.10));
+        updateProgress('FETCHING_PURCHASES', p.current, p.total, pct, p.message);
       }
     });
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('VALIDATING', 2, 5, 70, 'Validating schemas and filtering rolling window...');
+    updateProgress('VALIDATING', 0, 0, 74, 'Validating schemas and filtering rolling window...');
 
     // 4. Upsert / Merge & Rolling Window Filter for Sales
     let finalSalesRows = [];
