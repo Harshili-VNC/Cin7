@@ -126,7 +126,9 @@ async function checkAuthStatus() {
 function updateUIHeader() {
   const navbar = document.getElementById('navbar');
   if (state.user) {
-    if (navbar) navbar.classList.remove('hidden');
+    if (navbar && state.currentView !== 'admin' && state.currentView !== 'admin-portal') {
+      navbar.classList.remove('hidden');
+    }
 
     // Populate user pill
     const name = state.user.fullName || state.user.full_name || state.user.name || 'User';
@@ -264,8 +266,17 @@ function navigateTo(viewId) {
   if (viewId === 'reports') loadReportsView();
   if (viewId === 'settings') loadSettingsData();
   if (viewId === 'admin') loadAdminDashboard();
-  if (viewId === 'onboarding') loadOnboardingView();
-  if (viewId === 'client-select') loadClientSelectionView(state.user);
+  state.currentView = viewId;
+
+  // Toggle client navbar visibility (hide on admin screens, auth screens, and onboarding)
+  const navbar = document.getElementById('navbar');
+  if (navbar) {
+    if (viewId === 'admin' || viewId === 'admin-portal' || viewId === 'auth-landing' || viewId === 'client-select' || viewId === 'onboarding') {
+      navbar.classList.add('hidden');
+    } else if (state.user) {
+      navbar.classList.remove('hidden');
+    }
+  }
 
   // Toggle global footer visibility & auth body class
   document.body.classList.toggle('auth-screen-active', viewId === 'auth-landing');
