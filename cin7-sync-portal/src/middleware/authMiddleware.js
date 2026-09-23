@@ -49,7 +49,7 @@ function requireSuperAdmin(req, res, next) {
 
   const platformRole = (req.user.platform_role || req.user.platformRole || '').toUpperCase();
   const userRole = (req.user.role || '').toUpperCase();
-  if (platformRole === 'SUPER_ADMIN' || userRole === 'SUPER_ADMIN') {
+  if (platformRole === 'SUPER_ADMIN' || userRole === 'SUPER_ADMIN' || (req.session && req.session.adminSnapshot)) {
     return next();
   }
 

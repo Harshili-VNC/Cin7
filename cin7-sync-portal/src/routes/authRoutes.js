@@ -88,6 +88,32 @@ function getGoogleOAuthConfig(req) {
   return { clientId, clientSecret, redirectUri, appUrl, safeOrigin };
 }
 
+/**
+ * Records a successful login: bumps users.last_login_at, bumps the org's
+ * clients.last_active_at (whenever any of its users logs in — distinct from
+ * clients.last_sync_at, which only tracks sync runs), and writes a LOGIN entry
+ * to audit_logs via the shared auditService. Never lets a logging failure
+ * block the login response — always fire this after the session is already
+ * established, and swallow its own errors.
+ */
+async function recordLogin({ userId, clientId, email, method }) {
+  try {
+    await db.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [userId]);
+    if (clientId) {
+      await db.query('UPDATE clients SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?', [clientId]);
+    }
+    await logAction({
+      organizationId: clientId,
+      userId,
+      action: 'LOGIN',
+      resource: 'session',
+      details: { email, method }
+    });
+  } catch (err) {
+    console.warn('[AUTH] recordLogin notice (non-fatal):', err.message);
+  }
+}
+
 function sessionUserFromGoogleProfile(user, profile) {
   const isPending = !user.client_id;
   return {
@@ -291,6 +317,8 @@ router.get('/google/callback', async (req, res) => {
       return res.redirect(`${returnProtocol}://${returnHost}/api/auth/google/consume-ticket?ticket=${ticket}`);
     }
 
+    await recordLogin({ userId: user.id, clientId: boundClientId, email: user.email, method: 'google' });
+
     res.redirect('/?google_auth=success');
   } catch (err) {
     console.error('[GOOGLE AUTH] Callback error:', err.message);
@@ -323,6 +351,8 @@ router.get('/google/consume-ticket', async (req, res) => {
         req.session.save(saveErr => saveErr ? reject(saveErr) : resolve());
       });
     });
+
+    await recordLogin({ userId: ticketData.user.id, clientId: ticketData.user.client_id, email: ticketData.user.email, method: 'google' });
 
     res.redirect('/?google_auth=success');
   } catch (err) {
@@ -739,6 +769,8 @@ router.post('/register', registerLimiter, validateRegisterInput, async (req, res
       });
     });
 
+    await recordLogin({ userId, clientId, email: cleanEmail, method: 'register' });
+
     res.json({
       success: true,
       message: 'Account created and reporting workbook initialized.',
@@ -821,6 +853,8 @@ router.post('/login', authLimiter, validateLoginInput, async (req, res) => {
         req.session.save(saveErr => saveErr ? reject(saveErr) : resolve());
       });
     });
+
+    await recordLogin({ userId: user.id, clientId: user.client_id, email: user.email, method: 'password' });
 
     const client = user.client_id ? await db.getOne('SELECT * FROM clients WHERE id = ?', [user.client_id]) : null;
     const cin7Conn = user.client_id ? await db.getOne('SELECT status, last_tested_at FROM cin7_connections WHERE client_id = ?', [user.client_id]) : null;

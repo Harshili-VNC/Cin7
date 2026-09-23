@@ -236,7 +236,7 @@ button, input, select, textarea {
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 0.875rem clamp(1.25rem, 3vw, 2.75rem);
+  padding: 1.25rem clamp(1.25rem, 3vw, 2.75rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -251,12 +251,12 @@ button, input, select, textarea {
 }
 
 .vnc-badge-img {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 3rem;
+  height: 3rem;
   border-radius: 9999px;
   object-fit: contain;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.3);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
   background: #004682;
 }
 
@@ -265,14 +265,14 @@ button, input, select, textarea {
 }
 
 .vnc-lockup-title {
-  font-size: 0.9375rem;
+  font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   color: #ffffff;
 }
 
 .vnc-lockup-sub {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: #2f8fed;
@@ -639,8 +639,7 @@ button, input, select, textarea {
    ========================================================================== */
 .app-container,
 .settings-container,
-.reports-container,
-.admin-wrapper {
+.reports-container {
   width: 100%;
   max-width: 100%;
   margin: -2.25rem auto 4rem auto;
@@ -1018,6 +1017,8 @@ button, input, select, textarea {
   border-color: var(--vnc-main);
   background: rgba(0, 70, 130, 0.04);
 }
+
+.select-dropdown {
   border-radius: var(--radius-md);
   font-size: 0.875rem;
   font-weight: 600;
@@ -3352,8 +3353,339 @@ input:checked + .slider:before {
 }
 
 /* ==========================================================================
-   SUPER ADMIN PORTAL & BILLING STYLES
+   SUPER ADMIN PORTAL & CONSOLE STYLES (v4.1)
    ========================================================================== */
+
+/* ── Admin Dedicated Sticky Topbar ───────────────────────────────────────── */
+.admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+  background: linear-gradient(135deg, #1a1040 0%, #251857 40%, #312f77 75%, #5b3fa0 100%);
+  border-bottom: 1px solid rgba(122, 78, 171, 0.35);
+  box-shadow: 0 4px 24px rgba(26, 10, 60, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.admin-topbar-upper {
+  width: 100%;
+  max-width: 100%;
+  min-height: 6.75rem;
+  padding: 1.5rem clamp(1.75rem, 4.5vw, 4rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.75rem;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+}
+
+.admin-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.admin-logo-box {
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 9999px;
+  background: #004682;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.admin-badge-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.admin-brand-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.admin-brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.admin-brand-title {
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #ffffff;
+}
+
+.admin-pill-badge {
+  font-size: 0.775rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: rgba(122, 78, 171, 0.45);
+  color: #e9d5ff;
+  border: 1px solid rgba(192, 132, 252, 0.55);
+  text-transform: uppercase;
+}
+
+.admin-brand-sub {
+  font-size: 0.875rem;
+  color: rgba(240, 247, 255, 0.85);
+  font-weight: 500;
+}
+
+/* System Status Pill */
+.admin-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.45rem;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #a7f3d0;
+  font-size: 0.925rem;
+  font-weight: 600;
+}
+
+.admin-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 14px #10b981;
+  animation: pulseGreen 2s infinite ease-in-out;
+}
+
+@keyframes pulseGreen {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* Right Action Controls */
+.admin-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.125rem;
+  flex-wrap: wrap;
+}
+
+.admin-action-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius-sm);
+  font-size: 0.925rem;
+  font-weight: 600;
+  padding: 0.75rem 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  transition: all 0.2s ease;
+}
+
+.admin-action-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #ffffff;
+}
+
+.btn-client-portal {
+  background: linear-gradient(135deg, #004682 0%, #2f8fed 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 0.925rem;
+  font-weight: 700;
+  padding: 0.75rem 1.45rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  box-shadow: 0 4px 16px rgba(0, 70, 130, 0.45);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-client-portal:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 6px 20px rgba(47, 143, 237, 0.5);
+  transform: translateY(-1px);
+}
+
+.admin-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1.35rem 0.5rem 0.65rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 9999px;
+}
+
+.admin-user-avatar {
+  width: 2.625rem;
+  height: 2.625rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7a4eab 0%, #312f77 100%);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+}
+
+.admin-user-details {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.admin-user-name {
+  font-size: 0.925rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.admin-user-role {
+  font-size: 0.775rem;
+  color: #d8b4fe;
+  font-weight: 600;
+}
+
+.admin-signout-btn {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.925rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-signout-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+/* ── Tier 2: Dynamic Context & Action Row ─────────────────────────────────── */
+.admin-topbar-lower {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.875rem clamp(1.25rem, 3.5vw, 3rem) 1.125rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+}
+
+.admin-topbar-context {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(240, 247, 255, 0.65);
+}
+
+.admin-crumb-slash {
+  opacity: 0.4;
+}
+
+.admin-crumb-active {
+  color: #93c5fd;
+  font-weight: 700;
+}
+
+.admin-context-text-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-context-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.admin-context-desc {
+  font-size: 0.8125rem;
+  color: rgba(240, 247, 255, 0.75);
+  margin: 0.15rem 0 0;
+  font-weight: 400;
+}
+
+.admin-topbar-cta {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.admin-primary-cta {
+  background: linear-gradient(135deg, #004682 0%, #2f8fed 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 14px rgba(47, 143, 237, 0.4);
+  font-weight: 700;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-primary-cta:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(47, 143, 237, 0.5);
+}
+
+/* ── Admin Wrapper ────────────────────────────────────────────────────────── */
+.admin-wrapper {
+  width: 100%;
+  max-width: 100%;
+  margin: 1.5rem auto 4rem auto;
+  padding: 0 clamp(1.25rem, 3.5vw, 3rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  box-sizing: border-box;
+}
 
 .admin-hero-card {
   background: #ffffff;
@@ -3400,24 +3732,40 @@ input:checked + .slider:before {
   }
 }
 
+/* ── Grouped Sidebar Navigation ──────────────────────────────────────────── */
 .admin-sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 1.125rem;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.625rem;
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg);
+  padding: 1rem 0.75rem;
+  box-shadow: var(--shadow-sm);
   position: sticky;
-  top: 5.5rem;
+  top: 11.5rem;
+}
+
+.admin-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-nav-group-title {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+  padding: 0.25rem 0.75rem 0.375rem;
+  text-transform: uppercase;
 }
 
 .admin-nav-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.625rem 0.875rem;
+  padding: 0.55rem 0.75rem;
   border-radius: var(--radius-sm);
   font-size: 0.8125rem;
   font-weight: 600;
@@ -3438,8 +3786,8 @@ input:checked + .slider:before {
 }
 
 .admin-nav-item:hover {
-  background: rgba(122, 78, 171, 0.07);
-  color: var(--vnc-dark);
+  background: rgba(0, 70, 130, 0.06);
+  color: var(--vnc-main);
 }
 
 .admin-nav-item:hover svg {
@@ -3447,14 +3795,14 @@ input:checked + .slider:before {
 }
 
 .admin-nav-item.active {
-  background: #f2edfa;
-  color: var(--vnc-dark);
-  border-left: 3px solid var(--vnc-purple);
+  background: #ebf3fb;
+  color: var(--vnc-main);
+  border-left: 3px solid var(--vnc-main);
   font-weight: 700;
 }
 
 .admin-nav-item.active svg {
-  stroke: var(--vnc-dark);
+  stroke: var(--vnc-main);
 }
 
 .admin-content-area {
@@ -3465,6 +3813,56 @@ input:checked + .slider:before {
   animation: fadeIn 0.2s ease;
 }
 
+/* ── Clean Page Header ───────────────────────────────────────────────────── */
+.admin-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.admin-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  margin-bottom: 0.25rem;
+}
+
+.admin-breadcrumb-sep {
+  opacity: 0.5;
+}
+
+.admin-breadcrumb-current {
+  color: var(--vnc-main);
+  font-weight: 700;
+}
+
+.admin-page-title {
+  font-size: 1.375rem;
+  font-weight: 800;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.admin-page-desc {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  margin: 0.125rem 0 0;
+}
+
+.admin-page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Modern KPI Cards ────────────────────────────────────────────────────── */
 .admin-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -3474,11 +3872,53 @@ input:checked + .slider:before {
 .admin-kpi-card {
   background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.125rem;
+  border-radius: var(--radius-md);
+  padding: 1rem 1.125rem;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.admin-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(0, 70, 130, 0.3);
+}
+
+.admin-kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+.card-accent-blue::before { background: var(--vnc-main); }
+.card-accent-purple::before { background: var(--vnc-purple); }
+.card-accent-green::before { background: #10b981; }
+.card-accent-cyan::before { background: var(--vnc-blue); }
+.card-accent-indigo::before { background: var(--vnc-dark); }
+.card-accent-emerald::before { background: #059669; }
+
+.admin-kpi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-kpi-icon-wrap {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .admin-kpi-title {
@@ -3499,6 +3939,104 @@ input:checked + .slider:before {
 .admin-kpi-sub {
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+
+/* ── Executive Dashboard Dual-Column Split ────────────────────────────────── */
+.admin-dashboard-split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .admin-dashboard-split-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-dashboard-sync-card {
+  margin-top: 0 !important;
+}
+
+.admin-dashboard-side-col {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Admin Shortcuts */
+.admin-shortcut-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.admin-shortcut-btn:hover {
+  background: #ffffff;
+  border-color: var(--vnc-blue);
+  transform: translateX(2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-shortcut-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.admin-shortcut-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.admin-shortcut-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.admin-shortcut-sub {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+
+/* Integration Health Widget Rows */
+.admin-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-health-row:last-child {
+  border-bottom: none;
+}
+
+.admin-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.admin-health-dot.status-ok {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
 }
 
 .admin-filter-bar {

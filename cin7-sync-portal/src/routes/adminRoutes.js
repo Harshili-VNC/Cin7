@@ -100,10 +100,14 @@ router.get('/dashboard', async (req, res) => {
     const recentSyncs = allSyncRuns.slice(0, 5).map(r => {
       const syncType = (r.sync_type || 'all').toLowerCase();
       const isGoogleSheet = (syncType === 'google_sheets' || syncType === 'google_sheet_pull') && r.excel_version_id;
+      const clientUsers = allUsers.filter(u => u.client_id === r.client_id);
+      const leadUser = clientUsers.find(u => u.role === 'ADMIN' || u.role === 'CLIENT' || u.platform_role === 'SUPER_ADMIN') || clientUsers[0] || null;
       return {
         id: r.id,
         runId: r.run_id || r.id,
         organizationName: clientsMap[r.client_id] || r.client_id,
+        contactName: leadUser ? (leadUser.full_name || leadUser.email) : null,
+        contactEmail: leadUser ? leadUser.email : null,
         syncType: syncType.toUpperCase(),
         status: (r.status || 'RUNNING').toUpperCase(),
         recordsProcessed: r.records_processed || 0,
@@ -152,7 +156,7 @@ router.get('/organizations', async (req, res) => {
     const clientsRes = await db.query('SELECT * FROM clients');
     let organizations = clientsRes.rows || [];
 
-    const usersRes = await db.query('SELECT client_id, id, status FROM users');
+    const usersRes = await db.query('SELECT client_id, id, full_name, email, phone_number, role, platform_role, status, last_login_at FROM users');
     const allUsers = usersRes.rows || [];
 
     const subsRes = await db.query('SELECT * FROM subscriptions');
@@ -173,6 +177,7 @@ router.get('/organizations', async (req, res) => {
     // Map enriched data
     let enriched = organizations.map(org => {
       const orgUsers = allUsers.filter(u => u.client_id === org.id);
+      const primaryUser = orgUsers.find(u => u.role === 'ADMIN' || u.role === 'CLIENT' || u.platform_role === 'SUPER_ADMIN') || orgUsers[0] || null;
       const sub = allSubs.find(s => s.organization_id === org.id);
       const assignedPlan = sub ? allPlans.find(p => p.id === sub.plan_id || p.code === sub.plan_id) : null;
       const cin7Conn = allCin7.find(c => c.client_id === org.id);
@@ -191,6 +196,23 @@ router.get('/organizations', async (req, res) => {
         createdAt: org.created_at,
         usersCount: orgUsers.length,
         activeUsersCount: orgUsers.filter(u => u.status === 'ACTIVE').length,
+        primaryUser: primaryUser ? {
+          id: primaryUser.id,
+          fullName: primaryUser.full_name || primaryUser.email,
+          email: primaryUser.email,
+          role: (primaryUser.role || 'ADMIN').toUpperCase(),
+          platformRole: (primaryUser.platform_role || 'USER').toUpperCase(),
+          phoneNumber: primaryUser.phone_number,
+          lastLoginAt: primaryUser.last_login_at
+        } : null,
+        users: orgUsers.map(u => ({
+          id: u.id,
+          fullName: u.full_name || u.email,
+          email: u.email,
+          role: (u.role || 'VIEWER').toUpperCase(),
+          platformRole: (u.platform_role || 'USER').toUpperCase(),
+          status: (u.status || 'ACTIVE').toUpperCase()
+        })),
         subscription: {
           id: sub ? sub.id : null,
           status: sub ? (sub.status || 'ACTIVE').toUpperCase() : 'ACTIVE',
@@ -223,7 +245,10 @@ router.get('/organizations', async (req, res) => {
       const q = search.trim().toLowerCase();
       enriched = enriched.filter(o =>
         (o.companyName || o.name || '').toLowerCase().includes(q) ||
-        (o.id || '').toLowerCase().includes(q)
+        (o.id || '').toLowerCase().includes(q) ||
+        (o.primaryUser?.fullName || '').toLowerCase().includes(q) ||
+        (o.primaryUser?.email || '').toLowerCase().includes(q) ||
+        (o.users || []).some(u => (u.fullName || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q))
       );
     }
 
@@ -418,7 +443,7 @@ router.get('/organizations/:id', async (req, res) => {
     }
 
     // Users
-    const usersRes = await db.query('SELECT id, client_id, full_name, email, phone_number, role, platform_role, status, auth_provider, created_at, updated_at FROM users WHERE client_id = ?', [orgId]);
+    const usersRes = await db.query('SELECT id, client_id, full_name, email, phone_number, role, platform_role, status, auth_provider, created_at, updated_at, last_login_at FROM users WHERE client_id = ?', [orgId]);
     const users = (usersRes.rows || []).map(u => ({
       id: u.id,
       fullName: u.full_name,
@@ -428,7 +453,8 @@ router.get('/organizations/:id', async (req, res) => {
       platformRole: (u.platform_role || 'USER').toUpperCase(),
       status: (u.status || 'ACTIVE').toUpperCase(),
       authProvider: u.auth_provider || 'local',
-      createdAt: u.created_at
+      createdAt: u.created_at,
+      lastLoginAt: u.last_login_at
     }));
 
     // Subscription & Plan
@@ -681,7 +707,9 @@ router.get('/users', async (req, res) => {
     let mappedUsers = users.map(u => ({
       id: u.id,
       organizationId: u.client_id,
+      organization_id: u.client_id,
       companyName: clientsMap[u.client_id] || u.client_id,
+      organizationName: clientsMap[u.client_id] || u.client_id,
       fullName: u.full_name,
       email: u.email,
       phoneNumber: u.phone_number,
@@ -689,7 +717,8 @@ router.get('/users', async (req, res) => {
       platformRole: (u.platform_role || 'USER').toUpperCase(),
       status: (u.status || 'ACTIVE').toUpperCase(),
       authProvider: u.auth_provider || 'local',
-      createdAt: u.created_at
+      createdAt: u.created_at,
+      lastLoginAt: u.last_login_at
     }));
 
     if (search && search.trim()) {
@@ -879,6 +908,9 @@ router.get('/subscriptions', async (req, res) => {
       return acc;
     }, {});
 
+    const usersRes = await db.query('SELECT client_id, id, full_name, email, role FROM users');
+    const allUsers = usersRes.rows || [];
+
     const plansRes = await db.query('SELECT * FROM plans');
     const plansMap = (plansRes.rows || []).reduce((acc, p) => {
       acc[p.id] = p;
@@ -888,10 +920,16 @@ router.get('/subscriptions', async (req, res) => {
 
     let mapped = subs.map(s => {
       const plan = plansMap[s.plan_id] || plansMap['PROFESSIONAL'] || {};
+      const orgUsers = allUsers.filter(u => u.client_id === s.organization_id);
+      const leadUser = orgUsers.find(u => u.role === 'ADMIN' || u.role === 'CLIENT') || orgUsers[0] || null;
       return {
         id: s.id,
         organizationId: s.organization_id,
+        organization_id: s.organization_id,
         companyName: clientsMap[s.organization_id] || s.organization_id,
+        organizationName: clientsMap[s.organization_id] || s.organization_id,
+        contactName: leadUser ? (leadUser.full_name || leadUser.email) : null,
+        contactEmail: leadUser ? leadUser.email : null,
         planId: s.plan_id,
         planName: plan.name || 'Professional',
         planCode: plan.code || 'PROFESSIONAL',
@@ -1123,14 +1161,21 @@ router.get('/sync', async (req, res) => {
       return acc;
     }, {});
 
+    const usersRes = await db.query('SELECT client_id, id, full_name, email, role FROM users');
+    const allUsers = usersRes.rows || [];
+
     let mapped = runs.map(r => {
       const syncType = (r.sync_type || 'all').toLowerCase();
       const isGoogleSheet = (syncType === 'google_sheets' || syncType === 'google_sheet_pull') && r.excel_version_id;
+      const orgUsers = allUsers.filter(u => u.client_id === r.client_id);
+      const leadUser = orgUsers.find(u => u.role === 'ADMIN' || u.role === 'CLIENT') || orgUsers[0] || null;
       return {
         id: r.id,
         runId: r.run_id || r.id,
         organizationId: r.client_id,
         companyName: clientsMap[r.client_id] || r.client_id,
+        contactName: leadUser ? (leadUser.full_name || leadUser.email) : null,
+        contactEmail: leadUser ? leadUser.email : null,
         syncType: syncType.toUpperCase(),
         status: (r.status || 'RUNNING').toUpperCase(),
         recordsProcessed: r.records_processed || 0,
@@ -1268,7 +1313,7 @@ router.get('/audit', async (req, res) => {
 
     const usersRes = await db.query('SELECT id, full_name, email FROM users');
     const usersMap = (usersRes.rows || []).reduce((acc, u) => {
-      acc[u.id] = u.full_name || u.email;
+      acc[u.id] = { fullName: u.full_name || u.email, email: u.email };
       return acc;
     }, {});
 
@@ -1278,7 +1323,9 @@ router.get('/audit', async (req, res) => {
         details = typeof l.details_json === 'string' ? JSON.parse(l.details_json) : (l.details_json || {});
       } catch (e) {}
 
-      const resolvedAdmin = usersMap[l.user_id] || (l.user_id === 'user-super-admin-automation' ? 'VNC Admin' : (l.user_id && !l.user_id.includes('-') ? l.user_id : 'Platform Admin'));
+      const userObj = usersMap[l.user_id];
+      const resolvedAdmin = userObj ? userObj.fullName : (l.user_id === 'user-super-admin-automation' ? 'Automation Super Admin' : (l.user_id && !l.user_id.includes('-') ? l.user_id : 'Platform Admin'));
+      const resolvedEmail = userObj ? userObj.email : (l.user_id === 'user-super-admin-automation' ? 'automation.vncglobalgroup@gmail.com' : null);
 
       return {
         id: l.id,
@@ -1287,6 +1334,7 @@ router.get('/audit', async (req, res) => {
         companyName: clientsMap[l.organization_id] || l.organization_id,
         userId: l.user_id,
         adminName: resolvedAdmin,
+        adminEmail: resolvedEmail,
         action: l.action,
         resource: l.resource,
         result: l.result,
@@ -1357,6 +1405,223 @@ router.get('/system-health', async (req, res) => {
   } catch (err) {
     console.error('[ADMIN HEALTH ERROR]', err.message);
     res.status(500).json({ success: false, error: 'Failed to load system telemetry' });
+  }
+});
+
+/**
+ * GET /api/admin/orgs/:orgId/users
+ * GET /api/admin/organizations/:orgId/users
+ * Returns all users belonging to a specific organization for the impersonation user-select popup.
+ */
+router.get(['/orgs/:orgId/users', '/organizations/:orgId/users'], async (req, res) => {
+  const { orgId } = req.params;
+  try {
+    let users = [];
+    let clientRes = null;
+
+    try {
+      clientRes = await db.getOne('SELECT id, company_name FROM clients WHERE id = ?', [orgId]);
+    } catch (e) {
+      console.warn('[ADMIN ORG CLIENT FETCH WARN]', e.message);
+    }
+
+    try {
+      const usersRes = await db.query(
+        'SELECT id, client_id, full_name, email, role, platform_role, status, last_login_at, created_at FROM users WHERE client_id = ?',
+        [orgId]
+      );
+      users = (usersRes.rows || []).map(u => ({
+        id: u.id,
+        fullName: u.full_name || u.email,
+        email: u.email,
+        role: (u.role || 'VIEWER').toUpperCase(),
+        platformRole: (u.platform_role || 'USER').toUpperCase(),
+        status: (u.status || 'ACTIVE').toUpperCase(),
+        lastLoginAt: u.last_login_at,
+        createdAt: u.created_at
+      }));
+    } catch (dbErr) {
+      console.warn('[ADMIN ORG USERS DB QUERY WARN]', dbErr.message);
+    }
+
+    // Fallback: if query returned 0, search all users
+    if (users.length === 0) {
+      try {
+        const allUsersRes = await db.query('SELECT id, client_id, full_name, email, role, platform_role, status, last_login_at, created_at FROM users');
+        const matches = (allUsersRes.rows || []).filter(u => u.client_id === orgId);
+        users = matches.map(u => ({
+          id: u.id,
+          fullName: u.full_name || u.email,
+          email: u.email,
+          role: (u.role || 'VIEWER').toUpperCase(),
+          platformRole: (u.platform_role || 'USER').toUpperCase(),
+          status: (u.status || 'ACTIVE').toUpperCase(),
+          lastLoginAt: u.last_login_at,
+          createdAt: u.created_at
+        }));
+      } catch (e) {}
+    }
+
+    res.json({
+      success: true,
+      orgId,
+      orgName: clientRes ? clientRes.company_name : orgId,
+      users
+    });
+  } catch (err) {
+    console.error('[ADMIN ORG USERS ERROR]', err.message);
+    res.json({
+      success: true,
+      orgId,
+      orgName: orgId,
+      users: []
+    });
+  }
+});
+
+/**
+ * POST /api/admin/impersonate
+ * Allows a Super Admin to view the portal as a specific user.
+ * Stores the original admin session so it can be fully restored on exit.
+ */
+router.post('/impersonate', async (req, res) => {
+  const { userId, orgId } = req.body;
+  if (!userId && !orgId) {
+    return res.status(400).json({ success: false, message: 'User or Organization identifier is required.' });
+  }
+
+  try {
+    let user = null;
+    if (userId && orgId) {
+      user = await db.getOne('SELECT * FROM users WHERE id = ? AND client_id = ?', [userId, orgId]);
+    }
+    if (!user && userId) {
+      user = await db.getOne('SELECT * FROM users WHERE id = ?', [userId]);
+    }
+    if (!user && userId) {
+      user = await db.getOne('SELECT * FROM users WHERE email = ?', [userId]);
+    }
+    if (!user && orgId) {
+      // Find primary user or first user for this organization
+      user = await db.getOne('SELECT * FROM users WHERE client_id = ? ORDER BY role, id LIMIT 1', [orgId]);
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const effectiveOrgId = user.client_id || orgId || 'client-05262fcf';
+    let client = await db.getOne('SELECT * FROM clients WHERE id = ?', [effectiveOrgId]);
+    if (!client) {
+      // Fallback: check if client exists under any id
+      const allClientsRes = await db.query('SELECT * FROM clients LIMIT 1');
+      if (allClientsRes.rows && allClientsRes.rows.length > 0) {
+        client = allClientsRes.rows[0];
+      } else {
+        client = {
+          id: effectiveOrgId,
+          company_name: 'Client Organization',
+          status: 'ACTIVE',
+          timezone: 'Asia/Kolkata',
+          last_sync_at: null
+        };
+      }
+    }
+
+    let cin7Conn = null;
+    try {
+      cin7Conn = await db.getOne('SELECT status FROM cin7_connections WHERE client_id = ?', [client.id || effectiveOrgId]);
+    } catch (e) {}
+
+    // Save the original admin session before switching context
+    req.session.adminSnapshot = req.session.adminSnapshot || req.session.user;
+
+    // Build a minimal session context for the impersonated user
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name || user.email,
+      client_id: client.id || effectiveOrgId,
+      clientId: client.id || effectiveOrgId,
+      role: (user.role || 'ADMIN').toUpperCase(),
+      platform_role: 'USER', // Never elevate privileges during impersonation
+      platformRole: 'USER',
+      onboarding_status: 'completed',
+      status: 'ACTIVE',
+      _impersonating: true
+    };
+
+    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
+
+    await logAction({
+      userId: req.session.adminSnapshot?.id || 'admin',
+      action: 'USER_IMPERSONATION_STARTED',
+      resourceType: 'USER',
+      resourceId: user.id,
+      details: { targetEmail: user.email, orgId: client.id, orgName: client.company_name }
+    });
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name || user.email,
+        full_name: user.full_name || user.email,
+        client_id: client.id || effectiveOrgId,
+        clientId: client.id || effectiveOrgId,
+        role: (user.role || 'ADMIN').toUpperCase(),
+        platformRole: 'USER',
+        platform_role: 'USER',
+        onboardingStatus: 'completed',
+        _impersonating: true
+      },
+      client: {
+        id: client.id,
+        companyName: client.company_name,
+        name: client.company_name,
+        status: client.status || 'ACTIVE',
+        timezone: client.timezone || 'Asia/Kolkata',
+        lastSyncAt: client.last_sync_at || null
+      },
+      cin7: {
+        connected: Boolean(cin7Conn && cin7Conn.status === 'CONNECTED'),
+        status: cin7Conn ? cin7Conn.status : 'NOT_CONFIGURED'
+      }
+    });
+  } catch (err) {
+    console.error('[ADMIN IMPERSONATE ERROR]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to start impersonation: ' + err.message });
+  }
+});
+
+/**
+ * POST /api/admin/impersonate/exit
+ * Restores the original Super Admin session after impersonation.
+ */
+router.post('/impersonate/exit', async (req, res) => {
+  try {
+    const adminSnapshot = req.session.adminSnapshot;
+    if (!adminSnapshot) {
+      return res.status(400).json({ success: false, message: 'No active impersonation session to exit.' });
+    }
+
+    await logAction({
+      userId: adminSnapshot.id || 'admin',
+      action: 'USER_IMPERSONATION_ENDED',
+      resourceType: 'USER',
+      resourceId: req.session.user?.id || 'unknown',
+      details: { restoredAdminEmail: adminSnapshot.email }
+    });
+
+    req.session.user = adminSnapshot;
+    delete req.session.adminSnapshot;
+    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
+
+    res.json({ success: true, message: 'Impersonation ended. Admin session restored.' });
+  } catch (err) {
+    console.error('[ADMIN IMPERSONATE EXIT ERROR]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to exit impersonation.' });
   }
 });
 

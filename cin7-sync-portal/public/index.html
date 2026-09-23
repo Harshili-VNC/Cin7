@@ -8,17 +8,27 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cedarville+Cursive&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=4.4">
+  <link rel="stylesheet" href="styles.css?v=4.5">
   <link rel="icon" type="image/png" href="assets/vnc-logo-badge.png">
 </head>
 <body>
   <div id="app">
 
-    <!-- ── ADMIN IMPERSONATION BANNER ("View as") ──────────────────────── -->
-    <div id="impersonation-banner" class="impersonation-banner hidden">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      <span id="impersonation-banner-text">Viewing as —</span>
-      <button type="button" class="impersonation-banner-exit" onclick="exitImpersonation()">Exit to Admin Portal</button>
+    <!-- ── ADMIN IMPERSONATION BANNER ──────────────────────────────── -->
+    <div id="impersonation-banner" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; height: 42px; background: linear-gradient(90deg, #1e1035 0%, #3b1b68 40%, #004682 100%); color: #ffffff; z-index: 10000; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; font-size: 0.8125rem; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,0.35); border-bottom: 1px solid rgba(255,255,255,0.15);">
+      <div style="display: flex; align-items: center; gap: 0.625rem;">
+        <span style="background: #f59e0b; color: #000; font-size: 0.65rem; font-weight: 800; padding: 0.15rem 0.45rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase;">Admin View</span>
+        <span style="opacity: 0.85;">👁 Viewing as:</span>
+        <strong id="impersonate-user-label" style="color: #67e8f9; font-weight: 700;">User</strong>
+        <span style="opacity: 0.6;">·</span>
+        <span id="impersonate-org-label" style="opacity: 0.9;">Organization</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <button onclick="exitImpersonation()" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #ffffff; padding: 0.25rem 0.75rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; transition: all 0.15s;">
+          <span>←</span>
+          <span>Exit to Admin Portal</span>
+        </button>
+      </div>
     </div>
 
     <!-- ── GLOBAL NAVBAR ─────────────────────────────────────────────── -->
@@ -552,7 +562,7 @@
               </button>
               <button type="button" class="btn btn-outline btn-sm sync-quick-btn" onclick="openWorkbookViewer()" title="Preview live KPI Dashboard">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                <span>Preview Model</span>
+                <span>Preview KPI Dashboard</span>
               </button>
               <button type="button" class="btn btn-primary sync-primary-btn" id="btn-sync-now" onclick="triggerSyncFlow()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" id="btn-sync-now-icon"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -1775,112 +1785,149 @@
 
     <!-- ── 6. VNC SUPER ADMIN PORTAL VIEW ────────────────────────────── -->
     <section id="admin-portal-view" class="view-container hidden">
-
-      <!-- Dedicated Admin Console Topbar (separate from the client navbar) -->
-      <header class="admin-topbar">
-        <div class="admin-topbar-inner">
-          <div class="vnc-lockup" style="cursor: default;">
-            <img src="assets/vnc-logo-badge.png" alt="VNC Global" class="admin-topbar-logo">
-            <div class="vnc-lockup-text">
-              <p class="vnc-lockup-title">VNC GLOBAL</p>
-              <p class="admin-topbar-subtitle">Admin Console</p>
+      <!-- Super Admin Dedicated Sticky Top Navigation Bar (2-Tier Enterprise Command Header) -->
+      <header class="admin-topbar" id="admin-navbar">
+        <!-- Tier 1: Global Admin Utility Navigation Bar -->
+        <div class="admin-topbar-upper">
+          <!-- Left: Brand Lockup & Status Indicator -->
+          <div class="admin-topbar-brand" onclick="switchAdminTab('dashboard')" title="Admin Dashboard">
+            <div class="admin-logo-box">
+              <img src="assets/vnc-logo-badge.png" alt="VNC" class="admin-badge-img">
+            </div>
+            <div class="admin-brand-info">
+              <div class="admin-brand-title-row">
+                <span class="admin-brand-title">VNC GLOBAL</span>
+                <span class="admin-pill-badge">SUPER ADMIN</span>
+              </div>
+              <span class="admin-brand-sub">Platform Management Console</span>
             </div>
           </div>
 
+          <!-- Center: System Status Indicator Pill -->
+          <div class="admin-status-indicator" title="System Operational Status">
+            <span class="admin-status-dot"></span>
+            <span class="admin-status-text" id="admin-health-badge">All Systems Operational</span>
+          </div>
+
+          <!-- Right: Action Controls, Back to Client Portal, Profile & Logout -->
           <div class="admin-topbar-actions">
-            <div class="admin-topbar-user">
-              <div class="admin-topbar-avatar" id="admin-topbar-avatar">--</div>
-              <div class="admin-topbar-user-details">
-                <span class="admin-topbar-user-name" id="admin-topbar-user-name"></span>
-                <span class="admin-topbar-user-role">★ Super Admin</span>
-              </div>
-            </div>
-            <button type="button" class="admin-topbar-btn" onclick="navigateTo('dashboard')" title="Exit to the client-facing portal">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+            <button class="btn btn-outline btn-xs admin-action-btn" onclick="loadAdminCurrentTab()" title="Refresh Current Tab Data">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+              <span>Refresh</span>
+            </button>
+
+            <button class="btn btn-client-portal btn-xs" onclick="navigateTo('dashboard')" title="Return to Client Portal">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
               <span>Client Portal</span>
             </button>
-            <button type="button" class="admin-topbar-signout" onclick="handleLogout()" title="Sign out">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+
+            <!-- Admin User Profile Pill -->
+            <div class="admin-user-pill" id="admin-user-pill">
+              <div class="admin-user-avatar" id="admin-nav-user-avatar">SA</div>
+              <div class="admin-user-details">
+                <span class="admin-user-name" id="admin-nav-user-name">Super Admin</span>
+                <span class="admin-user-role" id="admin-nav-user-role">Platform Lead</span>
+              </div>
+            </div>
+
+            <button class="admin-signout-btn" onclick="handleLogout()" title="Sign out of Platform">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+              <span>Sign out</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tier 2: Dynamic Page Context & Executive Action Row -->
+        <div class="admin-topbar-lower">
+          <div class="admin-topbar-context">
+            <div class="admin-breadcrumb-bar">
+              <span class="admin-crumb-parent">Admin Console</span>
+              <span class="admin-crumb-slash">/</span>
+              <span class="admin-crumb-active" id="admin-current-breadcrumb">Overview</span>
+            </div>
+            <div class="admin-context-text-row">
+              <h1 class="admin-context-title" id="admin-header-title">Executive Dashboard</h1>
+              <p class="admin-context-desc" id="admin-header-desc">Multi-tenant synchronization performance, organization health and live pipeline status.</p>
+            </div>
+          </div>
+          <div class="admin-topbar-cta" id="admin-header-cta-slot">
+            <button class="btn btn-primary btn-sm admin-primary-cta" onclick="openAdminAddOrgModal()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Add Organization</span>
             </button>
           </div>
         </div>
       </header>
 
-      <!-- Super Admin Hero Header Banner -->
-      <div class="hero-section admin-hero-header">
-        <div class="hero-inner">
-          <div class="dashboard-header-eyebrow">
-            <span class="badge" style="background: rgba(255, 255, 255, 0.15); color: #ffffff; font-weight: 800; border: 1px solid rgba(255, 255, 255, 0.3);">🛡️ VNC PLATFORM ADMIN</span>
-            <span class="eyebrow-divider">/</span>
-            <span class="badge badge-success" id="admin-health-badge">SYSTEM HEALTHY</span>
-          </div>
-          <div class="dashboard-header-title-row">
-            <div class="dashboard-company-info">
-              <h1 class="dashboard-company-title" style="color: #ffffff;">Admin Portal</h1>
-              <p class="dashboard-report-subtitle" style="color: rgba(240, 247, 255, 0.9);">
-                Platform-wide organization oversight, multi-tenant subscription monitoring, integration health and audit logs.
-              </p>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-              <button class="btn btn-outline btn-sm" onclick="loadAdminCurrentTab()" title="Refresh Current Tab Data" style="background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.3);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                <span>Refresh View</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div class="admin-wrapper">
         <!-- Super Admin Two-Pane Navigation Layout -->
         <div class="admin-body-layout">
           
-          <!-- Left Navigation Sidebar -->
+          <!-- Left Categorized Navigation Sidebar -->
           <aside class="admin-sidebar-nav">
-            <button class="admin-nav-item active" id="admin-tab-btn-dashboard" onclick="switchAdminTab('dashboard')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
-              <span>Dashboard</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-organizations" onclick="switchAdminTab('organizations')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-              <span>Organizations</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-users" onclick="switchAdminTab('users')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>Users Directory</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-subscriptions" onclick="switchAdminTab('subscriptions')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
-              <span>Subscriptions</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-billing" onclick="switchAdminTab('billing')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span>Billing / Payment Due</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-cin7" onclick="switchAdminTab('cin7')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
-              <span>CIN7 Connections</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-sheets" onclick="switchAdminTab('sheets')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-              <span>Google Sheets</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-sync" onclick="switchAdminTab('sync')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-              <span>Sync Monitoring</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-usage" onclick="switchAdminTab('usage')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
-              <span>Platform Usage</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-audit" onclick="switchAdminTab('audit')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-              <span>Audit Logs</span>
-            </button>
-            <button class="admin-nav-item" id="admin-tab-btn-health" onclick="switchAdminTab('health')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-              <span>System Health</span>
-            </button>
+            <!-- Group 1: Core & Tenancy -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">CORE &amp; TENANCY</span>
+              <button class="admin-nav-item active" id="admin-tab-btn-dashboard" onclick="switchAdminTab('dashboard')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                <span>Dashboard</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-organizations" onclick="switchAdminTab('organizations')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                <span>Organizations</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-users" onclick="switchAdminTab('users')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Users Directory</span>
+              </button>
+            </div>
+
+            <!-- Group 2: Billing & Commerce -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">BILLING &amp; COMMERCE</span>
+              <button class="admin-nav-item" id="admin-tab-btn-subscriptions" onclick="switchAdminTab('subscriptions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+                <span>Subscriptions</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-billing" onclick="switchAdminTab('billing')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Billing / Invoices</span>
+              </button>
+            </div>
+
+            <!-- Group 3: Integrations & Pipelines -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">INTEGRATIONS</span>
+              <button class="admin-nav-item" id="admin-tab-btn-cin7" onclick="switchAdminTab('cin7')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                <span>CIN7 Core ERP</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-sheets" onclick="switchAdminTab('sheets')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                <span>Google Sheets</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-sync" onclick="switchAdminTab('sync')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                <span>Sync Monitoring</span>
+              </button>
+            </div>
+
+            <!-- Group 4: Governance & Platform -->
+            <div class="admin-nav-group">
+              <span class="admin-nav-group-title">PLATFORM &amp; AUDIT</span>
+              <button class="admin-nav-item" id="admin-tab-btn-usage" onclick="switchAdminTab('usage')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+                <span>Platform Usage</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-audit" onclick="switchAdminTab('audit')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span>Audit Logs</span>
+              </button>
+              <button class="admin-nav-item" id="admin-tab-btn-health" onclick="switchAdminTab('health')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <span>System Health</span>
+              </button>
+            </div>
           </aside>
 
           <!-- Right Content Pane -->
@@ -1889,72 +1936,186 @@
             <!-- 1. ADMIN DASHBOARD SUBVIEW -->
             <div id="admin-view-dashboard" class="admin-subview">
               
-              <!-- Attention Banners -->
+              <!-- Attention / Status Alerts -->
               <div id="admin-dashboard-alerts" style="margin-bottom: 1.25rem;">
                 <!-- Injected dynamically via app.js if any attention items exist -->
               </div>
 
-              <!-- Top KPI Cards Grid -->
+              <!-- Top 6 KPI Cards Grid -->
               <div class="admin-kpi-grid">
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">TOTAL ORGANIZATIONS</div>
+                <div class="admin-kpi-card card-accent-blue" onclick="switchAdminTab('organizations')" title="View Organizations" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">TOTAL ORGANIZATIONS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(0, 70, 130, 0.1); color: var(--vnc-main);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val" id="admin-kpi-total-orgs">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-orgs-breakdown">0 Active · 0 Trial</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">TOTAL USERS</div>
+
+                <div class="admin-kpi-card card-accent-purple" onclick="switchAdminTab('users')" title="View Users Directory" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">TOTAL USERS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(122, 78, 171, 0.12); color: var(--vnc-purple);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val" id="admin-kpi-total-users">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-users-breakdown">Active platform seats</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">ACTIVE SUBSCRIPTIONS</div>
+
+                <div class="admin-kpi-card card-accent-green" onclick="switchAdminTab('subscriptions')" title="View Subscriptions" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">ACTIVE SUBSCRIPTIONS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #059669;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val text-success" id="admin-kpi-active-subs">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-subs-status">0 Past Due · 0 Expired</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">SYNCS THIS MONTH</div>
+
+                <div class="admin-kpi-card card-accent-cyan" onclick="switchAdminTab('sync')" title="View Sync Runs" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">SYNCS THIS MONTH</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(47, 143, 237, 0.12); color: var(--vnc-blue);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val" id="admin-kpi-monthly-syncs">0</div>
                   <div class="admin-kpi-sub text-success" id="admin-kpi-sync-rate">100% Success Rate</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">CIN7 CONNECTIONS</div>
+
+                <div class="admin-kpi-card card-accent-indigo" onclick="switchAdminTab('cin7')" title="View Cin7 Connections" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">CIN7 CONNECTIONS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(49, 47, 119, 0.12); color: var(--vnc-dark);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val text-primary" id="admin-kpi-cin7-conns">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-cin7-errors">0 Errors</div>
                 </div>
-                <div class="admin-kpi-card">
-                  <div class="admin-kpi-title">GOOGLE SHEETS</div>
+
+                <div class="admin-kpi-card card-accent-emerald" onclick="switchAdminTab('sheets')" title="View Google Sheets" style="cursor: pointer;">
+                  <div class="admin-kpi-header">
+                    <span class="admin-kpi-title">GOOGLE SHEETS</span>
+                    <div class="admin-kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #059669;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                    </div>
+                  </div>
                   <div class="admin-kpi-val text-success" id="admin-kpi-sheets-conns">0</div>
                   <div class="admin-kpi-sub" id="admin-kpi-sheets-errors">0 Errors</div>
                 </div>
               </div>
 
-              <!-- Recent Platform Syncs Card -->
-              <div class="settings-card" style="margin-top: 1.5rem;">
-                <div class="settings-card-header">
-                  <h3 style="font-size: 0.9375rem; font-weight: 700;">Recent Platform Sync Activity</h3>
-                  <button class="btn btn-outline btn-xs" onclick="switchAdminTab('sync')">View All Runs →</button>
-                </div>
-                <div class="settings-card-body" style="padding: 0;">
-                  <div style="overflow-x: auto;">
-                    <table class="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Organization</th>
-                          <th>Run ID</th>
-                          <th>Type</th>
-                          <th>Records</th>
-                          <th>Duration</th>
-                          <th>Status</th>
-                          <th>Completed</th>
-                          <th>Sheet</th>
-                        </tr>
-                      </thead>
-                      <tbody id="admin-dashboard-recent-syncs">
-                        <tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">Loading sync activity...</td></tr>
-                      </tbody>
-                    </table>
+              <!-- Executive Dashboard Split Grid -->
+              <div class="admin-dashboard-split-grid">
+                
+                <!-- Main Column: Recent Syncs Table -->
+                <div class="settings-card admin-dashboard-sync-card">
+                  <div class="settings-card-header">
+                    <div class="settings-card-title-group">
+                      <h3 style="font-size: 0.9375rem; font-weight: 700;">Recent Platform Sync Activity</h3>
+                      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Live sync pipeline throughput and automated executions</p>
+                    </div>
+                    <button class="btn btn-outline btn-xs" onclick="switchAdminTab('sync')">View All Runs →</button>
+                  </div>
+                  <div class="settings-card-body" style="padding: 0;">
+                    <div style="overflow-x: auto;">
+                      <table class="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Organization</th>
+                            <th>Contact / Lead</th>
+                            <th>Run ID</th>
+                            <th>Type</th>
+                            <th>Records</th>
+                            <th>Duration</th>
+                            <th>Status</th>
+                            <th>Completed</th>
+                            <th>Sheet</th>
+                          </tr>
+                        </thead>
+                        <tbody id="admin-dashboard-recent-syncs">
+                          <tr><td colspan="9" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">Loading sync activity...</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
+
+                <!-- Side Column: Platform Status & Quick Shortcuts -->
+                <div class="admin-dashboard-side-col">
+                  <!-- Quick Admin Shortcuts -->
+                  <div class="settings-card">
+                    <div class="settings-card-header">
+                      <h3 style="font-size: 0.875rem; font-weight: 700;">Admin Shortcuts</h3>
+                    </div>
+                    <div class="settings-card-body" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 0.875rem 1rem;">
+                      <button class="admin-shortcut-btn" onclick="openAdminAddOrgModal()">
+                        <span class="admin-shortcut-icon" style="background: rgba(0, 70, 130, 0.1); color: var(--vnc-main);">➕</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">Provision Organization</span>
+                          <span class="admin-shortcut-sub">Set up tenant & credentials</span>
+                        </div>
+                      </button>
+                      <button class="admin-shortcut-btn" onclick="switchAdminTab('users')">
+                        <span class="admin-shortcut-icon" style="background: rgba(122, 78, 171, 0.1); color: var(--vnc-purple);">👥</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">User Directory &amp; Roles</span>
+                          <span class="admin-shortcut-sub">Manage cross-org logins</span>
+                        </div>
+                      </button>
+                      <button class="admin-shortcut-btn" onclick="switchAdminTab('audit')">
+                        <span class="admin-shortcut-icon" style="background: rgba(241, 144, 49, 0.1); color: var(--vnc-yellow);">🛡️</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">Security &amp; Audit Trail</span>
+                          <span class="admin-shortcut-sub">Inspect login &amp; admin events</span>
+                        </div>
+                      </button>
+                      <button class="admin-shortcut-btn" onclick="switchAdminTab('health')">
+                        <span class="admin-shortcut-icon" style="background: rgba(16, 185, 129, 0.1); color: #059669;">⚡</span>
+                        <div class="admin-shortcut-info">
+                          <span class="admin-shortcut-title">System Diagnostics</span>
+                          <span class="admin-shortcut-sub">Verify database &amp; API health</span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Integration Quick Health -->
+                  <div class="settings-card" style="margin-top: 1rem;">
+                    <div class="settings-card-header">
+                      <h3 style="font-size: 0.875rem; font-weight: 700;">Integration Health</h3>
+                    </div>
+                    <div class="settings-card-body" style="padding: 0.75rem 1rem;">
+                      <div class="admin-health-row">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                          <span class="admin-health-dot status-ok"></span>
+                          <span style="font-size: 0.8125rem; font-weight: 600;">Cin7 Core ERP API</span>
+                        </div>
+                        <span class="badge badge-success" style="font-size: 0.65rem;">Operational</span>
+                      </div>
+                      <div class="admin-health-row">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                          <span class="admin-health-dot status-ok"></span>
+                          <span style="font-size: 0.8125rem; font-weight: 600;">Google Drive &amp; Sheets</span>
+                        </div>
+                        <span class="badge badge-success" style="font-size: 0.65rem;">Operational</span>
+                      </div>
+                      <div class="admin-health-row">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                          <span class="admin-health-dot status-ok"></span>
+                          <span style="font-size: 0.8125rem; font-weight: 600;">Supabase Postgres DB</span>
+                        </div>
+                        <span class="badge badge-success" style="font-size: 0.65rem;">Healthy</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
             </div>
@@ -1996,9 +2157,10 @@
                       <thead>
                         <tr>
                           <th>Company</th>
+                          <th>Primary Lead / Contact</th>
                           <th>Status</th>
                           <th>Plan</th>
-                          <th>Users</th>
+                          <th>Team Members</th>
                           <th>CIN7</th>
                           <th>Google Sheets</th>
                           <th>Last Sync</th>
@@ -2006,7 +2168,7 @@
                         </tr>
                       </thead>
                       <tbody id="admin-orgs-table-body">
-                        <tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading organizations...</td></tr>
+                        <tr><td colspan="9" style="text-align: center; padding: 2rem;">Loading organizations...</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2110,6 +2272,7 @@
                       <thead>
                         <tr>
                           <th>Organization</th>
+                          <th>Primary Contact</th>
                           <th>Plan</th>
                           <th>Price / Cycle</th>
                           <th>Status</th>
@@ -2119,7 +2282,7 @@
                         </tr>
                       </thead>
                       <tbody id="admin-subs-table-body">
-                        <tr><td colspan="7" style="text-align: center; padding: 2rem;">Loading subscriptions...</td></tr>
+                        <tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading subscriptions...</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2300,6 +2463,7 @@
                       <thead>
                         <tr>
                           <th>Organization</th>
+                          <th>Contact User</th>
                           <th>Sync Type</th>
                           <th>Records</th>
                           <th>Duration</th>
@@ -2311,7 +2475,7 @@
                         </tr>
                       </thead>
                       <tbody id="admin-sync-table-body">
-                        <tr><td colspan="9" style="text-align: center; padding: 2rem;">Loading sync runs...</td></tr>
+                        <tr><td colspan="10" style="text-align: center; padding: 2rem;">Loading sync runs...</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2401,7 +2565,7 @@
                       <thead>
                         <tr>
                           <th>Timestamp</th>
-                          <th>Admin User</th>
+                          <th>Operator / User</th>
                           <th>Target Org</th>
                           <th>Action</th>
                           <th>Target Type</th>
@@ -3309,27 +3473,42 @@
       </div>
     </div>
 
-    <!-- ── 5. WORKBOOK VIEWER MODAL / VIEW ────────────────────────────── -->
+    <!-- ── 5. KPI DASHBOARD PREVIEW MODAL ──────────────────────────── -->
     <div id="workbook-viewer-modal" class="modal-overlay hidden">
-      <div class="modal-dialog modal-dialog-xl">
+      <div class="modal-dialog modal-dialog-xl" style="max-width: 70rem; max-height: 90vh; display: flex; flex-direction: column;">
         <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
-          <div>
-            <h3 style="font-size: 1.25rem; font-weight: 700;">KPI Dashboard</h3>
-            <p style="font-size: 0.8125rem; color: var(--muted-foreground);">Live data from your synced Controller Reporting Master Template</p>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div style="width: 2.5rem; height: 2.5rem; border-radius: 10px; background: rgba(0, 70, 130, 0.1); color: var(--vnc-blue); display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">
+              📊
+            </div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <h3 style="font-size: 1.15rem; font-weight: 800; color: var(--foreground); margin: 0;">KPI Dashboard Preview</h3>
+                <span class="badge badge-success" style="font-size: 0.6875rem;">Live Calculations</span>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground); margin: 0.15rem 0 0 0;" id="kpi-preview-subtitle">
+                Executive financial model indicators, gross margins, inventory health &amp; procurement commitments
+              </p>
+            </div>
           </div>
-          <button class="btn btn-ghost" onclick="closeWorkbookViewer()">✕</button>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <button class="btn btn-primary btn-sm" style="background: #0f9d58; border-color: #0f9d58; color: white; display: inline-flex; align-items: center; gap: 0.35rem;" onclick="openInGoogleSheets()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>
+              <span>Open in Google Sheets ↗</span>
+            </button>
+            <button class="btn btn-ghost" onclick="closeWorkbookViewer()" style="font-size: 1.1rem; width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;">✕</button>
+          </div>
         </div>
 
-        <div id="viewer-tabs-bar">
-          <!-- Sheet tab buttons injected dynamically -->
+        <div style="flex: 1; overflow-y: auto; padding: 1.25rem 0;" id="viewer-table-container">
+          <p style="font-size: 0.875rem; color: var(--muted-foreground); text-align: center; padding: 2rem 0;">Loading KPI Dashboard...</p>
         </div>
 
-        <div style="flex: 1; overflow: auto; padding: 1rem 0;" id="viewer-table-container">
-          <p style="font-size: 0.875rem; color: var(--muted-foreground); text-align: center; padding: 2rem 0;">Loading workbook preview...</p>
-        </div>
-
-        <div style="display: flex; justify-content: flex-end; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border);">
-          <button class="btn btn-outline" onclick="closeWorkbookViewer()">Close</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border);">
+          <span style="font-size: 0.75rem; color: var(--muted-foreground);" id="kpi-preview-footer-note">
+            ✓ Exclusively displaying the KPI Dashboard model from verified Cin7 extractions.
+          </span>
+          <button class="btn btn-outline btn-sm" onclick="closeWorkbookViewer()">Close Preview</button>
         </div>
       </div>
     </div>
@@ -3569,6 +3748,49 @@
     </div>
   </div>
 
-  <script src="app.js?v=4.1"></script>
+  <!-- ── ORG USER SELECT MODAL (shown when admin clicks an org) ────────────── -->
+  <div id="modal-org-user-select" class="hidden" style="
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+  " onclick="if(event.target===this) closeOrgUserSelectModal()">
+    <div style="
+      background: #ffffff; border-radius: 16px; max-width: 560px; width: 100%;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3); overflow: hidden;
+      animation: modalSlideIn 0.2s ease;
+    ">
+      <!-- Modal Header -->
+      <div style="background: linear-gradient(135deg, #1a1040 0%, #312f77 70%, #5b3fa0 100%); padding: 1.5rem 1.75rem; position: relative;">
+        <div style="display: flex; align-items: center; gap: 0.875rem;">
+          <div style="width: 2.75rem; height: 2.75rem; border-radius: 10px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">🏢</div>
+          <div>
+            <p style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.6); margin-bottom: 0.2rem;">Admin View As</p>
+            <h3 id="org-user-modal-org-name" style="font-size: 1.125rem; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">Select a User</h3>
+          </div>
+        </div>
+        <button onclick="closeOrgUserSelectModal()" style="position: absolute; top: 1rem; right: 1rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #ffffff; width: 2rem; height: 2rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">✕</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div style="padding: 1.5rem 1.75rem;">
+        <p style="font-size: 0.8125rem; color: #607289; margin-bottom: 1.25rem;">Choose which user's dashboard to view. You'll see exactly what they see.</p>
+        <div id="org-user-modal-list" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 340px; overflow-y: auto; padding-right: 0.25rem;">
+          <!-- User cards injected here by JS -->
+          <div style="text-align: center; padding: 2rem; color: #607289;">
+            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+            Loading users...
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div style="padding: 1rem 1.75rem; border-top: 1px solid #dbe5f1; display: flex; justify-content: flex-end;">
+        <button onclick="closeOrgUserSelectModal()" style="background: #f4f7fb; border: 1px solid #dbe5f1; color: #607289; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=4.6"></script>
+
 </body>
 </html>
