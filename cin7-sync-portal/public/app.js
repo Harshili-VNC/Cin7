@@ -1310,9 +1310,11 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
   state.lastSyncError = null;
 
   const modal = document.getElementById('sync-modal');
+  const progressChrome = document.getElementById('sync-modal-progress-chrome');
   const progressView = document.getElementById('sync-modal-progress-view');
   const completeView = document.getElementById('sync-modal-complete-view');
   const title = document.getElementById('sync-modal-title');
+  const subtitle = document.getElementById('sync-modal-subtitle');
   const fill = document.getElementById('sync-progress-fill');
   const statusMsg = document.getElementById('sync-modal-live-status');
   const salesDetail = document.getElementById('sync-stage-sales-detail') || document.getElementById('sync-stage-3-detail');
@@ -1326,9 +1328,14 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
   }
 
   if (title) title.innerText = `Syncing ${effectiveLabel.toLowerCase()}`;
+  if (subtitle) subtitle.innerText = "Keep this window open — we're updating your financial model.";
+  if (progressChrome) progressChrome.classList.remove('hidden');
   if (progressView) progressView.classList.remove('hidden');
   if (completeView) completeView.classList.add('hidden');
   if (modal) modal.classList.remove('hidden');
+
+  const nameInput = document.getElementById('sync-name-input');
+  if (nameInput && !nameInput.value.trim()) nameInput.value = buildDefaultSyncName();
 
   if (activeSyncPollTimer) clearInterval(activeSyncPollTimer);
 
@@ -1341,13 +1348,35 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
       if (!pData.success || !pData.progress) return;
       const p = pData.progress;
 
+      const stageDescriptions = {
+        CONNECTING: 'Connecting & Authenticating with Cin7 API...',
+        FETCHING: 'Fetching & Enriching Sales Orders from Cin7...',
+        FETCHING_SALES: 'Fetching & Enriching Sales Orders from Cin7...',
+        ENRICHING: 'Fetching & Enriching Sales Orders from Cin7...',
+        FETCHING_INVENTORY: 'Fetching Inventory & Stock Availability from Cin7...',
+        INVENTORY: 'Fetching Inventory & Stock Availability from Cin7...',
+        FETCHING_PURCHASES: 'Fetching Purchase Orders & Procurement from Cin7...',
+        PURCHASE_ORDERS: 'Fetching Purchase Orders & Procurement from Cin7...',
+        PURCHASES: 'Fetching Purchase Orders & Procurement from Cin7...',
+        VALIDATING: 'Validating schemas & upserting state...',
+        POPULATING: 'Populating Master Model sheets...',
+        CALCULATING: 'Calculating formulas & summaries...',
+        VERIFYING: 'Verifying dataset integrity...',
+        FINALIZING: 'Finalizing synchronization...',
+        COMPLETED: 'Sync complete! All reports verified.'
+      };
+
+      const activeMessage = (p.message && p.message.trim().toLowerCase() !== 'ready')
+        ? p.message
+        : (stageDescriptions[p.stage] || 'Processing Cin7 sync...');
+
       if (fill && p.percent != null) {
         fill.style.width = `${Math.min(100, Math.max(10, p.percent))}%`;
       }
-      if (statusMsg && p.message) {
-        statusMsg.innerText = p.message;
+      if (statusMsg) {
+        statusMsg.innerText = activeMessage;
       }
-      renderSyncStatusBar('SYNCING', { message: p.message || 'Processing Cin7 records...' });
+      renderSyncStatusBar('SYNCING', { message: activeMessage });
 
       switch (p.stage) {
         case 'CONNECTING':
@@ -1358,8 +1387,7 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
         case 'ENRICHING':
           setSyncModalStage(2);
           if (salesDetail && p.total > 0) {
-            const cachedTxt = p.cachedCount ? ` · ${p.cachedCount.toLocaleString()} cached` : '';
-            salesDetail.innerText = `(${p.current.toLocaleString()}/${p.total.toLocaleString()}${cachedTxt})`;
+            salesDetail.innerText = `(${p.current.toLocaleString()}/${p.total.toLocaleString()})`;
           }
           break;
         case 'FETCHING_INVENTORY':
@@ -1446,7 +1474,31 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
   }, 400);
 }
 
-async function triggerSyncFlow(forceFull = false) {
+function buildDefaultSyncName() {
+  const now = new Date();
+  const formatted = now.toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+  });
+  return `Sync - ${formatted}`;
+}
+
+let syncNameSaveTimer = null;
+function handleSyncNameEdit() {
+  const input = document.getElementById('sync-name-input');
+  const reportLabel = (input?.value || '').trim();
+  if (!currentActiveRunId) return;
+  clearTimeout(syncNameSaveTimer);
+  syncNameSaveTimer = setTimeout(() => {
+    fetch(`/api/sync/${currentActiveRunId}/label`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reportLabel })
+    }).catch(() => {});
+  }, 500);
+}
+
+async function triggerSyncFlow(forceFull = false, reportLabel = '') {
+  reportLabel = reportLabel || document.getElementById('sync-name-input')?.value?.trim() || buildDefaultSyncName();
   const select = document.getElementById('sync-timeline-select');
 
   // Check if first sync (no previous sync recorded)
@@ -1493,7 +1545,8 @@ async function triggerSyncFlow(forceFull = false) {
         forceFull: Boolean(forceFull) || isFirstSync || effectiveDateRange === 'custom',
         dateRange: effectiveDateRange,
         startDate: effectiveDateRange === 'custom' ? customStart : null,
-        endDate: effectiveDateRange === 'custom' ? customEnd : null
+        endDate: effectiveDateRange === 'custom' ? customEnd : null,
+        reportLabel: reportLabel || ''
       })
     });
     const result = await res.json();
@@ -2332,6 +2385,7 @@ async function loadTeamMembers() {
 }
 
 function switchSettingsTab(tabName) {
+  if (tabName === 'organization') tabName = 'profile';
   settingsState.activeTab = tabName;
 
   // Update Left Sidebar Nav Buttons
@@ -2366,12 +2420,17 @@ function switchSettingsTab(tabName) {
 
 // ── SAVE HANDLERS ───────────────────────────────────────────────────────────
 
-async function saveOrganizationSettings() {
+async function saveProfileAndOrgSettings() {
+  const fullName = document.getElementById('profile-fullname')?.value.trim();
   const companyName = document.getElementById('settings-company-name')?.value.trim();
   const timezone = document.getElementById('settings-timezone')?.value || 'Asia/Kolkata';
 
+  if (!fullName) {
+    showToast('Full name cannot be empty', 'error');
+    return;
+  }
   if (!companyName) {
-    showToast('Organization name cannot be empty', 'error');
+    showToast('Company name cannot be empty', 'error');
     return;
   }
 
@@ -2383,15 +2442,30 @@ async function saveOrganizationSettings() {
     });
     const data = await res.json();
     if (data.success) {
-      showToast('Organization settings updated', 'success');
-      if (state.client) state.client.companyName = companyName;
+      if (state.user) {
+        state.user.fullName = fullName;
+        state.user.full_name = fullName;
+      }
+      if (state.client) {
+        state.client.companyName = companyName;
+      }
       updateUIHeader();
+      hideSaveBar();
+      showToast('Profile and organization settings updated successfully', 'success');
     } else {
-      showToast(data.message || 'Failed to update organization', 'error');
+      showToast(data.message || 'Failed to update organization settings', 'error');
     }
   } catch (err) {
-    showToast('Failed to update organization: ' + err.message, 'error');
+    showToast('Failed to update settings: ' + err.message, 'error');
   }
+}
+
+async function saveOrganizationSettings() {
+  return saveProfileAndOrgSettings();
+}
+
+async function saveProfileSettings() {
+  return saveProfileAndOrgSettings();
 }
 
 async function saveGoogleSheetsSettings() {
@@ -2459,24 +2533,10 @@ async function saveNotificationSettings() {
   }
 }
 
-async function saveProfileSettings() {
-  const fullName = document.getElementById('profile-fullname')?.value.trim();
-  if (!fullName) {
-    showToast('Full name cannot be empty', 'error');
-    return;
-  }
-  if (state.user) {
-    state.user.fullName = fullName;
-    state.user.full_name = fullName;
-    updateUIHeader();
-  }
-  showToast('Profile information updated', 'success');
-}
-
 async function saveAllSettingsChanges() {
   try {
     await Promise.all([
-      saveOrganizationSettings(),
+      saveProfileAndOrgSettings(),
       saveGoogleSheetsSettings(),
       saveSyncSettings(),
       saveNotificationSettings()
@@ -2969,10 +3029,10 @@ async function loadCurrentTableData() {
       paginationInfo.innerText = `Showing ${start} to ${end} of ${(data.totalRecords || 0).toLocaleString()} records`;
     }
 
-    const prevBtn = document.getElementById('btn-prev-current-page');
-    const nextBtn = document.getElementById('btn-next-current-page');
-    if (prevBtn) prevBtn.disabled = page <= 1;
-    if (nextBtn) nextBtn.disabled = page >= (data.totalPages || 1);
+    const pageSizeSelect = document.getElementById('current-page-size');
+    if (pageSizeSelect && pageSizeSelect.value !== String(pageSize)) pageSizeSelect.value = String(pageSize);
+
+    renderPaginationNumbers('current-pagination-numbers', page, data.totalPages || 1, 'goToCurrentPage');
   } catch (err) {
     console.error('Error loading current table:', err);
     if (tableBody) {
@@ -3000,18 +3060,48 @@ function handleCurrentTableSearch() {
   }, 250);
 }
 
-function prevCurrentPage() {
-  if (state.currentReportPage > 1) {
-    state.currentReportPage--;
-    loadCurrentTableData();
-  }
+function goToCurrentPage(page) {
+  const totalPages = state.currentReportTotalPages || 1;
+  const target = Math.min(Math.max(1, page), totalPages);
+  if (target === state.currentReportPage) return;
+  state.currentReportPage = target;
+  loadCurrentTableData();
 }
 
-function nextCurrentPage() {
-  if (state.currentReportPage < state.currentReportTotalPages) {
-    state.currentReportPage++;
-    loadCurrentTableData();
+function changeCurrentPageSize(value) {
+  state.currentReportPageSize = parseInt(value, 10) || 15;
+  state.currentReportPage = 1;
+  loadCurrentTableData();
+}
+
+// Builds a "< Previous 1 2 ... 8 Next >" pager. `page`/`totalPages` are 1-based,
+// `onClickFn` is the name of a global function invoked with the target page number.
+function renderPaginationNumbers(containerId, page, totalPages, onClickFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (totalPages <= 1) {
+    el.innerHTML = '';
+    return;
   }
+
+  const pages = new Set([1, totalPages, page, page - 1, page + 1]);
+  const sorted = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+
+  let html = `<button class="page-nav" ${page <= 1 ? 'disabled' : ''} onclick="${onClickFn}(${page - 1})">&lsaquo; Previous</button>`;
+
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) {
+      html += `<span class="page-ellipsis">&hellip;</span>`;
+    }
+    html += `<button class="page-num${p === page ? ' active' : ''}" onclick="${onClickFn}(${p})">${p}</button>`;
+    prev = p;
+  }
+
+  html += `<button class="page-nav" ${page >= totalPages ? 'disabled' : ''} onclick="${onClickFn}(${page + 1})">Next &rsaquo;</button>`;
+
+  el.innerHTML = html;
 }
 
 function viewCurrentReportType(type) {
@@ -3020,20 +3110,37 @@ function viewCurrentReportType(type) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-async function exportCurrentReport(reportType) {
+async function exportCurrentReport(reportType, format = 'csv') {
   try {
     const res = await fetch('/api/reports/current');
     const data = await res.json();
     const snap = data.reports?.[reportType];
     if (snap && snap.latestSnapshotId) {
-      window.location.href = `/api/reports/snapshots/${snap.latestSnapshotId}/export`;
-      showToast(`Exporting current ${reportType} report...`, 'success');
+      const path = format === 'excel' ? 'export-excel' : 'export';
+      window.location.href = `/api/reports/snapshots/${snap.latestSnapshotId}/${path}`;
+      showToast(`Exporting current ${reportType} report as ${format === 'excel' ? 'Excel' : 'CSV'}...`, 'success');
     } else {
       showToast('No current report snapshot found to export.', 'error');
     }
   } catch (e) {
     showToast('Failed to export report: ' + e.message, 'error');
   }
+}
+
+function toggleExportMenu(event) {
+  event.stopPropagation();
+  const menu = document.getElementById('current-export-menu');
+  if (!menu) return;
+  const isOpen = menu.style.display === 'block';
+  menu.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    document.addEventListener('click', closeExportMenuOnce, { once: true });
+  }
+}
+
+function closeExportMenuOnce() {
+  const menu = document.getElementById('current-export-menu');
+  if (menu) menu.style.display = 'none';
 }
 
 async function loadPreviousReports() {
@@ -3737,39 +3844,69 @@ async function loadBillingData() {
     const ovSyncs = document.getElementById('overview-billing-syncs');
     if (ovSyncs) ovSyncs.innerText = `${syncsCurrent} / ${limits.max_syncs_per_month || '500'}`;
 
-    // 3. Update Progress Bars & Metrics in Dedicated Tab
+    // 3. Update Progress Bars & Metrics in Dedicated Tab (100% Dynamic from DB)
+    const maxUsers = limits.max_users || 10;
     const seatsFraction = document.getElementById('billing-seats-fraction');
-    if (seatsFraction) seatsFraction.innerText = `${usersCurrent} / ${limits.max_users || '∞'}`;
+    if (seatsFraction) seatsFraction.innerText = `${usersCurrent} / ${maxUsers}`;
 
     const seatsBar = document.getElementById('billing-seats-bar');
-    if (seatsBar && limits.max_users) {
-      const pct = Math.min(100, Math.round((usersCurrent / limits.max_users) * 100));
+    if (seatsBar) {
+      const pct = Math.min(100, Math.round((usersCurrent / maxUsers) * 100));
       seatsBar.style.width = `${pct}%`;
     }
 
     const seatsNote = document.getElementById('billing-seats-note');
-    if (seatsNote && limits.max_users) {
-      const remaining = Math.max(0, limits.max_users - usersCurrent);
+    if (seatsNote) {
+      const remaining = Math.max(0, maxUsers - usersCurrent);
       seatsNote.innerText = `${remaining} seat${remaining === 1 ? '' : 's'} available`;
     }
 
+    const maxSyncs = limits.max_syncs_per_month || 500;
     const syncsFraction = document.getElementById('billing-syncs-fraction');
-    if (syncsFraction) syncsFraction.innerText = `${syncsCurrent} / ${limits.max_syncs_per_month || '∞'}`;
+    if (syncsFraction) syncsFraction.innerText = `${syncsCurrent} / ${maxSyncs}`;
 
     const syncsBar = document.getElementById('billing-syncs-bar');
-    if (syncsBar && limits.max_syncs_per_month) {
-      const pct = Math.min(100, Math.round((syncsCurrent / limits.max_syncs_per_month) * 100));
+    if (syncsBar) {
+      const pct = Math.min(100, Math.round((syncsCurrent / maxSyncs) * 100));
       syncsBar.style.width = `${pct}%`;
     }
 
     const syncsNote = document.getElementById('billing-syncs-note');
-    if (syncsNote && limits.max_syncs_per_month) {
-      const remaining = Math.max(0, limits.max_syncs_per_month - syncsCurrent);
+    if (syncsNote) {
+      const remaining = Math.max(0, maxSyncs - syncsCurrent);
       syncsNote.innerText = `${remaining} sync${remaining === 1 ? '' : 's'} remaining this month`;
     }
 
-    const retVal = document.getElementById('billing-retention-val');
-    if (retVal) retVal.innerText = `${limits.report_history_days || 30} Days`;
+    // Dynamic Connections Status
+    const cin7Active = Boolean(usage.connections?.cin7 || (state.cin7 && state.cin7.connected));
+    const sheetsActive = Boolean(usage.connections?.sheets || settingsState.activeGoogleSheetUrl);
+    const cin7Count = cin7Active ? 1 : 0;
+    const sheetsCount = sheetsActive ? 1 : 0;
+    const maxConn = usage.connections?.max || ((limits.max_cin7_connections || 1) + (limits.max_google_sheets || 1));
+
+    const connVal = document.getElementById('billing-connections-val');
+    if (connVal) {
+      connVal.innerText = `${cin7Count} CIN7 / ${sheetsCount} Sheets`;
+    }
+
+    const connStatus = document.getElementById('billing-connections-status');
+    if (connStatus) {
+      if (cin7Active && sheetsActive) {
+        connStatus.innerText = '✓ Both Connected';
+        connStatus.style.color = '#10b981';
+      } else if (cin7Active || sheetsActive) {
+        connStatus.innerText = '⚠️ 1 of 2 Connected';
+        connStatus.style.color = '#f59e0b';
+      } else {
+        connStatus.innerText = '✕ Disconnected';
+        connStatus.style.color = '#ef4444';
+      }
+    }
+
+    const connNote = document.getElementById('billing-connections-note');
+    if (connNote) {
+      connNote.innerText = `Max ${maxConn} connection${maxConn === 1 ? '' : 's'} on ${plan.name || 'Pro'}`;
+    }
 
     // 4. Update Features Grid
     const featuresGrid = document.getElementById('billing-features-grid');

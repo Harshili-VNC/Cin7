@@ -81,8 +81,8 @@ async function runTests() {
     let existingClient = await db.getOne('SELECT * FROM clients WHERE id = ?', ['client-vnc-master']);
     if (!existingClient) {
       await db.query(
-        'INSERT INTO clients (id, name, domain, created_at) VALUES (?, ?, ?, ?)',
-        ['client-vnc-master', 'VNC Master Organization', 'vnc.global', new Date().toISOString()]
+        'INSERT INTO clients (id, company_name, created_at) VALUES (?, ?, ?)',
+        ['client-vnc-master', 'VNC Master Organization', new Date().toISOString()]
       );
     }
     let masterSub = await subscriptionService.getOrganizationSubscription('client-vnc-master');

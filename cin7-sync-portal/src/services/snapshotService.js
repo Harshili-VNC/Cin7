@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const ExcelJS = require('exceljs');
 const db = require('../db');
 const clientStorageService = require('./clientStorageService');
 
@@ -265,7 +266,7 @@ class SnapshotService {
    * Saves both the current state AND an immutable historical snapshot.
    * Only called on successful data retrieval and validation.
    */
-  async saveCurrentAndSnapshot({ clientId, reportType, periodLabel, dataset, syncRunId }) {
+  async saveCurrentAndSnapshot({ clientId, reportType, periodLabel, dataset, syncRunId, reportLabel }) {
     const safeClientId = this.getSafeClientId(clientId);
     const config = this.getReportConfig(reportType);
     const reportKey = config.id;
@@ -280,11 +281,17 @@ class SnapshotService {
 
     const snapshotId = `snap-${reportKey}-${now.getTime()}-${uuidv4().substring(0, 6)}`;
 
+    // A user can name the sync run (e.g. "Q3 Board Review"); each report snapshot it
+    // produces is then labeled "<user label> — <report type>" so it stays identifiable
+    // in per-type lists. With no label, fall back to the plain report-type name.
+    const trimmedLabel = (reportLabel || '').trim();
+    const reportName = trimmedLabel ? `${trimmedLabel} — ${config.name}` : config.name;
+
     const snapshotPayload = {
       id: snapshotId,
       clientId: safeClientId,
       reportType: reportKey,
-      reportName: config.name,
+      reportName,
       periodLabel: periodLabel || 'Last 30 days',
       recordCount: rows.length,
       headers,
@@ -305,7 +312,7 @@ class SnapshotService {
         snapshotId,
         safeClientId,
         reportKey,
-        config.name,
+        reportName,
         periodLabel || 'Last 30 days',
         rows.length,
         syncRunId || null,
@@ -893,6 +900,41 @@ class SnapshotService {
     return {
       csvContent: lines.join('\r\n'),
       fileName: `${snapshot.reportType}_snapshot_${snapshotId}.csv`
+    };
+  }
+
+  async exportSnapshotExcel(clientId, snapshotId) {
+    const safeClientId = this.getSafeClientId(clientId);
+
+    const row = await db.getOne(`SELECT * FROM report_snapshots WHERE id = ? AND client_id = ?`, [snapshotId, safeClientId]);
+    if (!row) throw new Error('Snapshot not found.');
+
+    const snapshot = JSON.parse(row.data_json);
+    if (snapshot.clientId && snapshot.clientId !== safeClientId) {
+      throw new Error('Unauthorized export request.');
+    }
+
+    const headers = snapshot.headers || [];
+    const rows = snapshot.rows || [];
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet((snapshot.reportType || 'Report').slice(0, 31));
+
+    sheet.addRow(headers);
+    sheet.getRow(1).font = { bold: true };
+
+    for (const r of rows) {
+      // Rows may carry trailing internal-only fields beyond the documented header schema — never export those.
+      sheet.addRow(r.slice(0, headers.length).map(val => this.sanitizeCsvCell(val)));
+    }
+
+    sheet.columns.forEach(col => { col.width = 18; });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    return {
+      buffer,
+      fileName: `${snapshot.reportType}_snapshot_${snapshotId}.xlsx`
     };
   }
 }

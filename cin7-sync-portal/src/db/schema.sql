@@ -270,6 +270,31 @@ CREATE TABLE IF NOT EXISTS cin7_order_lines (
     PRIMARY KEY (client_id, cin7_sale_id, sku)
 );
 
+-- Sales V2 line-level detail (Cin7 Core "Sales by Product Details" parity, behind
+-- CIN7_SALES_V2=true). Additive-only: a new table, not a modification of
+-- cin7_order_lines, because V2 can produce multiple rows per (sale, sku) — one per
+-- invoice line plus separate negative credit-note rows — which cin7_order_lines'
+-- (client_id, cin7_sale_id, sku) primary key cannot represent.
+CREATE TABLE IF NOT EXISTS cin7_sale_lines_v2 (
+    client_id        VARCHAR(64)    NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    cin7_sale_id      VARCHAR(255)   NOT NULL,
+    line_key          VARCHAR(255)   NOT NULL, -- e.g. 'invoice|INV-123|0' or 'credit_note|CR-00001|0'
+    row_type          VARCHAR(20)    NOT NULL, -- 'invoice' | 'credit_note'
+    order_number      VARCHAR(255),
+    document_number   VARCHAR(255),
+    document_date     DATE,
+    sku               VARCHAR(255)   NOT NULL DEFAULT '',
+    product_name      VARCHAR(255),
+    quantity          DECIMAL(15,4)  DEFAULT 0,
+    sale_amount       DECIMAL(15,4)  DEFAULT 0,
+    tax_amount        DECIMAL(15,4)  DEFAULT 0,
+    cogs_amount       DECIMAL(15,4)  DEFAULT 0,
+    journal_amount    DECIMAL(15,4)  DEFAULT 0,
+    synced_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (client_id, cin7_sale_id, line_key)
+);
+CREATE INDEX IF NOT EXISTS idx_cin7_sale_lines_v2_client ON cin7_sale_lines_v2(client_id);
+
 -- Inventory: current availability snapshot (fully replaced on each sync)
 CREATE TABLE IF NOT EXISTS cin7_inventory (
     client_id     VARCHAR(64)    NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -352,12 +377,14 @@ DO $$ BEGIN
   ALTER TABLE cin7_order_cache       ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_sales_orders      ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_order_lines       ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_sale_lines_v2     ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_inventory         ENABLE ROW LEVEL SECURITY;
   ALTER TABLE cin7_purchase_orders   ENABLE ROW LEVEL SECURITY;
 
   ALTER TABLE cin7_order_cache       FORCE ROW LEVEL SECURITY;
   ALTER TABLE cin7_sales_orders      FORCE ROW LEVEL SECURITY;
   ALTER TABLE cin7_order_lines       FORCE ROW LEVEL SECURITY;
+  ALTER TABLE cin7_sale_lines_v2     FORCE ROW LEVEL SECURITY;
   ALTER TABLE cin7_inventory         FORCE ROW LEVEL SECURITY;
   ALTER TABLE cin7_purchase_orders   FORCE ROW LEVEL SECURITY;
 EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'RLS enable: %', SQLERRM; END $$;
@@ -421,6 +448,10 @@ EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_sales_orders RLS: %', SQLERRM; END
 DO $$ BEGIN DROP POLICY IF EXISTS cin7_order_lines_tenant ON cin7_order_lines;
   CREATE POLICY cin7_order_lines_tenant ON cin7_order_lines USING (client_id = current_setting('app.current_client_id', true));
 EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_order_lines RLS: %', SQLERRM; END $$;
+
+DO $$ BEGIN DROP POLICY IF EXISTS cin7_sale_lines_v2_tenant ON cin7_sale_lines_v2;
+  CREATE POLICY cin7_sale_lines_v2_tenant ON cin7_sale_lines_v2 USING (client_id = current_setting('app.current_client_id', true));
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'cin7_sale_lines_v2 RLS: %', SQLERRM; END $$;
 
 DO $$ BEGIN DROP POLICY IF EXISTS cin7_inventory_tenant ON cin7_inventory;
   CREATE POLICY cin7_inventory_tenant ON cin7_inventory USING (client_id = current_setting('app.current_client_id', true));

@@ -54,7 +54,8 @@ class LockService {
 
       // Check for stale lock
       if (now - existing.acquiredAt > this.STALE_LOCK_TIMEOUT_MS) {
-        console.warn(`[LOCK] Auto-releasing stale lock for client '${safeClientId}' (held by ${existing.runId} for >10m)`);
+        const heldForMin = Math.round((now - existing.acquiredAt) / 60000);
+        console.warn(`[LOCK] Auto-releasing stale lock for client '${safeClientId}' — held by run '${existing.runId}' for ${heldForMin}m with no progress heartbeat (timeout: ${this.STALE_LOCK_TIMEOUT_MS / 60000}m). New run: '${runId}'.`);
         this.releaseLock(safeClientId, existing.runId);
       } else if (existing.runId !== runId) {
         return {

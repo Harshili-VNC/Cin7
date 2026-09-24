@@ -168,6 +168,25 @@ router.get('/snapshots/:snapshotId/export', async (req, res) => {
 });
 
 /**
+ * GET /api/reports/snapshots/:snapshotId/export-excel
+ * Downloads the exact historical snapshot as an Excel (.xlsx) file
+ */
+router.get('/snapshots/:snapshotId/export-excel', async (req, res) => {
+  const clientId = req.tenantId;
+  const snapshotId = req.params.snapshotId;
+
+  try {
+    const { buffer, fileName } = await snapshotService.exportSnapshotExcel(clientId, snapshotId);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('Error exporting snapshot Excel:', err.message);
+    res.status(404).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/reports/reconcile
  * Compares two snapshots and returns reconciliation metrics & field deltas
  */
