@@ -1009,6 +1009,23 @@ function buildSaleV2Records(sale, detail, window = { start: null, end: null }) {
         journal: 0
       });
     }
+
+    const addCharges = Array.isArray(inv.AdditionalCharges) ? inv.AdditionalCharges : [];
+    for (const charge of addCharges) {
+      invoiceRecords.push({
+        rowType: 'invoice',
+        docNumber: inv.InvoiceNumber || '',
+        docDate: invDate,
+        sku: '',
+        productId: null,
+        name: charge.Description || 'Additional Charge',
+        qty: 1,
+        saleAmt: toNumber(charge.Total),
+        tax: toNumber(charge.Tax),
+        cogs: toNumber(charge.CostPrice || charge.CostAmount || charge.Cost || 0),
+        journal: 0
+      });
+    }
   }
 
   // Journals: allocate the sale's ManualJournals total across in-period invoice
@@ -1052,6 +1069,23 @@ function buildSaleV2Records(sale, detail, window = { start: null, end: null }) {
         saleAmt: -toNumber(line.Total),
         tax: -toNumber(line.Tax),
         cogs: -cogs,
+        journal: 0
+      });
+    }
+
+    const addCharges = Array.isArray(cn.AdditionalCharges) ? cn.AdditionalCharges : [];
+    for (const charge of addCharges) {
+      records.push({
+        rowType: 'credit_note',
+        docNumber: cn.CreditNoteNumber || '',
+        docDate: cnDate,
+        sku: '',
+        productId: null,
+        name: charge.Description || 'Additional Charge',
+        qty: -1,
+        saleAmt: -toNumber(charge.Total),
+        tax: -toNumber(charge.Tax),
+        cogs: -toNumber(charge.CostPrice || charge.CostAmount || charge.Cost || 0),
         journal: 0
       });
     }
