@@ -668,8 +668,8 @@ class GoogleSheetsAdapter extends DestinationAdapter {
           if (ch) {
             const chLit = escapeFormulaString(ch.channel);
             const skuLit = escapeFormulaString(p.sku);
-            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${rowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${skuLit}",'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
-            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${cogsRowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!G:G,"${skuLit}",'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
+            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${rowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!G:G,"${skuLit}",'Sales Transactions Raw Data'!R:R,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
+            batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${cogsRowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${skuLit}",'Sales Transactions Raw Data'!R:R,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
           } else {
             batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${rowNum}`, values: [[0]] });
             batchData.push({ range: `'${COGS_SHEET_NAME}'!${col}${cogsRowNum}`, values: [[0]] });
@@ -707,7 +707,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         if (ch) {
           const chLit = escapeFormulaString(ch.channel);
           batchData.push({ range: `'${KPI_SHEET_NAME}'!A${rowNum}`, values: [[ch.channel]] });
-          batchData.push({ range: `'${KPI_SHEET_NAME}'!B${rowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
+          batchData.push({ range: `'${KPI_SHEET_NAME}'!B${rowNum}`, values: [[`=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!R:R,"${chLit}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]] });
           batchData.push({ range: `'${KPI_SHEET_NAME}'!C${rowNum}`, values: [[`='${COGS_SHEET_NAME}'!${cogsCol}22`]] });
           batchData.push({ range: `'${KPI_SHEET_NAME}'!D${rowNum}`, values: [[`=IF($B$5=0,"-",B${rowNum}/$B$5)`]] });
         } else {
@@ -722,9 +722,9 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         batchData.push({
           range: `'Product Margin Analysis'!B${rowNum}:D${rowNum}`,
           values: [[
-            `=SUMIFS('Sales Transactions Raw Data'!T:T,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`,
-            `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`,
-            `=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+            `=SUMIFS('Sales Transactions Raw Data'!S:S,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`,
+            `=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`,
+            `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`
           ]]
         });
       });
@@ -743,7 +743,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
           batchData.push({ range: `'Inventory & MOS Analysis'!C${rowNum}:G${rowNum}`, values: [whFormulas] });
           
           // Sales average & MOS formula
-          const avgSalesForm = `=IFERROR((SUMIFS('Sales Transactions Raw Data'!T:T,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods",'Sales Transactions Raw Data'!B:B,"September")+SUMIFS('Sales Transactions Raw Data'!T:T,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods",'Sales Transactions Raw Data'!B:B,"October")+SUMIFS('Sales Transactions Raw Data'!T:T,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods",'Sales Transactions Raw Data'!B:B,"November"))/3,0)`;
+          const avgSalesForm = `=IFERROR((SUMIFS('Sales Transactions Raw Data'!S:S,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods",'Sales Transactions Raw Data'!B:B,"September")+SUMIFS('Sales Transactions Raw Data'!S:S,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods",'Sales Transactions Raw Data'!B:B,"October")+SUMIFS('Sales Transactions Raw Data'!S:S,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods",'Sales Transactions Raw Data'!B:B,"November"))/3,0)`;
           batchData.push({ range: `'Inventory & MOS Analysis'!I${rowNum}`, values: [[avgSalesForm]] });
         }
       });
@@ -775,7 +775,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
 
           // Month formulas for Units Sold
           const soldFormulas = movementMonths.map(({ month }) => 
-            `=SUMIFS('Sales Transactions Raw Data'!T:T,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!B:B,"${month}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+            `=SUMIFS('Sales Transactions Raw Data'!S:S,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!B:B,"${month}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`
           );
           batchData.push({ range: `'Inventory Movements'!C${rowSold}:H${rowSold}`, values: [soldFormulas] });
 
@@ -798,14 +798,14 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         range: "'Weekly Order Tracker'!B7:C7",
         values: [[
           `=COUNTIFS('Sales Transactions Raw Data'!M:M,"*INVOIC*")`,
-          `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!M:M,"*INVOIC*")`
+          `=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!M:M,"*INVOIC*")`
         ]]
       });
       batchData.push({
         range: "'Weekly Order Tracker'!B8:C8",
         values: [[
           `=COUNTIFS('Sales Transactions Raw Data'!M:M,"*CREDIT*")`,
-          `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!M:M,"*CREDIT*")`
+          `=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!M:M,"*CREDIT*")`
         ]]
       });
 
@@ -853,8 +853,8 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         batchData.push({
           range: `'Weekly Order Tracker'!G${row}:H${row}`,
           values: [[
-            `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}))`,
-            `=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}))`
+            `=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}))`,
+            `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!B:B,TEXT(${dateCell},"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${dateCell}))`
           ]]
         });
       });
@@ -865,7 +865,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         batchData.push({ range: `'Sales Dashboard'!A${rowNum}`, values: [[p.name || p.sku]] });
         batchData.push({
           range: `'Sales Dashboard'!B${rowNum}`,
-          values: [[`=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]]
+          values: [[`=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!G:G,"${p.sku}",'Sales Transactions Raw Data'!J:J,"Finished Goods")`]]
         });
       });
 
@@ -918,7 +918,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
         if (ch) {
           const chLit = escapeFormulaString(ch.channel);
           const rowFormulas = monthCols.map(col =>
-            `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!S:S,"${chLit}",'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+            `=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!R:R,"${chLit}",'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
           );
           batchData.push({ range: `'${TREND_SHEET_NAME}'!B${row}:K${row}`, values: [rowFormulas] });
         } else {
@@ -940,12 +940,12 @@ class GoogleSheetsAdapter extends DestinationAdapter {
       // above — so it stays correct even if a channel value is missing/blank, rather than
       // under-counting like SUM(channel rows) would.
       const totalRevenueFormulas = monthCols.map(col =>
-        `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+        `=SUMIFS('Sales Transactions Raw Data'!U:U,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
       );
       batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendTotalRow}:K${trendTotalRow}`, values: [totalRevenueFormulas] });
 
       const cogsFormulas = monthCols.map(col =>
-        `=SUMIFS('Sales Transactions Raw Data'!W:W,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
+        `=SUMIFS('Sales Transactions Raw Data'!V:V,'Sales Transactions Raw Data'!B:B,TEXT(${col}$3,"mmmm"),'Sales Transactions Raw Data'!A:A,YEAR(${col}$3),'Sales Transactions Raw Data'!J:J,"Finished Goods")`
       );
       batchData.push({ range: `'${TREND_SHEET_NAME}'!B${trendCogsRow}:K${trendCogsRow}`, values: [cogsFormulas] });
 

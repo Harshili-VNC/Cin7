@@ -20,6 +20,25 @@ router.use(enforceTenantIsolation);
 
 const activeSyncProgress = new Map();
 const activeSyncControllers = new Map(); // clientId -> { runId, cancelRequested: boolean }
+const activeSyncLabels = new Map(); // runId -> user-editable sync name, editable while the sync is in flight
+
+/**
+ * PATCH /api/sync/:runId/label
+ * Lets the user rename an in-flight sync while it's still running; the report
+ * snapshots it produces pick up the latest label at save time (see
+ * executeFullSyncBackground), so there's no separate "name it first" step.
+ */
+router.patch('/:runId/label', async (req, res) => {
+  const clientId = req.tenantId;
+  const runId = req.params.runId;
+  const ctrl = activeSyncControllers.get(clientId);
+  if (!ctrl || ctrl.runId !== runId) {
+    return res.status(404).json({ success: false, error: 'No active sync found for this run.' });
+  }
+  const reportLabel = typeof req.body?.reportLabel === 'string' ? req.body.reportLabel.trim().slice(0, 120) : '';
+  activeSyncLabels.set(runId, reportLabel);
+  return res.json({ success: true, reportLabel });
+});
 
 /**
  * Helper to update live progress for UI polling
@@ -83,7 +102,7 @@ router.get(['/progress/:runId', '/progress'], async (req, res) => {
           current: latestDbRun.records_processed || 0,
           total: latestDbRun.records_processed || 0,
           percent: latestDbRun.status === 'COMPLETED' ? 100 : (latestDbRun.status === 'RUNNING' ? 50 : 0),
-          message: latestDbRun.status === 'COMPLETED' ? 'Sync complete' : (latestDbRun.status === 'RUNNING' ? 'Sync in progress...' : 'Ready'),
+          message: latestDbRun.status === 'COMPLETED' ? 'Sync complete! All reports verified.' : (latestDbRun.status === 'RUNNING' ? 'Sync in progress...' : 'Connecting to Cin7 Core API...'),
           sheetUrl: null
         }
       });
@@ -92,7 +111,7 @@ router.get(['/progress/:runId', '/progress'], async (req, res) => {
 
   return res.json({
     success: true,
-    progress: { stage: 'IDLE', current: 0, total: 0, percent: 100, message: 'Ready' }
+    progress: { stage: 'CONNECTING', current: 0, total: 0, percent: 10, message: 'Connecting to Cin7 Core API...' }
   });
 });
 
@@ -276,11 +295,17 @@ async function executeFullSyncBackground({
   endDate,
   isForceFull,
   clientEmail,
-  startTime
+  startTime,
+  reportLabel
 }) {
+  // If activeSyncControllers no longer shows THIS runId as the owner for clientId —
+  // because it was never registered, or (the actual bug behind mixed-run log lines)
+  // a newer run for the same client overwrote the map entry after a stale-lock
+  // eviction — treat this run as cancelled so it stops instead of running on blind,
+  // unstoppable, and racing the new run's writes for the same client.
   const isCancelled = () => {
     const ctrl = activeSyncControllers.get(clientId);
-    return ctrl?.runId === runId && ctrl.cancelRequested;
+    return !ctrl || ctrl.runId !== runId || ctrl.cancelRequested;
   };
 
   const updateProgress = (stage, current, total, percent, message, extra = {}) => {
@@ -301,7 +326,12 @@ async function executeFullSyncBackground({
     const salesSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : await snapshotService.isIncrementalSafe(clientId, 'sales', dateRange);
     const poSafety = dateRange === 'custom' ? { safe: false, reason: 'Custom date range requires full fetch' } : await snapshotService.isIncrementalSafe(clientId, 'purchase', dateRange);
 
-    const useIncrementalSales = !isForceFull && salesSafety.safe;
+    // Sales V2 (CIN7_SALES_V2=true) can emit multiple rows per Order#+SKU (separate
+    // invoices, plus negative credit-note rows), which the existing incremental merge
+    // (keyed by orderNo__sku in mergeSalesData) would collide on and silently drop.
+    // Force a full-window fetch under V2 until that merge key is made row-type-aware.
+    const isSalesV2 = process.env.CIN7_SALES_V2 === 'true';
+    const useIncrementalSales = !isForceFull && !isSalesV2 && salesSafety.safe;
     const useIncrementalPO = !isForceFull && poSafety.safe;
 
     const windowCutoff = cin7Engine.getWindowCutoffDate(dateRange, startDate);
@@ -320,25 +350,23 @@ async function executeFullSyncBackground({
     // 3. Fetch real Cin7 datasets sequentially
     const fetchedSales = await cin7Engine.fetchSales(clientId, {
       updatedSince: salesUpdatedSince,
+      windowCode: dateRange,
+      customOptions: { startDate, endDate },
       isCancelled,
+      runId,
       onProgress: (p) => {
-        if (p.stage === 'PRODUCT_MASTER') {
-          const pct = Math.round(42 + ((p.percent || 0) * 0.08));
-          updateProgress('FETCHING_SALES', p.current, p.total, pct, p.message || 'Loading Product Master catalog...');
-        } else {
-          const pct = Math.round(15 + ((p.percent || 0) * 0.35));
-          updateProgress('FETCHING_SALES', p.current, p.total, pct, p.message, {
-            cachedCount: p.cachedCount,
-            uncachedCount: p.uncachedCount,
-            etaSeconds: p.etaSeconds
-          });
-        }
+        const pct = Math.round(15 + ((p.percent || 0) * 0.35));
+        updateProgress('FETCHING_SALES', p.current, p.total, pct, p.message || `Enriching Sales Orders (${p.current}/${p.total})...`, {
+          cachedCount: p.cachedCount,
+          uncachedCount: p.uncachedCount,
+          etaSeconds: p.etaSeconds
+        });
       }
     });
 
     if (isCancelled()) throw Object.assign(new Error('Sync was cancelled by user.'), { code: 'SYNC_CANCELLED' });
 
-    updateProgress('FETCHING_INVENTORY', 0, 0, 52, 'Fetching Inventory availability from Cin7...');
+    updateProgress('FETCHING_INVENTORY', 0, 0, 52, 'Fetching Inventory & Stock Availability from Cin7...');
     const invData = await cin7Engine.fetchInventory(clientId, {
       isCancelled,
       onProgress: (p) => {
@@ -493,11 +521,37 @@ async function executeFullSyncBackground({
       periodLabel = 'Last 5 Years';
     }
 
+    // Pick up the latest name if the user edited it in the progress modal after the sync started.
+    const finalReportLabel = activeSyncLabels.has(runId) ? activeSyncLabels.get(runId) : reportLabel;
+    activeSyncLabels.delete(runId);
+
     await Promise.all([
-      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel, dataset: salesData, syncRunId: runId }),
-      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current Stock', dataset: invData, syncRunId: runId }),
-      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel, dataset: poData, syncRunId: runId })
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel, dataset: salesData, syncRunId: runId, reportLabel: finalReportLabel }),
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current Stock', dataset: invData, syncRunId: runId, reportLabel: finalReportLabel }),
+      snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel, dataset: poData, syncRunId: runId, reportLabel: finalReportLabel })
     ]);
+
+    // Reconciliation log: sales row layout is [.., 18:Qty, 19:InvoiceAmt(Sale+Tax),
+    // 20:SaleAmt, 21:COGS, 22:ProfitLessJournals, 23:Journal, 24:Profit, ..] — matches
+    // the live template's actual 26-column header (verified 2026-09-24 via the Sheets
+    // API), single 'Sales Channel' column. Tax has no standalone column (kept that way
+    // so existing Sheets SUMIFS formulas keep working), so it's derived here as
+    // InvoiceAmt - SaleAmt. Under the legacy V1 sales engine (SALES_V2_ENABLED unset),
+    // InvoiceAmt is a duplicate of SaleAmt and Journal is always 0, so Tax and Journal
+    // will read as 0 there — that's a V1 engine limitation, not a bug in this logging step.
+    try {
+      const sumCol = (rows, idx) => rows.reduce((acc, r) => acc + (Number(r[idx]) || 0), 0);
+      const salesRows = salesData?.rows || [];
+      const qty = sumCol(salesRows, 18);
+      const invoiceAmt = sumCol(salesRows, 19);
+      const saleAmt = sumCol(salesRows, 20);
+      const cogs = sumCol(salesRows, 21);
+      const journal = sumCol(salesRows, 23);
+      const tax = Number((invoiceAmt - saleAmt).toFixed(2));
+      console.log(`[SYNC RECONCILIATION] Run: ${runId} | Rows: ${salesRows.length} | Qty: ${qty.toLocaleString()} | Sale: ${saleAmt.toFixed(2)} | Tax: ${tax.toFixed(2)} | COGS: ${cogs.toFixed(2)} | Journals: ${journal.toFixed(2)}`);
+    } catch (reconErr) {
+      console.warn(`[SYNC RECONCILIATION] Failed to compute totals for run ${runId}:`, reconErr.message);
+    }
 
     const durationMs = Date.now() - startTime;
     const completionBoundaryIso = new Date().toISOString();
@@ -618,6 +672,7 @@ async function executeFullSyncBackground({
     );
   } finally {
     activeSyncControllers.delete(clientId);
+    activeSyncLabels.delete(runId);
     lockService.releaseLock(clientId, runId);
   }
 }
@@ -659,7 +714,8 @@ router.post('/sales', requireAuth, enforceTenantIsolation, requireCanSync, requi
     await adapter.updateSyncLog({ syncType: 'sales', status: 'Success', detail: `${salesData.rows.length} sales rows synced`, runId });
 
     // 4. Save snapshot on verified success
-    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel: 'Last 30 days', dataset: salesData, syncRunId: runId });
+    const reportLabel = typeof req.body?.reportLabel === 'string' ? req.body.reportLabel.trim().slice(0, 120) : '';
+    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'sales', periodLabel: 'Last 30 days', dataset: salesData, syncRunId: runId, reportLabel });
 
     const durationMs = Date.now() - startTime;
     await db.query(
@@ -736,7 +792,8 @@ router.post('/inventory', requireAuth, enforceTenantIsolation, requireCanSync, r
     await adapter.updateSyncLog({ syncType: 'inventory', status: 'Success', detail: `${invData.rows.length} inventory rows synced`, runId });
 
     // 4. Save snapshot on verified success
-    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current', dataset: invData, syncRunId: runId });
+    const reportLabel = typeof req.body?.reportLabel === 'string' ? req.body.reportLabel.trim().slice(0, 120) : '';
+    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'inventory', periodLabel: 'Current', dataset: invData, syncRunId: runId, reportLabel });
 
     const durationMs = Date.now() - startTime;
     await db.query(
@@ -813,7 +870,8 @@ router.post('/purchase-orders', requireAuth, enforceTenantIsolation, requireCanS
     await adapter.updateSyncLog({ syncType: 'purchase_orders', status: 'Success', detail: `${poData.rows.length} PO rows synced`, runId });
 
     // 4. Save snapshot on verified success
-    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel: 'Last 30 days', dataset: poData, syncRunId: runId });
+    const reportLabel = typeof req.body?.reportLabel === 'string' ? req.body.reportLabel.trim().slice(0, 120) : '';
+    await snapshotService.saveCurrentAndSnapshot({ clientId, reportType: 'purchase', periodLabel: 'Last 30 days', dataset: poData, syncRunId: runId, reportLabel });
 
     const durationMs = Date.now() - startTime;
     await db.query(
@@ -869,6 +927,7 @@ router.post(['/all', '/trigger'], syncLimiter, requireCanSync, async (req, res) 
   const startDate = req.body?.startDate || null;
   const endDate = req.body?.endDate || null;
   const isForceFull = Boolean(req.body?.forceFull || req.body?.mode === 'FORCE_FULL');
+  const reportLabel = typeof req.body?.reportLabel === 'string' ? req.body.reportLabel.trim().slice(0, 120) : '';
 
   // Per-Client Concurrency Mutex Lock
   const lockRes = lockService.acquireLock(clientId, runId);
@@ -883,7 +942,14 @@ router.post(['/all', '/trigger'], syncLimiter, requireCanSync, async (req, res) 
     });
   }
 
-  // Register active controller for graceful cancellation
+  // Register active controller for graceful cancellation. If a controller for a
+  // DIFFERENT runId is already sitting here, the lock above must have just evicted
+  // a stale one — log it loudly, since that old run's own isCancelled() will now see
+  // its runId no longer matches this entry and stop itself on its next check.
+  const priorCtrl = activeSyncControllers.get(clientId);
+  if (priorCtrl && priorCtrl.runId !== runId) {
+    console.warn(`[SYNC] Run ${runId} is superseding stale/orphaned run ${priorCtrl.runId} for client '${clientId}' — the old run will self-cancel on its next progress check.`);
+  }
   activeSyncControllers.set(clientId, { runId, cancelRequested: false });
 
   // Initial live progress
@@ -918,7 +984,8 @@ router.post(['/all', '/trigger'], syncLimiter, requireCanSync, async (req, res) 
         endDate,
         isForceFull,
         clientEmail,
-        startTime
+        startTime,
+        reportLabel
       }).catch(err => {
         console.error(`[BACKGROUND SYNC UNCAUGHT ERROR] Run: ${runId}:`, err);
       });
@@ -1243,4 +1310,39 @@ router.post('/pull-sheets', requireAuth, enforceTenantIsolation, requireCanSync,
   }
 });
 
+/**
+ * TEMPORARY (validation-only): programmatic equivalent of POST /api/sync/all,
+ * for triggering a real sync outside the browser-session auth layer during the
+ * Sales V2 validation. Reuses the exact same lock/controller/sync_runs/
+ * executeFullSyncBackground path the real button uses — not a shortcut, just
+ * skips the Express request. Remove once V2 validation is done.
+ */
+async function triggerSyncProgrammatically({ clientId, destination = 'google_sheets', dateRange = '90d', startDate = null, endDate = null, isForceFull = false, reportLabel = '' }) {
+  const startTime = Date.now();
+  const runId = `run-all-${uuidv4().substring(0, 8)}`;
+
+  const lockRes = lockService.acquireLock(clientId, runId);
+  if (!lockRes.acquired) {
+    throw new Error(`SYNC_ALREADY_IN_PROGRESS: ${lockRes.reason}`);
+  }
+  activeSyncControllers.set(clientId, { runId, cancelRequested: false });
+  setLiveProgress(runId, 'CONNECTING', 0, 5, 10, 'Connecting to Cin7 Core API...', clientId, {
+    status: 'RUNNING', destination, dateRange, startDate, endDate
+  });
+
+  await db.query(
+    `INSERT INTO sync_runs (id, client_id, user_id, run_id, sync_type, status)
+     VALUES (?, ?, ?, ?, ?, 'RUNNING')`,
+    [runId, clientId, 'system', runId, destination === 'google_sheets' ? 'google_sheets' : 'all']
+  );
+
+  await executeFullSyncBackground({
+    runId, clientId, user: null, destination, dateRange, startDate, endDate,
+    isForceFull, clientEmail: null, startTime, reportLabel
+  });
+
+  return runId;
+}
+
 module.exports = router;
+module.exports.triggerSyncProgrammatically = triggerSyncProgrammatically;

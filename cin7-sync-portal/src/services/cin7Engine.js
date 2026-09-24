@@ -119,7 +119,7 @@ async function upsertSalesToDb(clientId, detailedSales) {
             sale.CombinedInvoiceStatus || null, sale.CombinedShippingStatus || null,
             sale.Type || null, sale.SourceChannel || sale.SaleChannel || null,
             sale.SalesRepresentative || null, sale.CustomerTags || null,
-            sale.UpdatedDateUtc || null
+            sale.Updated || null
           ],
           safeClientId
         );
@@ -163,6 +163,67 @@ async function upsertSalesToDb(clientId, detailedSales) {
     console.log(`[CIN7 DB] Upserted ${orderCount} sales orders and ${lineCount} line items to database.`);
   } catch (e) {
     console.warn('[CIN7 DB] upsertSalesToDb failed (non-fatal):', e.message);
+  }
+}
+
+/**
+ * Upserts Sales V2 (Core-parity) line-level records into cin7_sale_lines_v2.
+ * Additive table only — never touches cin7_order_lines. Fire-and-forget.
+ */
+async function upsertSaleLinesV2ToDb(clientId, detailedSales, window) {
+  if (!detailedSales || detailedSales.length === 0) return;
+  const safeClientId = getSafeClientId(clientId);
+  let lineCount = 0;
+  try {
+    for (const { sale, detail } of detailedSales) {
+      if (!detail) continue;
+      let records;
+      try {
+        records = buildSaleV2Records(sale, detail, window);
+      } catch (_) {
+        continue;
+      }
+      for (let lineIdx = 0; lineIdx < records.length; lineIdx++) {
+        const r = records[lineIdx];
+        // Stable per-sale index (not a running total) so re-syncs UPDATE the same
+        // row instead of accumulating duplicates each run.
+        const lineKey = `${r.rowType}|${r.docNumber || 'NA'}|${r.sku || 'NA'}|${lineIdx}`;
+        try {
+          await db.queryWithTenant(
+            `INSERT INTO cin7_sale_lines_v2
+               (client_id, cin7_sale_id, line_key, row_type, order_number, document_number,
+                document_date, sku, product_name, quantity, sale_amount, tax_amount,
+                cogs_amount, journal_amount, synced_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+             ON CONFLICT (client_id, cin7_sale_id, line_key) DO UPDATE SET
+               row_type        = EXCLUDED.row_type,
+               order_number    = EXCLUDED.order_number,
+               document_number = EXCLUDED.document_number,
+               document_date   = EXCLUDED.document_date,
+               sku             = EXCLUDED.sku,
+               product_name    = EXCLUDED.product_name,
+               quantity        = EXCLUDED.quantity,
+               sale_amount     = EXCLUDED.sale_amount,
+               tax_amount      = EXCLUDED.tax_amount,
+               cogs_amount     = EXCLUDED.cogs_amount,
+               journal_amount  = EXCLUDED.journal_amount,
+               synced_at       = EXCLUDED.synced_at`,
+            [
+              safeClientId, sale.SaleID, lineKey, r.rowType,
+              sale.OrderNumber || null, r.docNumber || null, r.docDate || null,
+              r.sku || '', r.name || null,
+              toNumber(r.qty), toNumber(r.saleAmt), toNumber(r.tax),
+              toNumber(r.cogs), toNumber(r.journal)
+            ],
+            safeClientId
+          );
+          lineCount++;
+        } catch (_) {}
+      }
+    }
+    console.log(`[CIN7 DB] Upserted ${lineCount} Sales V2 line records to cin7_sale_lines_v2.`);
+  } catch (e) {
+    console.warn('[CIN7 DB] upsertSaleLinesV2ToDb failed (non-fatal):', e.message);
   }
 }
 
@@ -255,7 +316,7 @@ async function upsertPurchaseOrdersToDb(clientId, allPOs) {
             orderDate, dueDate,
             p.Supplier || null, p.Status || null,
             parseFloat(p.InvoiceAmount || 0),
-            p.UpdatedDateUtc || null
+            p.LastUpdatedDate || null
           ],
           safeClientId
         );
@@ -308,7 +369,7 @@ function storeOrderDetail(clientId, saleId, detail, updatedDateUtc) {
   const payload = {
     saleId,
     clientId: safeClientId,
-    updatedDateUtc: updatedDateUtc || detail?.UpdatedDateUtc || new Date().toISOString(),
+    updatedDateUtc: updatedDateUtc || detail?.LastModifiedOn || new Date().toISOString(),
     storedAt: new Date().toISOString(),
     detail
   };
@@ -497,13 +558,16 @@ function mapSaleLineToRow(sale, line, productMap = null) {
   const profit = Number((revenue - cogs).toFixed(2));
   const margin = revenue > 0 ? Number((profit / revenue).toFixed(4)) : 0;
   const sku = String(line.SKU || '').trim();
+  // Leading apostrophe forces Sheets (valueInputOption=USER_ENTERED) to store the SKU
+  // as literal text instead of auto-parsing it as a number and stripping leading zeros
+  // (e.g. "0084336" -> 84336). See mapSaleV2RecordToRow for the same fix on the V2 path.
+  const skuCell = sku ? `'${sku}` : sku;
   const sourceChannel = sale.SourceChannel || sale.SaleChannel || '';
   const productInfo = productMap ? (productMap.get(sku) || {}) : {};
   // True Order Date (when the order was placed), kept separate from the Invoice-date-preferring
-  // column below — used by filterSalesByWindow so "Last 30/60/90 Days" filters by order date,
-  // not invoice date. Appended as a trailing field (see SALES_HEADERS.length) so it never shifts
-  // any of the existing, positionally-referenced columns; strip it before writing to the
-  // client-facing spreadsheet (see stripInternalRowFields in syncRoutes.js).
+  // column below — used by filterSalesByWindow (via SALES_DOC_DATE_INDEX) so "Last 30/60/90
+  // Days" filters by order date, not invoice date. Appended as a trailing field so it never
+  // shifts any of the other, positionally-referenced columns.
   const trueOrderDate = sale.OrderDate ? sale.OrderDate.split('T')[0] : '';
 
   return [
@@ -512,8 +576,8 @@ function mapSaleLineToRow(sale, line, productMap = null) {
     sale.OrderNumber || '',
     sale.OrderDate ? sale.OrderDate.split('T')[0] : (sale.InvoiceDate ? sale.InvoiceDate.split('T')[0] : ''),
     sale.InvoiceNumber || '',
-    sku,
-    sku,
+    skuCell,
+    skuCell,
     line.Brand || productInfo.brand || 'Cin7',
     line.Category || productInfo.category || 'Finished Goods',
     line.Family || productInfo.family || 'Finished Goods',
@@ -525,12 +589,12 @@ function mapSaleLineToRow(sale, line, productMap = null) {
     sale.CustomerTags || '',
     sale.SalesRepresentative || '',
     sourceChannel,
-    sourceChannel,
     quantity,
     revenue,
     revenue,
     cogs,
-    0,
+    profit,   // 'Profit less journals' template slot — journals is always 0 in V1, so this equals profit
+    0,        // 'Journals' template slot — V1 never populates real journals data
     profit,
     margin,
     trueOrderDate
@@ -641,7 +705,8 @@ function formatEta(seconds) {
  * High-speed Controlled Concurrency Worker Queue for Order Detail Enrichment.
  * Performs idempotent Set-based cache evaluation to skip already cached orders in 0ms.
  */
-async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress = null, isCancelled = null) {
+async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress = null, isCancelled = null, runId = null) {
+  const logTag = runId ? `[Run ${runId}] ` : '';
   const detailedSales = [];
   const uncachedSales = [];
   let cacheHits = 0;
@@ -651,10 +716,10 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
 
   // 1. Exact Set-Based Cache Audit: Identify already cached & valid orders
   for (const sale of sales) {
-    const cachedDetail = getStoredOrderDetail(clientId, sale.SaleID, sale.UpdatedDateUtc);
+    const cachedDetail = getStoredOrderDetail(clientId, sale.SaleID, sale.Updated);
     if (cachedDetail && cachedDetail.Order && Array.isArray(cachedDetail.Order.Lines) && cachedDetail.Order.Lines.length > 0) {
       cacheHits++;
-      detailedSales.push({ sale, lines: cachedDetail.Order.Lines });
+      detailedSales.push({ sale, lines: cachedDetail.Order.Lines, detail: cachedDetail });
     } else {
       uncachedSales.push(sale);
     }
@@ -678,11 +743,11 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
   }
 
   if (uncachedSales.length === 0) {
-    console.log(`[CIN7 LIVE] All ${totalOrders} order details resolved from cache (0 network requests needed).`);
+    console.log(`${logTag}[CIN7 LIVE] All ${totalOrders} order details resolved from cache (0 network requests needed).`);
     return detailedSales;
   }
 
-  console.log(`[CIN7 LIVE] Enriching ${uncachedSales.length} uncached orders (concurrency = 3, ${cacheHits} from cache)...`);
+  console.log(`${logTag}[CIN7 LIVE] Enriching ${uncachedSales.length} uncached orders (concurrency = 3, ${cacheHits} from cache)...`);
 
   const concurrency = 3;
   let currentIndex = 0;
@@ -692,7 +757,7 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
   async function worker() {
     while (currentIndex < uncachedSales.length) {
       if (typeof isCancelled === 'function' && isCancelled()) {
-        console.log('[CIN7 LIVE] Sync cancellation detected in enrichment worker. Stopping.');
+        console.log(`${logTag}[CIN7 LIVE] Sync cancellation detected in enrichment worker. Stopping.`);
         break;
       }
 
@@ -713,18 +778,25 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
         lastError = err;
       }
 
+      // The await above may have taken long enough that a cancellation arrived while
+      // this request was in flight. Discard the result instead of storing/counting it,
+      // so a cancelled run's late-arriving data can't bleed into a subsequent run.
+      if (typeof isCancelled === 'function' && isCancelled()) {
+        break;
+      }
+
       const lines = detail?.Order?.Lines || [];
       if (detail && Array.isArray(lines) && lines.length > 0) {
-        storeOrderDetail(clientId, sale.SaleID, detail, sale.UpdatedDateUtc);
+        storeOrderDetail(clientId, sale.SaleID, detail, sale.Updated);
         // Also persist to DB cache (fire-and-forget)
-        storeOrderDetailToDb(clientId, sale.SaleID, detail, sale.UpdatedDateUtc).catch(() => {});
-        detailedSales.push({ sale, lines });
+        storeOrderDetailToDb(clientId, sale.SaleID, detail, sale.Updated).catch(() => {});
+        detailedSales.push({ sale, lines, detail });
         newlyEnrichedCount++;
       } else {
         failedCount++;
-        console.warn(`[CIN7 LIVE] Notice on sale detail for ${sale.OrderNumber || sale.SaleID}: ${lastError?.message || 'no Order.Lines'}`);
+        console.warn(`${logTag}[CIN7 LIVE] Notice on sale detail for ${sale.OrderNumber || sale.SaleID}: ${lastError?.message || 'no Order.Lines'}`);
         if (detail && detail.Order) {
-          storeOrderDetail(clientId, sale.SaleID, detail, sale.UpdatedDateUtc);
+          storeOrderDetail(clientId, sale.SaleID, detail, sale.Updated);
         }
       }
 
@@ -763,17 +835,293 @@ async function fetchSaleDetailsConcurrently(sales, creds, clientId, onProgress =
     throw cancelErr;
   }
 
-  console.log(`[CIN7 LIVE] Detail enrichment complete: ${detailedSales.length} loaded, ${cacheHits} from cache, ${newlyEnrichedCount} newly fetched, ${failedCount} isolated notices.`);
+  console.log(`${logTag}[CIN7 LIVE] Detail enrichment complete: ${detailedSales.length} loaded, ${cacheHits} from cache, ${newlyEnrichedCount} newly fetched, ${failedCount} isolated notices.`);
   return detailedSales;
 }
 
+// NOTE ON LAYOUT: this header list intentionally matches the *actual* row shape
+// produced by mapSaleLineToRow / mapSaleV2RecordToRow index-for-index (27 columns,
+// starting with Year at index 0 and ending with the internal Document date used by
+// filterSalesByWindow at index 26). It previously had only 26 entries starting with
+// 'Month', silently misaligned by one against every row (row[0] was Year, not Month) —
+// that was the "shifted column headers" bug. Column *letters* referenced by fixed-column
+// SUMIFS formulas in googleSheetsAdapter.js (e.g. G:G for SKU, J:J for Family, V:V for
+// Sale, W:W for COGS) key off row position, not this label text, so correcting the
+// labels here does not move any data and does not break those formulas.
+// Verified 2026-09-24 against the live cloned Google Sheet's actual row-6 header
+// (read back via the Sheets API, not assumed): 26 real template columns, single
+// 'Sales Channel' column — NOT two. The row array previously wrote sourceChannel
+// twice (a pre-existing bug carried over from the original V1 code, predating this
+// engine), which silently shifted every column from Quantity onward one slot to
+// the right against the template's own header row. Fixed in mapSaleLineToRow /
+// mapSaleV2RecordToRow by writing the channel value once.
 const SALES_HEADERS = [
-  'Month', 'Order date', 'Order #', 'Invoice date', 'Document #',
+  'Year', 'Month', 'Order #', 'Invoice date', 'Document #',
   'SKU', 'Product', 'Brand', 'Category', 'Family', 'Product tags',
   'Customer', 'Invoice status', 'Unit', 'Shipment status', 'Customer tags',
-  'Sales representative', 'Sales Channel', 'Quantity', 'Invoice', 'Sale',
-  'COGS', 'Profit less journals', 'Journals', 'Profit', 'Profit'
+  'Sales representative', 'Sales Channel', 'Quantity', 'Invoice',
+  'Sale', 'COGS', 'Profit less journals', 'Journals', 'Profit', 'Profit',
+  'Document date (internal)'
 ];
+const SALES_DOC_DATE_INDEX = SALES_HEADERS.length - 1; // 26 — trailing internal filter date
+
+// ── SALES V2 ENGINE (Cin7 Core "Sales by Product Details" parity) ──────────────
+// Behind CIN7_SALES_V2=true until validated against a real Cin7 Core export.
+// See Part 1-6 of the sales/purchase reconciliation spec for the target logic.
+const SALES_V2_ENABLED = process.env.CIN7_SALES_V2 === 'true';
+
+/**
+ * Resolves the {start, end} Date bounds for a reporting window/custom range.
+ * Shared by fetchSales (V2 per-invoice inclusion) and filterSalesByWindow so both
+ * apply the exact same period definition.
+ */
+// Plain "YYYY-MM-DD" string, taken as-is from a Date object's own UTC fields or from
+// the leading 10 characters of another date string — never round-tripped through a
+// second `new Date(...)` parse, so a value already carrying Cin7's own date semantics
+// is never silently reinterpreted in a different timezone.
+function toISODateStr(d) {
+  if (!d) return null;
+  if (d instanceof Date) return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+}
+
+/**
+ * Resolves the {start, end} bounds (plain "YYYY-MM-DD" strings, or null = unbounded)
+ * for a reporting window/custom range. Shared by fetchSales (V2 per-invoice inclusion)
+ * and filterSalesByWindow so both apply the exact same period definition.
+ */
+function resolveReportingWindow(windowCode, customOptions = {}) {
+  const { startDate, endDate } = (customOptions && typeof customOptions === 'object') ? customOptions : {};
+  const start = (windowCode === 'custom' && startDate)
+    ? toISODateStr(startDate)
+    : toISODateStr(getWindowCutoffDate(windowCode, startDate));
+  const end = (windowCode === 'custom' && endDate) ? toISODateStr(endDate) : null;
+  return { start, end };
+}
+
+/**
+ * Checks whether a Cin7 invoice/credit-note date string falls in [start, end]
+ * (inclusive, both "YYYY-MM-DD" or null = unbounded). Pure string comparison of the
+ * date part exactly as Cin7 returned it — NOT run through `new Date(...)`, which would
+ * silently reinterpret it in the JS runtime's local/UTC timezone. This codebase does
+ * not know for certain what timezone Cin7 Core's invoice dates are expressed in;
+ * comparing as plain date strings sidesteps that rather than assuming one.
+ */
+function dateInWindow(dateStr, start, end) {
+  if (!dateStr) return false;
+  const d = toISODateStr(dateStr);
+  if (!d) return false;
+  if (start && d < start) return false;
+  if (end && d > end) return false;
+  return true;
+}
+
+/**
+ * Builds per-line "Sales by Product Details" records for one sale, matching Cin7
+ * Core's "All COGS" report logic:
+ *  - Only invoice lines whose Invoice.Status !== 'VOIDED' and InvoiceDate falls in
+ *    the window are included (multi-invoice sales: each invoice judged separately).
+ *  - Authorised credit notes dated inside the window are included as negative rows
+ *    *independently* of whether the original invoice is in-period or exists at all
+ *    (Core shows "Not invoiced" refund-only rows and credit notes against
+ *    out-of-period invoices — both must still land in an in-period run).
+ *  - COGS comes from detail.InventoryMovements (Cin7's actual posted FIFO/FEFO
+ *    cost), never AverageCost*Quantity. Movements are split into the "sale" bucket
+ *    (negative COGS = stock leaving) and the "credit note restock" bucket (positive
+ *    COGS = stock coming back) by SIGN, not by TaskID: verified against a real
+ *    90-day order that every InventoryMovement's TaskID equals the sale's own top-
+ *    level ID, and Cin7 stamps that same ID onto CreditNotes[].TaskID even on
+ *    placeholder/no-credit-note entries — so TaskID matching (the original
+ *    approach here) silently routed nearly all real sale-side COGS into the unused
+ *    credit bucket, collapsing synced COGS to ~1% of Core's total. Fixed by sign.
+ *  - Journals (ManualJournals.Lines) are allocated across the in-period invoice
+ *    lines in proportion to each line's Sale total, per the spec. The correctness
+ *    of ManualJournals as "the" journals source is UNVALIDATED — Part 1 requires
+ *    the synced total to equal 4,606.27; if it doesn't, this source is wrong and
+ *    needs revisiting (Cin7 may expose journal costs elsewhere).
+ */
+function buildSaleV2Records(sale, detail, window = { start: null, end: null }) {
+  const records = [];
+  if (!detail) return records;
+
+  const invoicesAll = Array.isArray(detail.Invoices) ? detail.Invoices : [];
+  const creditNotesAll = Array.isArray(detail.CreditNotes) ? detail.CreditNotes : [];
+  const movements = Array.isArray(detail.InventoryMovements) ? detail.InventoryMovements : [];
+  const journalLines = (detail.ManualJournals && Array.isArray(detail.ManualJournals.Lines)) ? detail.ManualJournals.Lines : [];
+
+  // Split InventoryMovements COGS by sign: negative = stock leaving (the sale),
+  // positive = stock coming back (a credit-note restock). See the note above the
+  // function for why TaskID matching doesn't work here.
+  const saleCogsByProduct = new Map();
+  const creditCogsByProduct = new Map();
+  for (const m of movements) {
+    const pid = m.ProductID;
+    if (!pid) continue;
+    const raw = toNumber(m.COGS);
+    const val = Math.abs(raw);
+    if (raw > 0) {
+      creditCogsByProduct.set(pid, (creditCogsByProduct.get(pid) || 0) + val);
+    } else {
+      saleCogsByProduct.set(pid, (saleCogsByProduct.get(pid) || 0) + val);
+    }
+  }
+
+  // Only a finalized invoice counts as "has an invoice" per spec Part 1 section 1
+  // (exclude quotes/estimates/drafts). Real Invoice.Status values seen in this
+  // account: PAID, AUTHORISED, VOIDED, DRAFT, 'NOT AVAILABLE' — verified 2026-09-24
+  // against 1129 cached invoice entries. Excluding only VOIDED (the original filter)
+  // let DRAFT-status invoices on ESTIMATED sales through, producing 34 false-positive
+  // orders (e.g. SO-46249: CombinedInvoiceStatus 'NOT AVAILABLE', Status 'ESTIMATED',
+  // its lone Invoice stuck at Status 'DRAFT') that don't exist in Cin7 Core's report.
+  const FINALIZED_INVOICE_STATUSES = new Set(['PAID', 'AUTHORISED']);
+  const invoicesInPeriod = invoicesAll.filter(inv => {
+    if (!inv || !FINALIZED_INVOICE_STATUSES.has(inv.Status)) return false;
+    const invDate = inv.InvoiceDate ? inv.InvoiceDate.split('T')[0] : null;
+    return dateInWindow(invDate, window.start, window.end);
+  });
+
+  const invoiceRecords = [];
+  for (const inv of invoicesInPeriod) {
+    const invDate = inv.InvoiceDate.split('T')[0];
+    const lines = Array.isArray(inv.Lines) ? inv.Lines : [];
+    const qtyByGroupKey = new Map();
+    for (const l of lines) {
+      const key = l.ProductID || l.SKU || l.Name;
+      qtyByGroupKey.set(key, (qtyByGroupKey.get(key) || 0) + toNumber(l.Quantity));
+    }
+    for (const line of lines) {
+      const key = line.ProductID || line.SKU || line.Name;
+      const qty = toNumber(line.Quantity);
+      const totalQtyForKey = qtyByGroupKey.get(key) || qty || 1;
+      const cogsPool = saleCogsByProduct.get(line.ProductID) || 0;
+      const cogs = qty !== 0 ? Number((cogsPool * (qty / totalQtyForKey)).toFixed(2)) : 0;
+      invoiceRecords.push({
+        rowType: 'invoice',
+        docNumber: inv.InvoiceNumber || '',
+        docDate: invDate,
+        sku: String(line.SKU || '').trim(),
+        productId: line.ProductID || null,
+        name: line.Name || '',
+        qty,
+        saleAmt: toNumber(line.Total),
+        tax: toNumber(line.Tax),
+        cogs,
+        journal: 0
+      });
+    }
+  }
+
+  // Journals: allocate the sale's ManualJournals total across in-period invoice
+  // lines, proportional to each line's Sale-total share (spec section 2 "Journals").
+  const journalTotal = journalLines.reduce((s, j) => s + toNumber(j.Total ?? j.Amount ?? j.Price ?? 0), 0);
+  const invoiceTotalSum = invoiceRecords.reduce((s, r) => s + r.saleAmt, 0);
+  if (journalTotal !== 0 && invoiceTotalSum !== 0) {
+    for (const r of invoiceRecords) {
+      r.journal = Number((journalTotal * (r.saleAmt / invoiceTotalSum)).toFixed(2));
+    }
+  }
+  records.push(...invoiceRecords);
+
+  // Credit notes: included by their own CreditNoteDate, independent of whether the
+  // linked invoice is in-period (spec correction #1).
+  for (const cn of creditNotesAll) {
+    if (!cn || cn.Status !== 'AUTHORISED') continue;
+    const cnDate = cn.CreditNoteDate ? cn.CreditNoteDate.split('T')[0] : null;
+    if (!dateInWindow(cnDate, window.start, window.end)) continue;
+
+    const lines = Array.isArray(cn.Lines) ? cn.Lines : [];
+    const qtyByGroupKey = new Map();
+    for (const l of lines) {
+      const key = l.ProductID || l.SKU || l.Name;
+      qtyByGroupKey.set(key, (qtyByGroupKey.get(key) || 0) + toNumber(l.Quantity));
+    }
+    for (const line of lines) {
+      const key = line.ProductID || line.SKU || line.Name;
+      const qty = toNumber(line.Quantity);
+      const totalQtyForKey = qtyByGroupKey.get(key) || qty || 1;
+      const cogsPool = creditCogsByProduct.get(line.ProductID) || 0;
+      const cogs = qty !== 0 ? Number((cogsPool * (qty / totalQtyForKey)).toFixed(2)) : 0;
+      records.push({
+        rowType: 'credit_note',
+        docNumber: cn.CreditNoteNumber || '',
+        docDate: cnDate,
+        sku: String(line.SKU || '').trim(),
+        productId: line.ProductID || null,
+        name: line.Name || '',
+        qty: -qty,
+        saleAmt: -toNumber(line.Total),
+        tax: -toNumber(line.Tax),
+        cogs: -cogs,
+        journal: 0
+      });
+    }
+  }
+
+  return records;
+}
+
+/**
+ * Converts one buildSaleV2Records() record into a SALES_HEADERS-shaped row.
+ * Column *positions* are kept identical to the legacy row layout (see the note by
+ * SALES_HEADERS) so existing Google Sheets SUMIFS formulas keep working; only the
+ * values plugged into COGS/Sale/Tax/Invoice/Journals/Quantity change.
+ */
+function mapSaleV2RecordToRow(sale, detail, record, productMap) {
+  const docDateObj = record.docDate ? new Date(`${record.docDate}T00:00:00.000Z`) : new Date();
+  const year = docDateObj.getUTCFullYear() || 2026;
+  const month = MONTH_NAMES[docDateObj.getUTCMonth()] || 'January';
+  const sku = record.sku;
+  const productInfo = productMap ? (productMap.get(sku) || {}) : {};
+  // Non-product invoice lines (shipping, freight, refunds, discount adjustments) have no
+  // SKU/ProductID and are kept as their own rows under V2 (unlike V1, which dropped them).
+  // Defaulting their Family/Category to 'Finished Goods' would wrongly pull them into the
+  // existing SUMIFS(...,'Family','Finished Goods') KPI formulas that sum real product sales.
+  const isNonProductLine = !sku;
+  const invoiceStatus = detail.CombinedInvoiceStatus || sale.CombinedInvoiceStatus || sale.Status || '';
+  const sourceChannel = detail.SourceChannel || sale.SourceChannel || sale.SaleChannel || '';
+
+  const saleAmt = Number(toNumber(record.saleAmt).toFixed(2));
+  const tax = Number(toNumber(record.tax).toFixed(2));
+  const invoiceAmt = Number((saleAmt + tax).toFixed(2));
+  const cogs = Number(toNumber(record.cogs).toFixed(2));
+  const journal = Number(toNumber(record.journal).toFixed(2));
+  const profit = Number((saleAmt - cogs).toFixed(2));
+  const profitLessJournals = Number((profit - journal).toFixed(2));
+  const margin = saleAmt !== 0 ? Number((profit / saleAmt).toFixed(4)) : 0;
+  // Leading apostrophe forces Sheets (valueInputOption=USER_ENTERED) to store the SKU
+  // as literal text instead of auto-parsing it as a number and stripping leading zeros.
+  const skuCell = sku ? `'${sku}` : sku;
+
+  return [
+    year,
+    month,
+    sale.OrderNumber || (detail.Order && detail.Order.SaleOrderNumber) || '',
+    record.docDate || '',
+    record.docNumber || '',
+    skuCell,
+    skuCell,
+    isNonProductLine ? (record.name || 'Non-Product') : (productInfo.brand || 'Cin7'),
+    isNonProductLine ? 'Non-Product' : (productInfo.category || 'Finished Goods'),
+    isNonProductLine ? 'Non-Product' : (productInfo.family || 'Finished Goods'),
+    detail.Type || sale.Type || 'Commercial',
+    detail.Customer || sale.Customer || '',
+    invoiceStatus,
+    'each',
+    detail.CombinedShippingStatus || sale.CombinedShippingStatus || '',
+    sale.CustomerTags || '',
+    detail.SalesRepresentative || sale.SalesRepresentative || '',
+    sourceChannel,
+    record.qty,
+    invoiceAmt,
+    saleAmt,
+    cogs,
+    profitLessJournals,
+    journal,
+    profit,
+    margin,
+    record.docDate || ''
+  ];
+}
 
 // In-memory per-client cache of product availability items and SKU metadata map.
 // Reused across fetchProductMaster and fetchInventory during the same sync run.
@@ -844,7 +1192,7 @@ async function fetchRawProductAvailability(clientId, { onProgress = null, isCanc
         page,
         totalPages,
         percent: pct,
-        message: `Fetching Product Catalog: ${allProducts.length.toLocaleString()} / ${(totalInApi || allProducts.length).toLocaleString()} SKUs (Page ${page}/${totalPages})`
+        message: `Fetching Inventory & Stock: ${allProducts.length.toLocaleString()} / ${(totalInApi || allProducts.length).toLocaleString()} SKUs (Page ${page}/${totalPages})`
       });
     }
 
@@ -893,14 +1241,15 @@ async function fetchProductMaster(clientId, { onProgress = null, isCancelled = n
 /**
  * Fetches real Sales orders from Cin7 Core API without silent fallback to demo data.
  */
-async function fetchSales(clientId, { updatedSince = null, onProgress = null, isCancelled = null } = {}) {
+async function fetchSales(clientId, { updatedSince = null, onProgress = null, isCancelled = null, windowCode = null, customOptions = {}, runId = null } = {}) {
+  const logTag = runId ? `[Run ${runId}] ` : '';
   const startMs = Date.now();
   const creds = await getClientCin7Credentials(clientId);
 
   try {
     const formattedSince = formatCin7Date(updatedSince);
     const filterDesc = formattedSince ? `UpdatedSince=${formattedSince}` : 'All records (Full fetch)';
-    console.log(`[CIN7 LIVE] Fetching Sales orders from Cin7 Core API (${filterDesc})...`);
+    console.log(`${logTag}[CIN7 LIVE] Fetching Sales orders from Cin7 Core API (${filterDesc})...`);
 
     let allSales = [];
     let page = 1;
@@ -926,7 +1275,7 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
 
       totalInApi = res.data?.Total || 0;
       const sales = res.data?.SaleList || [];
-      console.log(`Sales: records fetched from page ${page}: ${sales.length} (Total in Cin7: ${totalInApi})`);
+      console.log(`${logTag}Sales: records fetched from page ${page}: ${sales.length} (Total in Cin7: ${totalInApi})`);
       allSales = allSales.concat(sales);
 
       if (sales.length === 0 || allSales.length >= totalInApi) {
@@ -936,7 +1285,7 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
     }
 
     const listDuration = ((Date.now() - startMs) / 1000).toFixed(2);
-    console.log(`Sales: final total fetched: ${allSales.length} (${listDuration}s)`);
+    console.log(`${logTag}Sales: final total fetched: ${allSales.length} (${listDuration}s)`);
 
     if (!allSales.length) {
       if (updatedSince) {
@@ -947,39 +1296,33 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
     }
 
     const enrichStartMs = Date.now();
-    const detailedSales = await fetchSaleDetailsConcurrently(allSales, creds, clientId, onProgress, isCancelled);
+    const detailedSales = await fetchSaleDetailsConcurrently(allSales, creds, clientId, onProgress, isCancelled, runId);
     const enrichDuration = ((Date.now() - enrichStartMs) / 1000).toFixed(2);
 
-    if (onProgress && typeof onProgress === 'function') {
-      onProgress({
-        current: 0,
-        total: 0,
-        percent: 0,
-        stage: 'PRODUCT_MASTER',
-        message: 'Loading Product Master catalog...'
-      });
-    }
-
     const productMap = await fetchProductMaster(clientId, {
-      onProgress: (p) => {
-        if (onProgress && typeof onProgress === 'function') {
-          onProgress({
-            ...p,
-            stage: 'PRODUCT_MASTER'
-          });
-        }
-      },
       isCancelled
     });
 
-    const rows = detailedSales.flatMap(({ sale, lines }) =>
-      lines
-        .filter(line => String(line.SKU || '').trim())
-        .map(line => mapSaleLineToRow(sale, line, productMap))
-    );
+    let rows;
+    let salesV2Window = null;
+    if (SALES_V2_ENABLED) {
+      salesV2Window = resolveReportingWindow(windowCode, customOptions);
+      console.log(`[CIN7 SALES V2] Building invoice/credit-note rows for window: ${salesV2Window.start || 'all-time'} to ${salesV2Window.end || 'now'}`);
+      rows = detailedSales.flatMap(({ sale, detail }) =>
+        buildSaleV2Records(sale, detail, salesV2Window)
+          .map(record => mapSaleV2RecordToRow(sale, detail, record, productMap))
+      );
+    } else {
+      rows = detailedSales.flatMap(({ sale, lines }) =>
+        lines
+          .filter(line => String(line.SKU || '').trim())
+          .map(line => mapSaleLineToRow(sale, line, productMap))
+      );
+    }
 
     const totalDuration = ((Date.now() - startMs) / 1000).toFixed(2);
     console.log(`\n[CIN7 PERF] Sales Fetch & Enrichment Breakdown:`);
+    console.log(`  Engine: ${SALES_V2_ENABLED ? 'V2 (Core-parity)' : 'V1 (legacy)'}`);
     console.log(`  List Fetch: ${listDuration}s (${allSales.length} orders)`);
     console.log(`  Detail Enrichment: ${enrichDuration}s (${detailedSales.length} orders enriched)`);
     console.log(`  Total Lines Produced: ${rows.length}`);
@@ -989,6 +1332,11 @@ async function fetchSales(clientId, { updatedSince = null, onProgress = null, is
     upsertSalesToDb(clientId, detailedSales).catch(e =>
       console.warn('[CIN7 DB] Background sales upsert error (non-fatal):', e.message)
     );
+    if (SALES_V2_ENABLED) {
+      upsertSaleLinesV2ToDb(clientId, detailedSales, salesV2Window).catch(e =>
+        console.warn('[CIN7 DB] Background Sales V2 upsert error (non-fatal):', e.message)
+      );
+    }
 
     return { headers: SALES_HEADERS, rows, isIncrementalEmpty: false };
   } catch (err) {
@@ -1200,9 +1548,9 @@ function validateSalesData(dataset, options = {}) {
     if (!sku) {
       throw new Error(`Sales validation failed: Row #${idx + 1} missing SKU/Product identifier.`);
     }
-    const qty = Number(row[19]);
+    const qty = Number(row[18]);
     if (isNaN(qty)) {
-      throw new Error(`Sales validation failed: Row #${idx + 1} (${sku}) has non-numeric Quantity: '${row[19]}'.`);
+      throw new Error(`Sales validation failed: Row #${idx + 1} (${sku}) has non-numeric Quantity: '${row[18]}'.`);
     }
     const rev = Number(row[20]);
     if (isNaN(rev)) {
@@ -1350,7 +1698,6 @@ function mergeInventoryData(existingRows = [], currentRows = []) {
  * Calculates cutoff date dynamically from current date for standard window codes or custom start date.
  */
 function getWindowCutoffDate(windowCode, customStartDate = null) {
-  const now = new Date();
   const code = String(windowCode || '90d').toLowerCase().trim();
 
   if (code === 'custom' && customStartDate) {
@@ -1358,49 +1705,57 @@ function getWindowCutoffDate(windowCode, customStartDate = null) {
     return isNaN(parsed.getTime()) ? null : parsed;
   }
 
+  // Whole calendar-day boundary at UTC midnight N days back, not "now minus N days"
+  // (which carries the current time-of-day and can clip the oldest in-window day —
+  // e.g. a 09:24 run would cut off same-day invoices dated before 09:24 UTC).
+  // ASSUMPTION: Cin7 Core invoice/credit-note dates are compared here as UTC
+  // calendar dates. This codebase has no record of which timezone Cin7 Core itself
+  // uses for invoice dates — confirm that against a real account before relying on
+  // this for day-boundary-sensitive reconciliation.
+  const todayUtcMidnight = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+  const daysBack = (n) => new Date(todayUtcMidnight.getTime() - n * 24 * 60 * 60 * 1000);
+
   if (code.includes('5y') || code.includes('5 year')) {
-    return new Date(now.getTime() - 5 * 365 * 24 * 60 * 60 * 1000);
+    return daysBack(5 * 365);
   } else if (code.includes('2y') || code.includes('2 year') || code.includes('24m') || code.includes('24 month') || code.includes('2 yr')) {
-    return new Date(now.getTime() - 2 * 365 * 24 * 60 * 60 * 1000); // Past 2 years (730 days)
+    return daysBack(2 * 365); // Past 2 years (730 days)
   } else if (code.includes('last_year') || code.includes('last year') || code.includes('365') || code.includes('1y') || code.includes('1 year')) {
-    return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    return daysBack(365);
   } else if (code.includes('180') || code === '180d') {
-    return new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+    return daysBack(180);
   } else if (code.includes('90') || code === '90d') {
-    return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    return daysBack(90);
   } else if (code.includes('60') || code === '60d') {
-    return new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    return daysBack(60);
   } else if (code.includes('30') || code === '30d') {
-    return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return daysBack(30);
   } else if (code.includes('7d') || code.includes('7 day') || code === '7') {
-    return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return daysBack(7);
   } else if (code.includes('ytd') || code === 'year to date') {
-    return new Date(now.getFullYear(), 0, 1);
+    return new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
   } else if (code.includes('all') || code === 'all_time') {
     return null;
   }
   // Default: Last 90 Days
-  return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  return daysBack(90);
 }
 
 /**
  * Rolling Window Pruning: Filters records dynamically by date window or custom start/end dates.
  */
 function filterSalesByWindow(rows = [], windowCode = '30d', customOptions = {}) {
-  let startDate = typeof customOptions === 'object' ? customOptions.startDate : null;
-  let endDate = typeof customOptions === 'object' ? customOptions.endDate : null;
-  
-  const startCutoff = (windowCode === 'custom' && startDate) ? new Date(startDate + 'T00:00:00.000Z') : getWindowCutoffDate(windowCode);
-  const endCutoff = (windowCode === 'custom' && endDate) ? new Date(endDate + 'T23:59:59.999Z') : null;
+  const { start: startCutoff, end: endCutoff } = resolveReportingWindow(windowCode, customOptions);
 
   return rows.filter(row => {
-    // Filter by when the order was placed (true Order Date, trailing field — see
-    // mapSaleLineToRow), not invoice date. Rows persisted before this field existed
-    // (older snapshots) fall back to the legacy Invoice/Order date column.
-    const dateStr = row[SALES_HEADERS.length] || row[3] || row[1];
+    // V2 rows: trailing field is the document date (invoice date for invoice rows,
+    // credit note date for credit-note rows) — the same date buildSaleV2Records
+    // already filtered on, so this is mostly a no-op safety net for V2.
+    // V1 rows: trailing field is the true Order Date. Rows persisted before this
+    // field existed fall back to the legacy Invoice/Order date column.
+    const dateStr = row[SALES_DOC_DATE_INDEX] || row[3] || row[1];
     if (!dateStr) return true;
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return true;
+    const d = toISODateStr(dateStr);
+    if (!d) return true;
     if (startCutoff && d < startCutoff) return false;
     if (endCutoff && d > endCutoff) return false;
     return true;
@@ -1408,19 +1763,15 @@ function filterSalesByWindow(rows = [], windowCode = '30d', customOptions = {}) 
 }
 
 function filterPurchaseByWindow(rows = [], windowCode = '30d', customOptions = {}) {
-  let startDate = typeof customOptions === 'object' ? customOptions.startDate : null;
-  let endDate = typeof customOptions === 'object' ? customOptions.endDate : null;
-
-  const startCutoff = (windowCode === 'custom' && startDate) ? new Date(startDate + 'T00:00:00.000Z') : getWindowCutoffDate(windowCode);
-  const endCutoff = (windowCode === 'custom' && endDate) ? new Date(endDate + 'T23:59:59.999Z') : null;
+  const { start: startCutoff, end: endCutoff } = resolveReportingWindow(windowCode, customOptions);
 
   return rows.filter(row => {
     // Filter by when the order was placed (true Order Date, trailing field), not the
     // "Expiry date" / invoice-due-date column. Falls back for older persisted snapshots.
     const dateStr = row[PURCHASE_HEADERS.length] || row[3];
     if (!dateStr) return true;
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return true;
+    const d = toISODateStr(dateStr);
+    if (!d) return true;
     if (startCutoff && d < startCutoff) return false;
     if (endCutoff && d > endCutoff) return false;
     return true;
@@ -1485,5 +1836,11 @@ module.exports = {
   upsertSalesToDb,
   upsertInventoryToDb,
   upsertPurchaseOrdersToDb,
-  warmMemoryCacheFromDb
+  upsertSaleLinesV2ToDb,
+  warmMemoryCacheFromDb,
+  // Sales V2 (Core-parity) — exported for validation scripts/tests
+  SALES_V2_ENABLED,
+  resolveReportingWindow,
+  buildSaleV2Records,
+  mapSaleV2RecordToRow
 };

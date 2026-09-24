@@ -163,20 +163,32 @@ class SubscriptionService {
 
     const plan = await this.getOrganizationPlan(organizationId);
 
-    // 1. User count
-    const usersRes = await db.query('SELECT * FROM users WHERE client_id = ? AND status = ?', [organizationId, 'ACTIVE']);
-    const userCount = (usersRes.rows || []).length;
+    // 1. User count (from DB)
+    const usersRes = await db.query('SELECT * FROM users WHERE client_id = ? AND status != ?', [organizationId, 'DEACTIVATED']);
+    const userCount = Math.max(1, (usersRes.rows || []).length);
 
-    // 2. Sync runs this calendar month
+    // 2. Sync runs this calendar month (from DB)
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const syncRes = await db.query('SELECT * FROM sync_runs WHERE client_id = ?', [organizationId]);
-    const monthSyncs = (syncRes.rows || []).filter(r => r.started_at && r.started_at >= startOfMonth).length;
+    const monthSyncs = (syncRes.rows || []).filter(r => {
+      const runDate = r.started_at || r.created_at || r.completed_at;
+      if (!runDate) return false;
+      return new Date(runDate) >= startOfMonth;
+    }).length;
 
-    // 3. Storage / snapshots count
+    // 3. Active Connections check (from DB)
+    const client = await db.getOne('SELECT * FROM clients WHERE id = ?', [organizationId]);
+    const cin7Conn = await db.getOne('SELECT * FROM cin7_connections WHERE client_id = ?', [organizationId]);
+    const cin7Connected = Boolean((cin7Conn && cin7Conn.status === 'CONNECTED') || (client && (client.cin7_account_id || client.cin7_account)));
+    const sheetsConnected = Boolean(client && (client.spreadsheet_id || client.google_sheet_url || client.template_id));
+    const activeConnections = (cin7Connected ? 1 : 0) + (sheetsConnected ? 1 : 0);
+    const maxConnections = (plan.limits?.max_cin7_connections || 1) + (plan.limits?.max_google_sheets || 1);
+
+    // 4. Storage / snapshots count (from DB)
     const snapRes = await db.query('SELECT * FROM report_snapshots WHERE client_id = ?', [organizationId]);
     const snapCount = (snapRes.rows || []).length;
-    const estStorageGb = Number((snapCount * 0.05).toFixed(2)); // estimated storage
+    const estStorageGb = Number((snapCount * 0.05).toFixed(2));
 
     return {
       users: {
@@ -188,6 +200,14 @@ class SubscriptionService {
         current: monthSyncs,
         limit: plan.limits.max_syncs_per_month || 500,
         percent: Math.min(100, Math.round((monthSyncs / (plan.limits.max_syncs_per_month || 500)) * 100))
+      },
+      connections: {
+        cin7: cin7Connected,
+        sheets: sheetsConnected,
+        count: activeConnections,
+        max: maxConnections,
+        cin7Count: cin7Connected ? 1 : 0,
+        sheetsCount: sheetsConnected ? 1 : 0
       },
       storage: {
         current: estStorageGb,

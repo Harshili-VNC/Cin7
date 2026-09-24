@@ -184,11 +184,11 @@ async function runClickTests() {
   switchSettingsTab('security');
   assert(!domElements['settings-tab-security'].classList.contains('hidden'), 'Clicking Security tab opens Security settings');
 
-  switchSettingsTab('advanced');
-  assert(!domElements['settings-tab-advanced'].classList.contains('hidden'), 'Clicking Advanced Settings tab opens Advanced settings');
-
   switchSettingsTab('cin7');
-  assert(!domElements['settings-tab-overview'].classList.contains('hidden'), 'Clicking CIN7 Integration tab navigates to CIN7 card in Overview');
+  assert(!domElements['settings-tab-cin7'].classList.contains('hidden'), 'Clicking CIN7 Integration tab opens CIN7 settings');
+
+  switchSettingsTab('profile');
+  assert(!domElements['settings-tab-profile'].classList.contains('hidden'), 'Clicking Profile & Organization tab opens Profile & Organization settings');
 
   // Test Logout
   await handleLogout();
@@ -249,6 +249,7 @@ async function runClickTests() {
 
   // Test returning user view state
   navigateTo('onboarding');
+  if (typeof loadOnboardingView === 'function') loadOnboardingView();
   assert(!domElements['onboard-connected-banner'].classList.contains('hidden'), 'Returning connected user sees clean connected banner');
   toggleOnboardingEdit(true);
   assert(!domElements['onboard-form'].classList.contains('hidden'), 'Toggle edit enables modifying credentials if requested');
