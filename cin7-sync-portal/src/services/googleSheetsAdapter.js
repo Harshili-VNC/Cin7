@@ -354,6 +354,60 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     }
   }
 
+  /**
+   * Copies the format (font, alignment, number format, etc.) of the first written data row
+   * down across every subsequent row a sync just wrote. `values.update` (used by
+   * injectSheetData) only ever writes cell values — it never touches formatting — so any row
+   * beyond however far the master template happened to be manually formatted falls back to
+   * Sheets' raw default look (numbers right-aligned, default font) instead of matching the
+   * template. Non-fatal: a formatting failure here must never break the actual data sync.
+   */
+  async extendRowFormatting(spreadsheetId, sheetName, dataStartRow, rowCount, columnCount) {
+    if (!rowCount || rowCount <= 1 || !columnCount) return;
+    try {
+      const { sheets } = await this.getGoogleClients();
+      const meta = await sheets.spreadsheets.get({
+        spreadsheetId,
+        fields: 'sheets(properties(sheetId,title))'
+      });
+      const sheetMeta = (meta.data.sheets || []).find(s => s.properties.title === sheetName);
+      if (!sheetMeta) return;
+
+      const sheetId = sheetMeta.properties.sheetId;
+      const startRowIndex = dataStartRow - 1; // convert 1-based A1 row to 0-based GridRange
+      const sourceRange = {
+        sheetId,
+        startRowIndex,
+        endRowIndex: startRowIndex + 1,
+        startColumnIndex: 0,
+        endColumnIndex: columnCount
+      };
+      const destinationRange = {
+        sheetId,
+        startRowIndex: startRowIndex + 1,
+        endRowIndex: startRowIndex + rowCount,
+        startColumnIndex: 0,
+        endColumnIndex: columnCount
+      };
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            copyPaste: {
+              source: sourceRange,
+              destination: destinationRange,
+              pasteType: 'PASTE_FORMAT'
+            }
+          }]
+        }
+      });
+      console.log(`[GOOGLE SHEETS] Extended row ${dataStartRow} formatting across ${rowCount - 1} additional row(s) in '${sheetName}'.`);
+    } catch (err) {
+      console.warn(`[GOOGLE SHEETS] Failed to extend row formatting for '${sheetName}' (non-fatal):`, err.message);
+    }
+  }
+
   async verifyDataWritten(spreadsheetId, expectedCounts = {}) {
     const { sheets } = await this.getGoogleClients();
     const salesRead = await sheets.spreadsheets.values.get({
@@ -437,6 +491,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     console.log(`Sales rows: ${mappedRows.length}`);
     console.log(`Sales range: '${SALES_SHEET}'!A7`);
     await this.injectSheetData(dest.file_id, SALES_SHEET, 'A7', mappedRows);
+    await this.extendRowFormatting(dest.file_id, SALES_SHEET, 7, mappedRows.length, headers.length);
     console.log("Sales write completed");
 
     return dest;
@@ -465,6 +520,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     console.log(`Inventory rows: ${inventoryData.rows.length}`);
     console.log(`Inventory range: '${INVENTORY_SHEET}'!A7`);
     await this.injectSheetData(dest.file_id, INVENTORY_SHEET, 'A7', inventoryData.rows);
+    await this.extendRowFormatting(dest.file_id, INVENTORY_SHEET, 7, inventoryData.rows.length, headers.length);
     console.log("Inventory write completed");
 
     return dest;
@@ -493,6 +549,7 @@ class GoogleSheetsAdapter extends DestinationAdapter {
     console.log(`PO rows: ${purchaseData.rows.length}`);
     console.log(`PO range: '${PURCHASES_SHEET}'!A7`);
     await this.injectSheetData(dest.file_id, PURCHASES_SHEET, 'A7', purchaseData.rows);
+    await this.extendRowFormatting(dest.file_id, PURCHASES_SHEET, 7, purchaseData.rows.length, headers.length);
     console.log("PO write completed");
     console.log("Google Sheet data injection completed");
 

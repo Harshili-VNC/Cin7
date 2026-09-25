@@ -464,6 +464,7 @@ function cin7Headers(creds) {
 function classifyCin7Error(err, datasetName = 'Cin7') {
   if (!err) return new Error(`${datasetName} error occurred.`);
   if (err.isClassifiedCin7Error) return err;
+  if (err.code === 'SYNC_CANCELLED') return err;
 
   const status = err.response?.status;
   const rawMsg = err.response?.data?.message || err.response?.data?.Message || err.message || '';
@@ -1676,12 +1677,30 @@ function validatePurchaseData(dataset, options = {}) {
 function mergeSalesData(existingRows = [], deltaRows = []) {
   const map = new Map();
 
+  // Existing rows are carried forward untouched by incremental syncs whenever Cin7 hasn't
+  // reported that order as updated — so a row shape written by a since-fixed version of the
+  // mapper (e.g. the old duplicate-sourceChannel bug, which shifted Quantity/Revenue one
+  // column right) would otherwise persist forever and keep failing validateSalesData. Drop
+  // any existing row that doesn't match the current schema width instead of merging it in;
+  // it'll be regenerated correctly next time Cin7 reports that order as updated, or via a
+  // full (non-incremental) resync.
+  const expectedWidth = SALES_HEADERS.length;
+  let droppedStaleRows = 0;
+
   existingRows.forEach((row, idx) => {
+    if (!Array.isArray(row) || row.length !== expectedWidth) {
+      droppedStaleRows++;
+      return;
+    }
     const orderNo = String(row[2] || row[4] || `ORD-${idx}`).trim();
     const sku = String(row[5] || row[6] || `SKU-${idx}`).trim();
     const key = `${orderNo}__${sku}`;
     map.set(key, row);
   });
+
+  if (droppedStaleRows > 0) {
+    console.warn(`[SALES MERGE] Dropped ${droppedStaleRows} stale existing row(s) with a mismatched column count (expected ${expectedWidth}) instead of carrying corrupted data forward.`);
+  }
 
   deltaRows.forEach((row, idx) => {
     const orderNo = String(row[2] || row[4] || `ORD-${idx}`).trim();

@@ -1339,6 +1339,8 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
 
   if (activeSyncPollTimer) clearInterval(activeSyncPollTimer);
 
+  let syncPollTerminalHandled = false;
+
   activeSyncPollTimer = setInterval(async () => {
     try {
       const pUrl = runId ? `/api/sync/progress/${runId}` : '/api/sync/progress';
@@ -1346,6 +1348,7 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
       const pData = await pRes.json();
 
       if (!pData.success || !pData.progress) return;
+      if (syncPollTerminalHandled) return;
       const p = pData.progress;
 
       const stageDescriptions = {
@@ -1418,6 +1421,7 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
 
       // Check for completion
       if (p.stage === 'COMPLETED' || p.status === 'COMPLETED') {
+        syncPollTerminalHandled = true;
         clearInterval(activeSyncPollTimer);
         activeSyncPollTimer = null;
         currentActiveRunId = null;
@@ -1439,6 +1443,7 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
 
         setTimeout(() => showSyncCompleted(finalResult), 500);
       } else if (p.stage === 'FAILED' || p.status === 'FAILED') {
+        syncPollTerminalHandled = true;
         clearInterval(activeSyncPollTimer);
         activeSyncPollTimer = null;
         currentActiveRunId = null;
@@ -1454,6 +1459,7 @@ function startSyncPolling(runId, effectiveLabel = 'Sync') {
         showToast(state.lastSyncError, 'error');
         closeSyncModal();
       } else if (p.stage === 'CANCELLED' || p.status === 'CANCELLED') {
+        syncPollTerminalHandled = true;
         clearInterval(activeSyncPollTimer);
         activeSyncPollTimer = null;
         currentActiveRunId = null;
