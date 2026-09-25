@@ -2384,6 +2384,56 @@ async function loadTeamMembers() {
   }
 }
 
+async function loadBillingData() {
+  try {
+    const res = await fetch('/api/billing');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success || !data.usage) return;
+
+    const u = data.usage;
+    const plan = data.plan || {};
+
+    const planNameEl = document.getElementById('billing-plan-name');
+    const statusBadgeEl = document.getElementById('billing-status-badge');
+    const cycleDescEl = document.getElementById('billing-cycle-desc');
+    
+    if (planNameEl) planNameEl.innerText = plan.name || 'Starter Plan';
+    if (statusBadgeEl) {
+      statusBadgeEl.innerText = data.status || 'ACTIVE';
+      statusBadgeEl.className = data.status === 'TRIALING' ? 'badge badge-info' : 'badge badge-success';
+    }
+    if (cycleDescEl) {
+      const price = plan.price !== undefined ? plan.price : 49;
+      const interval = plan.billingInterval || 'month';
+      cycleDescEl.innerText = `$${price} / ${interval} · Auto-renews each billing cycle`;
+    }
+
+    // Team Seats
+    if (u.users) {
+      const seatsFrac = document.getElementById('billing-seats-fraction');
+      const seatsBar = document.getElementById('billing-seats-bar');
+      const seatsNote = document.getElementById('billing-seats-note');
+      if (seatsFrac) seatsFrac.innerText = `${u.users.current} / ${u.users.limit}`;
+      if (seatsBar) seatsBar.style.width = `${u.users.percent}%`;
+      if (seatsNote) seatsNote.innerText = `${Math.max(0, u.users.limit - u.users.current)} seats available`;
+    }
+
+    // Syncs
+    if (u.syncs) {
+      const syncsFrac = document.getElementById('billing-syncs-fraction');
+      const syncsBar = document.getElementById('billing-syncs-bar');
+      const syncsNote = document.getElementById('billing-syncs-note');
+      if (syncsFrac) syncsFrac.innerText = `${u.syncs.current} / ${u.syncs.limit}`;
+      if (syncsBar) syncsBar.style.width = `${u.syncs.percent}%`;
+      if (syncsNote) syncsNote.innerText = `${Math.max(0, u.syncs.limit - u.syncs.current)} syncs remaining`;
+    }
+
+  } catch (err) {
+    console.error('Error loading billing data:', err);
+  }
+}
+
 function switchSettingsTab(tabName) {
   if (tabName === 'organization') tabName = 'profile';
   settingsState.activeTab = tabName;
